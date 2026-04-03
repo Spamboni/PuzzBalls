@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 11;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1201;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -469,6 +469,7 @@ class Game {
 
     // Physics step
     var sm = this.speedMult;
+    var g2 = this._chuteGeom();  // used for sticky-chute-wall detection
     for (i = 0; i < this.objects.length; i++) {
       var obj = this.objects[i];
       if (obj.dead) continue;
@@ -486,10 +487,11 @@ class Game {
         Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
-          var touchingFloor = obj.y + obj.r >= floorY - 1;
-          var touchingWall  = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
-          var touchingTop   = obj.y - obj.r <= 1;
-          if (touchingFloor || touchingWall || touchingTop) {
+          var touchingFloor  = obj.y + obj.r >= floorY - 1;
+          var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
+          var touchingTop    = obj.y - obj.r <= 1;
+          var touchingChute  = obj.y >= g2.TOP_Y && obj.x + obj.r >= g2.LEFT_X - 1;
+          if ((touchingWall || touchingTop || touchingChute) && !touchingFloor) {
             this._checkStickyWall(obj);
           }
         }
@@ -582,8 +584,12 @@ class Game {
       for (j = 0; j < this.objects.length; j++) {
         var ball = this.objects[j];
         if (!ball.dead && brick.overlaps(ball)) {
-          var damage = ball.inFlight ? 2 : 1;
-          var destroyed = brick.takeDamage(damage);
+          // Damage = baseDamage × density × velocity factor (out of 100 HP)
+          var bsBall   = BallSettings[ball.type] || BallSettings.bouncer;
+          var speed    = Math.hypot(ball.vx, ball.vy);
+          var velFactor = Math.max(0.5, Math.min(speed / 8, 3.0)); // 0.5x slow → 3x fast
+          var dmg = Math.round((bsBall.baseDamage || 20) * (bsBall.density || 1.0) * velFactor);
+          var destroyed = brick.takeDamage(dmg);
           // Directional shards + glass sound
           if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
           if (window.Sound) Sound.brickShatter(damage * 0.4);
@@ -1024,14 +1030,42 @@ class Game {
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
-    // ── LEFT RAMP ────────────────────────────────────────────────────────────
-    var rampR = 40;
+    // ── LEFT RAMP — raised one ball-height, curves up to left screen edge ──────
+    var ballR   = 12;  // approximate ball radius for clearance
+    var rampR   = 42;
+    var rampY   = floorY - ballR * 2;  // raised so ball fits underneath
+    ctx.strokeStyle = 'rgba(0,180,255,0.55)';
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = '#00aaff';
+    ctx.shadowBlur  = 5;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    // Arc: center at (rampR, rampY), sweeps from angle π (far left) to π/2 (top)
+    // Draws curve from (0, rampY) rising to (rampR, rampY - rampR)
+    // Then extend line to left screen edge (x=0) so ramp meets the wall
+    ctx.moveTo(0, rampY);
+    ctx.arc(rampR, rampY, rampR, Math.PI, Math.PI / 2, true);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // ── FLOOR RAMPS — two small curves at the base ───────────────────────────
+    // Ramp 1: right side, at screen edge (x = W), curves up from floor
+    var fRampR = 28;
     ctx.strokeStyle = 'rgba(0,180,255,0.45)';
     ctx.lineWidth   = 2;
     ctx.shadowColor = '#00aaff';
     ctx.shadowBlur  = 4;
+    // Right floor ramp: center at (W, floorY), arc from angle -π/2 (top) to π (left)
+    // Draws from (W - fRampR, floorY) curving up to (W, floorY - fRampR)
     ctx.beginPath();
-    ctx.arc(rampR, floorY, rampR, Math.PI, Math.PI / 2, true);
+    ctx.arc(W, floorY, fRampR, Math.PI, Math.PI / 2, true);  // left-of-W to above-W
+    ctx.stroke();
+
+    // Ramp 2: aligned with the chute exit (leftX - turnR), raised one ball-height
+    // Center sits at (leftX - turnR, floorY), ramp curves from floor up
+    var exitX = leftX - turnR;
+    ctx.beginPath();
+    ctx.arc(exitX, floorY, fRampR, Math.PI, Math.PI / 2, true);
     ctx.stroke();
     ctx.shadowBlur = 0;
 

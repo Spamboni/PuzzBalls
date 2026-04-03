@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 11;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1201;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -19,6 +19,7 @@ var BallSettings = {
     velocity: 1.0, bounciness: 1.0,
     density: 1.0,
     groundFriction: 0.88,
+    baseDamage: 20,   // base HP damage per hit (out of 100 HP)
   },
   exploder: {
     label: 'EXPLODER', color: '#8b1a00', glow: '#ff4400',
@@ -27,6 +28,7 @@ var BallSettings = {
     density: 0.9,
     groundFriction: 0.85,
     blastRadius: 130, blastForce: 20,
+    baseDamage: 35,
   },
   sticky: {
     label: 'STICKY', color: '#1a6b00', glow: '#44ff44',
@@ -36,6 +38,7 @@ var BallSettings = {
     stickyStrength: 0.85,
     stickThreshold: 6,
     groundFriction: 0.70,
+    baseDamage: 25,   // dense/heavy so more impact
   },
   splitter: {
     label: 'SPLITTER', color: '#6b006b', glow: '#ff44ff',
@@ -45,6 +48,7 @@ var BallSettings = {
     groundFriction: 0.90,
     splitCount: 3,
     childDensity: 1.8,
+    baseDamage: 15,   // light ball, less damage
   },
   gravity: {
     label: 'GRAV WELL', color: '#005555', glow: '#00ffee',
@@ -54,6 +58,7 @@ var BallSettings = {
     groundFriction: 0.86,
     gravRange: 150,
     gravPull:  0.55,
+    baseDamage: 18,
   },
 };
 

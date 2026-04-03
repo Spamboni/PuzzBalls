@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 11;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 1201;
 // presets.js — Physics preset save/load system
 // Presets are stored in localStorage under 'puzzballs_presets'
 
@@ -131,7 +131,7 @@ var Presets = (function() {
   function _captureBall(type) {
     if (!window.BallSettings) return {};
     var bs = BallSettings[type];
-    var out = { velocity: bs.velocity || 1.0, bounciness: bs.bounciness || 1.0, groundFriction: bs.groundFriction !== undefined ? bs.groundFriction : 0.88 };
+    var out = { velocity: bs.velocity || 1.0, bounciness: bs.bounciness || 1.0, groundFriction: bs.groundFriction !== undefined ? bs.groundFriction : 0.88, density: bs.density || 1.0, baseDamage: bs.baseDamage || 20 };
     if (type === 'exploder') { out.blastRadius = bs.blastRadius; out.blastForce = bs.blastForce; }
     if (type === 'sticky')   { out.stickyStrength = bs.stickyStrength; out.stickThreshold = bs.stickThreshold || 6; }
     if (type === 'splitter') { out.splitCount = bs.splitCount; }
@@ -149,9 +149,11 @@ var Presets = (function() {
     types.forEach(function(type) {
       var src = (preset.balls && preset.balls[type]) || {};
       var dst = BallSettings[type];
-      if (src.velocity   !== undefined) dst.velocity   = src.velocity;
-      if (src.bounciness !== undefined) dst.bounciness = src.bounciness;
+      if (src.velocity       !== undefined) dst.velocity       = src.velocity;
+      if (src.bounciness     !== undefined) dst.bounciness     = src.bounciness;
       if (src.groundFriction !== undefined) dst.groundFriction = src.groundFriction;
+      if (src.density        !== undefined) dst.density        = src.density;
+      if (src.baseDamage     !== undefined) dst.baseDamage     = src.baseDamage;
       if (type === 'exploder') {
         if (src.blastRadius !== undefined) dst.blastRadius = src.blastRadius;
         if (src.blastForce  !== undefined) dst.blastForce  = src.blastForce;

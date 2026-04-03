@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 11;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1201;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -576,20 +576,40 @@ class BreakableBrick {
     }
     ctx.shadowBlur = 0;
 
-    // Cracks (appear as health drops)
+    // Cracks — 4 progressive states based on damage
+    // state 0: 100-75% — pristine
+    // state 1: 75-50%  — light crack
+    // state 2: 50-25%  — medium cracks
+    // state 3: 25-0%   — heavy cracks
     if (frac < 1) {
-      ctx.strokeStyle = 'rgba(255,255,255,' + (1 - frac) * 0.6 + ')';
-      ctx.lineWidth   = 1;
-      var seed = this._crackSeed;
-      var numCracks = Math.ceil((1 - frac) * 5);
-      for (var c = 0; c < numCracks; c++) {
-        var cx1 = (seed * 0.3 + c * 0.18 - 0.35) * this.w;
-        var cy1 = -this.h * 0.3 + c * 2;
-        ctx.beginPath();
-        ctx.moveTo(cx1, cy1);
-        ctx.lineTo(cx1 + (c % 2 === 0 ? 8 : -8), cy1 + this.h * 0.35);
-        ctx.lineTo(cx1 + (c % 2 === 0 ? 3 : -3), cy1 + this.h * 0.6);
-        ctx.stroke();
+      var seed      = this._crackSeed;
+      var crackState = frac > 0.75 ? 0 : frac > 0.50 ? 1 : frac > 0.25 ? 2 : 3;
+      var crackAlpha = [0, 0.35, 0.60, 0.85][crackState];
+      var numCracks  = [0, 2, 4, 6][crackState];
+
+      if (numCracks > 0) {
+        for (var c = 0; c < numCracks; c++) {
+          var cx1  = (seed * 0.4 + c * 0.15 - 0.35) * this.w;
+          var cy1  = -this.h * 0.35 + c * 1.5;
+          var jag  = (c % 2 === 0 ? 1 : -1) * (5 + crackState * 3);
+          var len  = 0.3 + crackState * 0.12;
+          ctx.strokeStyle = 'rgba(255,255,255,' + crackAlpha + ')';
+          ctx.lineWidth   = 0.8 + crackState * 0.3;
+          ctx.beginPath();
+          ctx.moveTo(cx1, cy1);
+          ctx.lineTo(cx1 + jag,       cy1 + this.h * len * 0.5);
+          ctx.lineTo(cx1 + jag * 0.4, cy1 + this.h * len);
+          ctx.stroke();
+          // Extra branching crack for heavy damage
+          if (crackState >= 3) {
+            ctx.strokeStyle = 'rgba(255,200,100,0.5)';
+            ctx.lineWidth   = 0.6;
+            ctx.beginPath();
+            ctx.moveTo(cx1 + jag, cy1 + this.h * len * 0.4);
+            ctx.lineTo(cx1 + jag * 2, cy1 + this.h * len * 0.7);
+            ctx.stroke();
+          }
+        }
       }
     }
 

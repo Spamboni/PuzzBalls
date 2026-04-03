@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 11;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1201;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -178,7 +178,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v11</b>';
+        vRow.innerHTML = '<b>PuzzBalls v12.01</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -201,10 +201,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v11 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v12.01 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 11) {
-            verEl.textContent = 'v' + loaded + ' ✓';
+          } else if (loaded === 1201) {
+            verEl.textContent = 'v12.01 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -220,17 +220,19 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=11</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1201</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
       } else {
         var bs = BallSettings[t.id];
-        _addSlider(pane,'Size',     null, null, 6, 30,  1,   function(v){return v+'px';},       t.id, 'size');
-        _addSlider(pane,'Velocity', null, null, 0.3,3.0,0.05,function(v){return Math.round(v*100)+'%';},t.id,'velocity');
-        _addSlider(pane,'Bounce',   null, null, 0.0,2.0,0.05,function(v){return Math.round(v*100)+'%';},t.id,'bounciness');
-        _addSlider(pane,'Ground Roll', null, null, 0.50,0.99,0.01,function(v){return Math.round(v*100)+'%';},t.id,'groundFriction');
+        _addSlider(pane,'Size',       null, null, 6, 30,  1,    function(v){return v+'px';},       t.id, 'size');
+        _addSlider(pane,'Velocity',   null, null, 0.3,3.0,0.05, function(v){return Math.round(v*100)+'%';},t.id,'velocity');
+        _addSlider(pane,'Bounce',     null, null, 0.0,2.0,0.05, function(v){return Math.round(v*100)+'%';},t.id,'bounciness');
+        _addSlider(pane,'Density',    null, null, 0.2,4.0,0.1,  function(v){return v.toFixed(1)+'x';}, t.id,'density');
+        _addSlider(pane,'Ground Roll',null, null, 0.50,0.99,0.01,function(v){return Math.round(v*100)+'%';},t.id,'groundFriction');
+        _addSlider(pane,'Brick Dmg',  null, null, 5, 60, 1,    function(v){return v+' hp';},        t.id,'baseDamage');
         if (t.id==='exploder')  { _addSlider(pane,'Blast Radius',null,null,40,250,5,function(v){return v+'px';},t.id,'blastRadius'); _addSlider(pane,'Blast Force',null,null,4,40,1,function(v){return v;},t.id,'blastForce'); }
         if (t.id==='sticky')    { _addSlider(pane,'Stick Strength',null,null,0.1,1.0,0.05,function(v){return Math.round(v*100)+'%';},t.id,'stickyStrength'); _addSlider(pane,'Stick Speed',null,null,1,20,0.5,function(v){return v+' px/f';},t.id,'stickThreshold'); }
         if (t.id==='splitter')  { _addSlider(pane,'Split Count',null,null,1,5,1,function(v){return v+' balls';},t.id,'splitCount'); }
