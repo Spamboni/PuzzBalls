@@ -95,26 +95,18 @@ window.addEventListener('DOMContentLoaded', function() {
       'test_level': {
         id: 'test_level',
         name: 'Test Level',
-        balls: [
-          { type: 'bouncer',  count: 2 },
-          { type: 'exploder', count: 1 },
-          { type: 'sticky',   count: 1 },
-          { type: 'splitter', count: 1 },
-          { type: 'gravity',  count: 1 },
+        balls: [],
+        obstacles: [],
+        objects: [
+          { id: 'brick_r1', type: 'breakable_brick', rx: 0.20, ry: 0.38, w: 55, h: 22, health: 3, regenAfter: 5000 },
+          { id: 'brick_r2', type: 'breakable_brick', rx: 0.45, ry: 0.28, w: 70, h: 22, health: 4, regenAfter: 5000 },
+          { id: 'brick_r3', type: 'breakable_brick', rx: 0.28, ry: 0.55, w: 45, h: 22, health: 2, regenAfter: 5000 },
+          { id: 'brick_r4', type: 'breakable_brick', rx: 0.55, ry: 0.48, w: 60, h: 22, health: 3, regenAfter: 5000 },
+          { id: 'brick_r5', type: 'breakable_brick', rx: 0.15, ry: 0.65, w: 50, h: 22, health: 2, regenAfter: 5000 },
+          { id: 'brick_r6', type: 'breakable_brick', rx: 0.42, ry: 0.68, w: 65, h: 22, health: 4, regenAfter: 5000 },
         ],
-        obstacles: [
-          { rx: 0.22, ry: 0.50, shape: 'triangle', size: 28 },
-          { rx: 0.75, ry: 0.42, shape: 'square',   size: 24 },
-          { rx: 0.50, ry: 0.32, shape: 'hexagon',  size: 30 },
-        ],
-        target: {
-          rx: 0.50, ry: 0.10, r: 30,
-          barrierR: 70, barrierThickness: 13,
-          barrierGap: Math.PI * 0.26, barrierGapAngle: -Math.PI / 2,
-        },
-        objectives: [
-          { id: 'goal_1', type: 'ballInZone', ballType: 'bouncer', description: 'Land the BOUNCER in the target zone' }
-        ],
+        target: { rx: 0.15, ry: 0.10, r: 1, barrierR: 1, barrierThickness: 0, barrierGap: Math.PI, barrierGapAngle: 0 },
+        objectives: [],
       },
 
       'level_2_buttons': {
