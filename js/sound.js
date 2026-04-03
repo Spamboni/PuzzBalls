@@ -237,3 +237,63 @@ var Sound = (function() {
 })();
 
 window.Sound = Sound;
+
+// Patched in: chute sounds
+// Accessed via Sound.chuteSlide() and Sound.chuteExit()
+(function() {
+  var S = window.Sound;
+
+  // Continuous swishing hiss as ball slides down chute
+  // Call once when ball enters chute; it auto-fades
+  S.chuteSlide = function() {
+    if (!S.getCtx()) return;
+    var c = S.getCtx();
+    var now = c.currentTime;
+    // Rising filtered noise whoosh
+    var bufSize = Math.ceil(c.sampleRate * 0.45);
+    var buffer  = c.createBuffer(1, bufSize, c.sampleRate);
+    var data    = buffer.getChannelData(0);
+    for (var i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1);
+    var src = c.createBufferSource();
+    src.buffer = buffer;
+    var filter = c.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(400, now);
+    filter.frequency.linearRampToValueAtTime(1200, now + 0.3);
+    filter.Q.value = 3;
+    var gain = c.createGain();
+    gain.gain.setValueAtTime(0.0, now);
+    gain.gain.linearRampToValueAtTime(0.18, now + 0.05);
+    gain.gain.linearRampToValueAtTime(0.22, now + 0.25);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+    src.connect(filter); filter.connect(gain); gain.connect(c.destination);
+    src.start(now); src.stop(now + 0.45);
+  };
+
+  // Pop/thud as ball exits chute onto floor
+  S.chuteExit = function() {
+    if (!S.getCtx()) return;
+    // Low soft thud + quick high tick
+    var c = S.getCtx();
+    var now = c.currentTime;
+    // Soft thud
+    var osc = c.createOscillator();
+    var g   = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.18);
+    g.gain.setValueAtTime(0.28, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(now); osc.stop(now + 0.2);
+    // Tick
+    var osc2 = c.createOscillator();
+    var g2   = c.createGain();
+    osc2.type = 'square';
+    osc2.frequency.value = 800;
+    g2.gain.setValueAtTime(0.08, now);
+    g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+    osc2.connect(g2); g2.connect(c.destination);
+    osc2.start(now); osc2.stop(now + 0.04);
+  };
+})();

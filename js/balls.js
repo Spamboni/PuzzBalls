@@ -64,30 +64,31 @@ function makeSplitChildren(parent, count) {
   return children;
 }
 
-// ── Gravity well — slingshot-through behavior ─────────────────────────────────
+// ── Gravity well — one-shot slingshot-through behavior ────────────────────────
 //
-// Each frame the well is in flight:
-//   • Objects within gravRange that haven't been "slung" yet get pulled in.
-//   • Pull force grows as 1/dist² (inverse-square), capped so it's playable.
-//   • Once an object reaches the well's core (dist < coreRadius), it is
-//     "captured": its velocity is redirected outward from the well center,
-//     boosted by an ejection multiplier, and marked as "slung by this well
-//     instance" so it won't be pulled again until the well is fired again.
+// Rules:
+//   1. Well only pulls while inFlight === true AND gravActive === true.
+//   2. Pulled balls are attracted toward the center.
+//   3. When a ball reaches the core it passes through and is ejected out the
+//      far side, then added to _slungIds — never pulled again this flight.
+//   4. Gravity on that ball stops immediately after ejection.
+//   5. When the well lands, gravActive → false and _slungIds is cleared.
 
 function applyGravityWell(well, objects) {
+  if (!well.gravActive) return;
+
   var bs         = BallSettings.gravity;
   var range      = bs.gravRange;
   var basePull   = bs.gravPull;
-  var coreRadius = well.r + 4; // dist at which ejection triggers
+  var coreRadius = well.r + 6;
 
-  // well._slungIds is a Set of object references already ejected this flight
   if (!well._slungIds) well._slungIds = [];
 
   for (var i = 0; i < objects.length; i++) {
     var obj = objects[i];
-    if (obj === well) continue;
+    if (obj === well)              continue;
     if (obj.pinned || obj.stuckTo) continue;
-    // Skip objects already ejected by this well instance
+    if (obj.dead)                  continue;
     if (_arrayHas(well._slungIds, obj)) continue;
 
     var dx   = well.x - obj.x;
@@ -99,31 +100,22 @@ function applyGravityWell(well, objects) {
     var ny = dy / dist;
 
     if (dist <= coreRadius) {
-      // ── EJECT ────────────────────────────────────────────────────────────
-      // Preserve the incoming direction but flip it and add a big boost
-      var inSpeed = Math.hypot(obj.vx, obj.vy);
-      var ejectSpeed = Math.max(inSpeed * 1.8, 12); // at least 12px/frame
-
-      // Eject direction: away from well center
-      obj.vx = -nx * ejectSpeed;
-      obj.vy = -ny * ejectSpeed;
+      // Pass-through eject out the far side
+      var inSpeed    = Math.hypot(obj.vx, obj.vy);
+      var ejectSpeed = Math.max(inSpeed * 1.6, 11);
+      obj.vx       = -nx * ejectSpeed;
+      obj.vy       = -ny * ejectSpeed;
       obj.inFlight = true;
-
-      // Mark so this obj won't be re-pulled by this well flight
       well._slungIds.push(obj);
-
-      // Spark burst at ejection point
-      if (window.Physics) Physics.spawnSparks(window._gameSparks || [], obj.x, obj.y, '#00ffee', 14);
-      if (window.Sound)   Sound.snap(0.7);
-
+      if (window.Physics) Physics.spawnSparks(window._gameSparks || [], obj.x, obj.y, '#00ffee', 16);
+      if (window.Sound)   Sound.snap(0.65);
     } else {
-      // ── PULL ─────────────────────────────────────────────────────────────
-      // Inverse-square-ish: gets much stronger as dist decreases
+      // Inverse-square pull
       var pull = basePull * (range / dist) * (range / dist) * 0.04;
-      pull = Math.min(pull, 3.0); // cap so it stays fun, not instant
-      obj.vx += nx * pull;
-      obj.vy += ny * pull;
-      obj.inFlight = true; // keep it moving
+      pull = Math.min(pull, 2.8);
+      obj.vx      += nx * pull;
+      obj.vy      += ny * pull;
+      obj.inFlight = true;
     }
   }
 }
@@ -133,12 +125,10 @@ function _arrayHas(arr, val) {
   return false;
 }
 
-// Called when a gravity well lands / stops flying so the next launch is fresh
 function resetGravityWell(well) {
-  well._slungIds = [];
+  well.gravActive = false;
+  well._slungIds  = [];
 }
-
-// ── Exploder ──────────────────────────────────────────────────────────────────
 
 function triggerExplosion(exploder, objects, sparks) {
   if (exploder.exploded) return;
