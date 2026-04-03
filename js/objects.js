@@ -973,3 +973,38 @@ window.BreakableBrick   = BreakableBrick;
 window.RotatingTurnstile = RotatingTurnstile;
 window.ElectricalPort   = ElectricalPort;
 window.BallSpawner      = BallSpawner;
+
+// ── Brick shard particles ─────────────────────────────────────────────────────
+// Called by game.js when a brick takes a hit. Spawns directional shards.
+
+function spawnBrickShards(sparks, brick, ball) {
+  if (!sparks) return;
+  var pal    = brick._pal || { r:[200,100,50], glow:'#ff6622' };
+  var col    = pal.glow;
+  // Direction of impact: from ball toward brick center (shards fly away from ball)
+  var impactDx = brick.x - ball.x;
+  var impactDy = brick.y - ball.y;
+  var impactLen = Math.hypot(impactDx, impactDy) || 1;
+  var nx = impactDx / impactLen;
+  var ny = impactDy / impactLen;
+
+  var count = 8 + Math.floor(Math.random() * 6);
+  for (var i = 0; i < count; i++) {
+    // Spread: mostly in impact direction, some scatter
+    var spread = (Math.random() - 0.5) * Math.PI * 0.9;
+    var angle  = Math.atan2(ny, nx) + spread;
+    var speed  = 2 + Math.random() * 5;
+    sparks.push({
+      x:     brick.x + (Math.random() - 0.5) * brick.w * 0.5,
+      y:     brick.y + (Math.random() - 0.5) * brick.h * 0.5,
+      vx:    Math.cos(angle) * speed,
+      vy:    Math.sin(angle) * speed - 1,  // slight upward bias
+      life:  0.8 + Math.random() * 0.2,
+      decay: 0.025 + Math.random() * 0.02,
+      color: col,
+      size:  1.5 + Math.random() * 2.5,
+    });
+  }
+}
+
+window.spawnBrickShards = spawnBrickShards;

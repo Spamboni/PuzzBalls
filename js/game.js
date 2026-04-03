@@ -45,6 +45,7 @@ class Game {
     this.ballQueue  = [];   // remaining balls to be slung, by type
     this.objectives = [];   // { description, met }
     this.speedMult  = 1.0;  // global simulation speed — controlled by slider
+    this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
     this.buttons   = [];
@@ -114,6 +115,7 @@ class Game {
     this._chuteTimer   = 0;
     this._chuteDelay   = 500;
     this._deleteMode   = false;
+    // Keep _aimMode across level resets
 
     // Obstacles
     this.obstacles = ld.obstacles.map(function(d) {
@@ -298,26 +300,44 @@ class Game {
           return;
         }
       }
+      // ── Aim mode toggle ──────────────────────────────────────────────────
+      if (self._chuteAimRect) {
+        var ar = self._chuteAimRect;
+        if (pos.x >= ar.x && pos.x <= ar.x + ar.w &&
+            pos.y >= ar.y && pos.y <= ar.y + ar.h) {
+          self._aimMode = self._aimMode === 'pull' ? 'push' : 'pull';
+          return;
+        }
+      }
 
       // ── Delete mode: tap a ball to remove it ─────────────────────────────
       if (self._deleteMode) {
         if (self._tryDeleteBall(pos.x, pos.y)) return;
       }
 
-      var pos  = getPos(e);
       var best = null, bestDist = 9999;
       for (var i = 0; i < self.objects.length; i++) {
         var obj = self.objects[i];
         if (obj.inFlight || obj.stuckTo || obj.dead || obj.exploded) continue;
         var dx = pos.x - obj.x, dy = pos.y - obj.y;
-        if (Math.abs(dx) < obj.r * 2.8 && dy >= -obj.r) {
-          var d = Math.hypot(dx, dy);
-          if (d < bestDist) { bestDist = d; best = obj; }
+        if (self._aimMode === 'push') {
+          // Push mode: tap anywhere near a ball (wider pick radius, no direction constraint)
+          if (Math.hypot(dx, dy) < obj.r * 3.5) {
+            var d = Math.hypot(dx, dy);
+            if (d < bestDist) { bestDist = d; best = obj; }
+          }
+        } else {
+          // Pull mode: classic — touch above or beside ball
+          if (Math.abs(dx) < obj.r * 2.8 && dy >= -obj.r) {
+            var d = Math.hypot(dx, dy);
+            if (d < bestDist) { bestDist = d; best = obj; }
+          }
         }
       }
       if (best) {
         best.vx = 0; best.vy = 0; best.pinned = true;
-        self.sling = { obj: best, anchorX: best.x, anchorY: best.y, pullX: pos.x, pullY: pos.y };
+        self.sling = { obj: best, anchorX: best.x, anchorY: best.y,
+                       startX: pos.x, startY: pos.y, pullX: pos.x, pullY: pos.y };
       }
     }
 
@@ -343,20 +363,37 @@ class Game {
       self._draggingSlider = false;
       if (!self.sling) return;
       var s = self.sling, obj = s.obj;
-      var dx = s.anchorX - s.pullX, dy = s.anchorY - s.pullY;
-      var dist = Math.hypot(dx, dy);
-      if (dist > SLING_MIN_OFFSET) {
-        var bs    = BallSettings[obj.type] || BallSettings.bouncer;
-        var power = Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (bs.velocity || 1.0);
-        obj.vx = (dx / dist) * power;
-        obj.vy = (dy / dist) * power;
-        obj.inFlight = true;
-        // Gravity ball: activate well and clear previous ejected list
-        if (obj.type === BALL_TYPES.GRAVITY) {
-          obj.gravActive = true;
-          obj._slungIds  = [];
+      var dx, dy, dist;
+
+      if (self._aimMode === 'push') {
+        // Push mode: direction = from touch-start toward current finger position
+        // Ball stays on ground; fires in the direction you dragged
+        dx   = s.pullX - s.startX;
+        dy   = s.pullY - s.startY;
+        dist = Math.hypot(dx, dy);
+        if (dist > SLING_MIN_OFFSET) {
+          var bs    = BallSettings[obj.type] || BallSettings.bouncer;
+          var power = Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (bs.velocity || 1.0);
+          obj.vx = (dx / dist) * power;
+          obj.vy = (dy / dist) * power;
+          obj.inFlight = true;
+          if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
+          if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
         }
-        if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
+      } else {
+        // Pull mode: classic — vector is from finger to anchor (rubber-band)
+        dx   = s.anchorX - s.pullX;
+        dy   = s.anchorY - s.pullY;
+        dist = Math.hypot(dx, dy);
+        if (dist > SLING_MIN_OFFSET) {
+          var bs    = BallSettings[obj.type] || BallSettings.bouncer;
+          var power = Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (bs.velocity || 1.0);
+          obj.vx = (dx / dist) * power;
+          obj.vy = (dy / dist) * power;
+          obj.inFlight = true;
+          if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
+          if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
+        }
       }
       obj.pinned = false;
       self.sling = null;
@@ -414,6 +451,14 @@ class Game {
         Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
       }
       if (obj.inFlight && Math.abs(obj.vy) < 1.2 * sm && Math.abs(obj.vx) < 1.2 * sm) obj.inFlight = false;
+      // Tick wall bounce cooldown and check explode flag
+      if (obj._wallBounceCooldown > 0) obj._wallBounceCooldown--;
+      if (obj._needsExplodeCheck) {
+        obj._needsExplodeCheck = false;
+        if (obj.type === BALL_TYPES.EXPLODER && !obj.exploded && obj.bouncesLeft <= 0) {
+          triggerExplosion(obj, this.objects, this.sparks);
+        }
+      }
     }
 
     // Enforce chute left wall as physics boundary
@@ -472,12 +517,32 @@ class Game {
         var ball = this.objects[j];
         if (!ball.dead && brick.overlaps(ball)) {
           var damage = ball.inFlight ? 2 : 1;
-          if (brick.takeDamage(damage)) {
-            EventManager.dispatch(brick.id + '_triggered');
+          var destroyed = brick.takeDamage(damage);
+          // Directional shards + glass sound
+          if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
+          if (window.Sound) Sound.brickShatter(damage * 0.4);
+          // Bounce ball off brick surface (simple reflect)
+          var bEdgeX = Math.max(brick.x - brick.w/2, Math.min(ball.x, brick.x + brick.w/2));
+          var bEdgeY = Math.max(brick.y - brick.h/2, Math.min(ball.y, brick.y + brick.h/2));
+          var bndx = ball.x - bEdgeX, bndy = ball.y - bEdgeY;
+          var bndist = Math.hypot(bndx, bndy) || 1;
+          var bnx = bndx / bndist, bny = bndy / bndist;
+          var dot = ball.vx * bnx + ball.vy * bny;
+          if (dot < 0) { ball.vx -= 2 * dot * bnx; ball.vy -= 2 * dot * bny; }
+          // Exploder: count brick hit as a bounce
+          if (ball.type === BALL_TYPES.EXPLODER && !ball.exploded) {
+            if (!ball._brickBounceCooldown || ball._brickBounceCooldown <= 0) {
+              ball.bouncesLeft = (ball.bouncesLeft || 1) - 1;
+              ball._brickBounceCooldown = 10;
+              if (ball.bouncesLeft <= 0) triggerExplosion(ball, this.objects, this.sparks);
+            }
           }
+          if (destroyed) EventManager.dispatch(brick.id + '_triggered');
           this.collisions++;
           this.ui.setCollisions(this.collisions);
         }
+        // Tick brick bounce cooldown
+        if (ball._brickBounceCooldown > 0) ball._brickBounceCooldown--;
       }
     }
 
@@ -511,10 +576,10 @@ class Game {
       }
     }
 
-    // Remove dead exploders, respawn
-    var deadIdx = -1;
-    for (i = 0; i < this.objects.length; i++) { if (this.objects[i].dead) { deadIdx = i; break; } }
-    if (deadIdx >= 0) { this.objects.splice(deadIdx, 1); this._spawnFallingExploder(); }
+    // Remove dead balls (no sky-drop respawn)
+    for (i = this.objects.length - 1; i >= 0; i--) {
+      if (this.objects[i].dead) this.objects.splice(i, 1);
+    }
 
     // Obstacle hits
     for (i = 0; i < this.obstacles.length; i++) {
@@ -672,7 +737,9 @@ class Game {
         b.vy = Math.min(b.vy + 0.35, 8);
         b.y += b.vy;
         b.x  = shaftCX;
-        if (b.y >= turnCY) {
+        // Trigger arc when ball reaches top of the J curve
+        if (b.y >= floorY - turnR) {
+          b.y          = floorY - turnR;
           b._inChute   = 'turn';
           b._turnAngle = 0;
           b._turnSpeed = Math.min(b.vy * 0.06, 0.11);
@@ -680,23 +747,23 @@ class Game {
         }
 
       } else if (b._inChute === 'turn') {
-        // Arc center at (LEFT_X, TURN_CY)
-        // angle=0: ball at (LEFT_X + TURN_R, TURN_CY)  ← bottom of shaft
-        // angle=π/2: ball at (LEFT_X, TURN_CY + TURN_R) = (LEFT_X, floorY)  ← exit
+        // Arc center = (leftX, floorY)
+        // Start: ball at (leftX, floorY - turnR) = angle -π/2
+        // End:   ball at (leftX - turnR, floorY) = angle π (=-π)
+        // Sweep CCW by π/2 from -π/2 → -π
         b._turnAngle += b._turnSpeed + 0.05;
         if (b._turnAngle >= Math.PI / 2) b._turnAngle = Math.PI / 2;
-        var a = b._turnAngle;
-        b.x = leftX + turnR * Math.cos(a);   // cos goes from 1→0
-        b.y = turnCY + turnR * Math.sin(a);  // sin goes from 0→1
+        var arcAngle = -Math.PI / 2 - b._turnAngle;
+        b.x = leftX + turnR * Math.cos(arcAngle);
+        b.y = floorY + turnR * Math.sin(arcAngle);
         if (b._turnAngle >= Math.PI / 2) {
           b._inChute = 'exit';
-          b.x   = leftX;
+          b.x   = leftX - turnR;
           b.y   = floorY - b.r;
-          // Random exit velocity: shoot ball left, ranging from ~halfway to full screen
-          var minSpeed = (leftX * 0.5) / 30;   // enough to reach halfway in ~30 frames
-          var maxSpeed = (leftX * 1.0) / 22;   // enough to reach far edge in ~22 frames
+          var minSpeed = (leftX * 0.5) / 30;
+          var maxSpeed = (leftX * 1.0) / 22;
           b.vx = -(minSpeed + Math.random() * (maxSpeed - minSpeed));
-          b.vy = -(1 + Math.random() * 1.5);   // slight upward pop
+          b.vy = -(1 + Math.random() * 1.5);
           if (window.Sound) Sound.chuteExit();
         }
 
@@ -752,36 +819,35 @@ class Game {
 
     ctx.save();
 
-    // ── Shaft background (semi-transparent so you can see balls inside) ──────
+    // ── Shaft background ─────────────────────────────────────────────────────
     ctx.fillStyle = 'rgba(0,15,35,0.55)';
-    // Vertical section
     ctx.fillRect(leftX, topY, CW, turnCY - topY);
-    // U-turn arc fill
-    ctx.beginPath();
-    ctx.arc(leftX, turnCY, turnR, 0, Math.PI / 2);
-    ctx.lineTo(leftX, turnCY);
-    ctx.closePath();
-    ctx.fill();
 
-    // ── Left wall + curve (the physics boundary — bright neon) ───────────────
+    // ── LEFT WALL — the J shape ───────────────────────────────────────────────
+    // Straight vertical from top down to arc start, then quarter-circle
+    // sweeping left until it's horizontal, exiting at (leftX - turnR, floorY).
+    //
+    // Arc maths:
+    //   center = (leftX, floorY)   ← corner of the J
+    //   start angle = -π/2 (pointing up = top of arc, which is (leftX, floorY-turnR) = (leftX, turnCY))
+    //   end angle   = π   (pointing left = (leftX - turnR, floorY))
+    //   direction   = clockwise (false in canvas = CCW, so use true = CW)
+    //   Sweep: -π/2 → π  CW  ==  from 12-o'clock around to 9-o'clock
+
     ctx.strokeStyle = 'rgba(0,180,255,0.75)';
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = '#00aaff';
     ctx.shadowBlur  = 8;
     ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
 
-    // Draw as single continuous path: top → down → arc → floor stub
     ctx.beginPath();
-    ctx.moveTo(leftX, topY);
-    ctx.lineTo(leftX, turnCY);                    // straight down
-    ctx.arc(leftX, turnCY, turnR, Math.PI / 2, Math.PI); // CCW quarter arc
-    // After arc, we're at (leftX - turnR, turnCY) — but we want floor level exit
-    // Actually arc endpoint: angle=π → (leftX - turnR, turnCY)
-    // We want it to reach floorY, so extend down-left slightly
-    ctx.lineTo(leftX - turnR - 15, floorY);
+    ctx.moveTo(leftX, topY);                          // top of shaft
+    ctx.lineTo(leftX, floorY - turnR);                // straight down to arc start
+    ctx.arc(leftX, floorY, turnR, -Math.PI/2, Math.PI, true); // CW quarter arc → exit left
     ctx.stroke();
 
-    // ── Right wall = screen edge (faint) ─────────────────────────────────────
+    // ── RIGHT WALL = screen edge ──────────────────────────────────────────────
     ctx.strokeStyle = 'rgba(0,120,200,0.25)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 0;
@@ -807,6 +873,23 @@ class Game {
                 + (this._chuteActive ? this._chuteActive.length : 0)
                 + (this._chuteQueue  ? this._chuteQueue.length  : 0);
     var atMax = onField >= 15;
+
+    // ── Aim mode toggle button — sits just above the ball buttons ─────────────
+    var aimBtnH = 26;
+    var aimBtnY = btnStartY - aimBtnH - 6;
+    this._chuteAimRect = { x: btnX, y: aimBtnY, w: btnW, h: aimBtnH };
+    var isPush    = this._aimMode === 'push';
+    var aimColor  = isPush ? '#ffcc30' : '#00ccff';
+    ctx.fillStyle = isPush ? 'rgba(60,45,0,0.80)' : 'rgba(0,20,45,0.80)';
+    ctx.beginPath(); ctx.roundRect(btnX, aimBtnY, btnW, aimBtnH, 6); ctx.fill();
+    ctx.strokeStyle = aimColor;
+    ctx.lineWidth   = 1.8; ctx.shadowColor = aimColor; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.roundRect(btnX, aimBtnY, btnW, aimBtnH, 6); ctx.stroke();
+    ctx.shadowBlur  = 0;
+    ctx.fillStyle   = aimColor;
+    ctx.font        = "bold 8px 'Share Tech Mono', monospace";
+    ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isPush ? '↑ PUSH' : '← PULL', btnX + btnW / 2, aimBtnY + aimBtnH / 2);
 
     for (var bi = 0; bi < btnTypes.length; bi++) {
       var by    = btnStartY + bi * (btnH + 4);
@@ -985,34 +1068,82 @@ class Game {
     ctx.shadowBlur = 0;
     ctx.fillStyle = 'rgba(0,140,200,0.22)'; ctx.font = "9px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText('▼  PULL DOWN TO AIM  ▼', W / 2, floorY + 6);
+    var hint = this._aimMode === 'push' ? '↑  DRAG UP TO AIM  ↑' : '▼  PULL DOWN TO AIM  ▼';
+    ctx.fillText(hint, W / 2, floorY + 6);
     ctx.restore();
   }
 
   _drawSling() {
     var ctx = this.ctx, s = this.sling, obj = s.obj;
-    var dx = s.anchorX - s.pullX, dy = s.anchorY - s.pullY;
-    var dist = Math.hypot(dx, dy);
-    if (dist < SLING_MIN_OFFSET) return;
-    var power = Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,200,60,' + (0.45 + power * 0.5) + ')';
-    ctx.lineWidth = 2.5; ctx.shadowColor = '#ffcc30'; ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.moveTo(obj.x - obj.r * 0.5, obj.y); ctx.lineTo(s.pullX, s.pullY); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(obj.x + obj.r * 0.5, obj.y); ctx.lineTo(s.pullX, s.pullY); ctx.stroke();
-    ctx.shadowBlur = 0;
-    var bs = BallSettings[obj.type] || BallSettings.bouncer;
-    var vx = (dx/dist) * Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (bs.velocity||1);
-    var vy = (dy/dist) * Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (bs.velocity||1);
-    var px = obj.x, py = obj.y, grav = Physics.PHYSICS.GRAVITY * Settings.gravityMult, fric = Physics.PHYSICS.FRICTION;
-    for (var i = 0; i < 34; i++) {
-      vy += grav; vx *= fric; vy *= fric; px += vx; py += vy;
-      if (px < 0 || px > this.W || py < 0 || py > this.floorY()) break;
-      ctx.beginPath(); ctx.arc(px, py, (1 - i/34) * 4.5 * power + 1, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,220,80,' + (1-i/34)*power*0.75 + ')'; ctx.fill();
+    var isPush = this._aimMode === 'push';
+    var dx, dy, dist, power;
+
+    if (isPush) {
+      dx   = s.pullX - s.startX;
+      dy   = s.pullY - s.startY;
+    } else {
+      dx   = s.anchorX - s.pullX;
+      dy   = s.anchorY - s.pullY;
     }
-    ctx.beginPath(); ctx.arc(s.pullX, s.pullY, 10 + power * 7, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,200,60,' + (0.35 + power*0.5) + ')'; ctx.lineWidth = 2; ctx.stroke();
+    dist  = Math.hypot(dx, dy);
+    if (dist < SLING_MIN_OFFSET) return;
+    power = Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL;
+
+    ctx.save();
+
+    if (isPush) {
+      // Push mode: draw an arrow from the ball in the launch direction
+      var bs  = BallSettings[obj.type] || BallSettings.bouncer;
+      var ndx = dx / dist, ndy = dy / dist;
+      var arrowLen = 30 + power * 60;
+      var tipX = obj.x + ndx * (obj.r + arrowLen);
+      var tipY = obj.y + ndy * (obj.r + arrowLen);
+
+      ctx.strokeStyle = 'rgba(255,200,60,' + (0.5 + power * 0.5) + ')';
+      ctx.lineWidth   = 2.5; ctx.shadowColor = '#ffcc30'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.moveTo(obj.x + ndx * obj.r, obj.y + ndy * obj.r);
+      ctx.lineTo(tipX, tipY); ctx.stroke();
+      // Arrowhead
+      var ah = Math.atan2(ndy, ndx);
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - Math.cos(ah - 0.45) * 12, tipY - Math.sin(ah - 0.45) * 12);
+      ctx.lineTo(tipX - Math.cos(ah + 0.45) * 12, tipY - Math.sin(ah + 0.45) * 12);
+      ctx.closePath(); ctx.fillStyle = 'rgba(255,200,60,0.85)'; ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Trajectory dots from ball in drag direction
+      var vx2 = ndx * Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (bs.velocity||1);
+      var vy2 = ndy * Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (bs.velocity||1);
+      var px = obj.x, py = obj.y;
+      var grav = Physics.PHYSICS.GRAVITY * Settings.gravityMult, fric = Physics.PHYSICS.FRICTION;
+      for (var i = 0; i < 34; i++) {
+        vy2 += grav; vx2 *= fric; vy2 *= fric; px += vx2; py += vy2;
+        if (px < 0 || px > this.W || py < 0 || py > this.floorY()) break;
+        ctx.beginPath(); ctx.arc(px, py, (1-i/34)*4*power+1, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,220,80,' + (1-i/34)*power*0.7 + ')'; ctx.fill();
+      }
+    } else {
+      // Pull mode: classic rubber-band from finger to ball
+      ctx.strokeStyle = 'rgba(255,200,60,' + (0.45 + power * 0.5) + ')';
+      ctx.lineWidth = 2.5; ctx.shadowColor = '#ffcc30'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.moveTo(obj.x - obj.r*0.5, obj.y); ctx.lineTo(s.pullX, s.pullY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(obj.x + obj.r*0.5, obj.y); ctx.lineTo(s.pullX, s.pullY); ctx.stroke();
+      ctx.shadowBlur = 0;
+      var bs2 = BallSettings[obj.type] || BallSettings.bouncer;
+      var vx3 = (dx/dist)*Math.min(dist,SLING_MAX_PULL)*SLING_POWER*(bs2.velocity||1);
+      var vy3 = (dy/dist)*Math.min(dist,SLING_MAX_PULL)*SLING_POWER*(bs2.velocity||1);
+      var px3 = obj.x, py3 = obj.y;
+      var grav3 = Physics.PHYSICS.GRAVITY * Settings.gravityMult, fric3 = Physics.PHYSICS.FRICTION;
+      for (var i3 = 0; i3 < 34; i3++) {
+        vy3 += grav3; vx3 *= fric3; vy3 *= fric3; px3 += vx3; py3 += vy3;
+        if (px3 < 0 || px3 > this.W || py3 < 0 || py3 > this.floorY()) break;
+        ctx.beginPath(); ctx.arc(px3, py3, (1-i3/34)*4.5*power+1, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,220,80,' + (1-i3/34)*power*0.75 + ')'; ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(s.pullX, s.pullY, 10+power*7, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,200,60,'+(0.35+power*0.5)+')'; ctx.lineWidth=2; ctx.stroke();
+    }
     ctx.restore();
   }
 

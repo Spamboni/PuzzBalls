@@ -297,3 +297,40 @@ window.Sound = Sound;
     osc2.start(now); osc2.stop(now + 0.04);
   };
 })();
+
+// ── Glass shatter sound for bricks ───────────────────────────────────────────
+(function() {
+  var S = window.Sound;
+  S.brickShatter = function(intensity) {
+    if (!S.getCtx()) return;
+    var c   = S.getCtx();
+    var now = c.currentTime;
+    var vol = 0.12 + Math.min(intensity || 0.5, 1.0) * 0.18;
+
+    // High glassy crack transient
+    var bufSize = Math.ceil(c.sampleRate * 0.18);
+    var buf = c.createBuffer(1, bufSize, c.sampleRate);
+    var d   = buf.getChannelData(0);
+    for (var i = 0; i < bufSize; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.15));
+    var src = c.createBufferSource();
+    src.buffer = buf;
+    var flt = c.createBiquadFilter();
+    flt.type = 'highpass'; flt.frequency.value = 2800; flt.Q.value = 1.2;
+    var g = c.createGain();
+    g.gain.setValueAtTime(vol, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    src.connect(flt); flt.connect(g); g.connect(c.destination);
+    src.start(now); src.stop(now + 0.18);
+
+    // Low thud underneath
+    var osc = c.createOscillator();
+    var g2  = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.12);
+    g2.gain.setValueAtTime(vol * 1.2, now);
+    g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    osc.connect(g2); g2.connect(c.destination);
+    osc.start(now); osc.stop(now + 0.14);
+  };
+})();

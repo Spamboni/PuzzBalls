@@ -45,6 +45,7 @@ function stepObject(obj, W, H, sparks, settings) {
     obj.vx = Math.abs(obj.vx) * bounce;
     spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 5);
     if (spd1 > 1.5 && window.Sound) Sound.wallClick(spd1);
+    if (obj.type === 'exploder' && !obj.exploded && spd1 > 1.5) _countExploderBounce(obj);
   }
   if (obj.x + obj.r > W) {
     obj.x = W - obj.r;
@@ -52,12 +53,14 @@ function stepObject(obj, W, H, sparks, settings) {
     obj.vx = -Math.abs(obj.vx) * bounce;
     spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 5);
     if (spd2 > 1.5 && window.Sound) Sound.wallClick(spd2);
+    if (obj.type === 'exploder' && !obj.exploded && spd2 > 1.5) _countExploderBounce(obj);
   }
   if (obj.y - obj.r < 0) {
     obj.y = obj.r;
     var spd3 = Math.abs(obj.vy);
     obj.vy = Math.abs(obj.vy) * bounce;
     if (spd3 > 1.5 && window.Sound) Sound.wallClick(spd3);
+    if (obj.type === 'exploder' && !obj.exploded && spd3 > 1.5) _countExploderBounce(obj);
   }
   if (obj.y + obj.r > H) {
     obj.y = H - obj.r;
@@ -66,6 +69,7 @@ function stepObject(obj, W, H, sparks, settings) {
     if (spd4 > 1.5) {
       spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 4);
       if (window.Sound) Sound.wallClick(spd4);
+      if (obj.type === 'exploder' && !obj.exploded) _countExploderBounce(obj);
     }
   }
 
@@ -79,6 +83,11 @@ function stepObject(obj, W, H, sparks, settings) {
   }
 
   obj.pulse += 0.05;
+}
+
+function _slungArrayHas(arr, val) {
+  for (var i = 0; i < arr.length; i++) if (arr[i] === val) return true;
+  return false;
 }
 
 /**
@@ -97,11 +106,26 @@ function resolveCollision(a, b, sparks) {
   const minD = a.r + b.r;
 
   if (dist >= minD || dist === 0) {
-    // Objects are no longer overlapping — clear contact flag
     a._contactWith = a._contactWith || new Set();
     b._contactWith = b._contactWith || new Set();
     a._contactWith.delete(b);
     b._contactWith.delete(a);
+    return false;
+  }
+
+  // Gravity well pass-through: balls pass right through an active gravity well.
+  // The moment of contact triggers a 2s immunity from gravity pull.
+  var aIsGrav = a.type === 'gravity' && a.gravActive;
+  var bIsGrav = b.type === 'gravity' && b.gravActive;
+  if (aIsGrav || bIsGrav) {
+    // Mark the non-gravity ball as immune for 2 seconds (120 frames @ 60fps)
+    var nonGrav = aIsGrav ? b : a;
+    var grav    = aIsGrav ? a : b;
+    if (!grav._slungIds) grav._slungIds = [];
+    if (!_slungArrayHas(grav._slungIds, nonGrav)) {
+      grav._slungIds.push(nonGrav);
+    }
+    // No physics collision — balls pass through
     return false;
   }
 
@@ -275,6 +299,16 @@ function computeFlingVelocity(history) {
     vx: ((last.x - ref.x) / dt) * PHYSICS.DRAG_SCALE * PHYSICS.DRAG_DAMPEN,
     vy: ((last.y - ref.y) / dt) * PHYSICS.DRAG_SCALE * PHYSICS.DRAG_DAMPEN,
   };
+}
+
+// Called by stepObject when an exploder hits a wall.
+// Decrements bouncesLeft; actual explosion is triggered in game.js next frame.
+function _countExploderBounce(obj) {
+  if (obj._wallBounceCooldown > 0) return; // prevent double-count same frame
+  obj.bouncesLeft = (obj.bouncesLeft || 1) - 1;
+  obj._wallBounceCooldown = 8; // cooldown frames
+  // Flag for game loop to check
+  obj._needsExplodeCheck = true;
 }
 
 // Assign to window so subsequent scripts can access it as a global
