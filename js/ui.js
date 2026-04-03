@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1302;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1303;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -17,6 +17,7 @@ class UI {
     this._btnReset   = document.getElementById('btn-reset');
     this._btnBack    = document.getElementById('btn-back');
     this._btnSettings = document.getElementById('btn-settings');
+    this._btnEditor  = document.getElementById('btn-editor');
     this._settingsPanel = document.getElementById('settings-panel');
 
     var self = this;
@@ -35,6 +36,11 @@ class UI {
     this._btnBack.addEventListener('touchend', doBack);
     this._btnSettings.addEventListener('click',    doSettings);
     this._btnSettings.addEventListener('touchend', doSettings);
+    if (this._btnEditor && opts.game) {
+      function doEditor(e) { e.preventDefault(); e.stopPropagation(); opts.game.toggleEditor(); }
+      this._btnEditor.addEventListener('click',    doEditor);
+      this._btnEditor.addEventListener('touchend', doEditor);
+    }
 
     function closeIfOutside(e) {
       if (!self._settingsPanel.classList.contains('open')) return;
@@ -179,7 +185,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.02</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.03</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -202,10 +208,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.02 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.03 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1302) {
-            verEl.textContent = 'v13.02 ✓';
+          } else if (loaded === 1303) {
+            verEl.textContent = 'v13.03 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -226,8 +232,9 @@ class UI {
 
       } else if (t.id === 'audio') {
         // Audio settings (§3.3)
-        window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
+        window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
         _addSlider(pane,'Master Volume','AudioSettings','masterVol',0,1.0,0.05,function(v){return Math.round(v*100)+'%';});
+        _addSlider(pane,'Ball Hit Volume','AudioSettings','impactVol',0,2.0,0.1,function(v){return Math.round(v*100)+'%';});
         _addSlider(pane,'Explosion Vol','AudioSettings','explosionVol',0,2.0,0.1,function(v){return Math.round(v*100)+'%';});
         // Toggle rows
         ['impactScaling','pitchScaling'].forEach(function(key) {

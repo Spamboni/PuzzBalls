@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1302;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1303;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -65,6 +65,7 @@ class Game {
       canvas:        canvas,
       onReset:       () => this._resetLevel(),
       onBackToMenu:  () => { this.stop(); this.onBackToMenu(); },
+      game:          this,
     });
 
     this._loop = this._loop.bind(this);
@@ -279,6 +280,33 @@ class Game {
 
       var pos = getPos(e);
 
+      // ── Editor mode ──────────────────────────────────────────────────────────
+      if (self._editorMode) {
+        // Check editor panel buttons first
+        if (self._editorTypeBtns) {
+          for (var ti = 0; ti < self._editorTypeBtns.length; ti++) {
+            var tb = self._editorTypeBtns[ti];
+            if (pos.x >= tb.x && pos.x <= tb.x + tb.w && pos.y >= tb.y && pos.y <= tb.y + tb.h) {
+              self._editorBrickType = tb.type; return;
+            }
+          }
+        }
+        if (self._editorDelBtn) {
+          var db = self._editorDelBtn;
+          if (pos.x >= db.x && pos.x <= db.x + db.w && pos.y >= db.y && pos.y <= db.y + db.h) {
+            self._editorDeleteSelected(); return;
+          }
+        }
+        if (self._editorDoneBtn) {
+          var dnb = self._editorDoneBtn;
+          if (pos.x >= dnb.x && pos.x <= dnb.x + dnb.w && pos.y >= dnb.y && pos.y <= dnb.y + dnb.h) {
+            self.toggleEditor(); return;
+          }
+        }
+        self._editorOnDown(pos);
+        return;
+      }
+
       // ── Speed slider ─────────────────────────────────────────────────────
       if (self._sliderRect) {
         var sr = self._sliderRect;
@@ -387,6 +415,7 @@ class Game {
     function onMove(e) {
       e.preventDefault();
       var pos = getPos(e);
+      if (self._editorMode) { self._editorOnMove(pos); return; }
       if (self._draggingSlider && self._sliderRect) {
         var sr = self._sliderRect;
         var t  = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
@@ -1186,30 +1215,16 @@ class Game {
     ctx.lineTo(capX + capW - 4, capY + capH * 0.55);
     ctx.stroke();
 
-    // ── SMALL BUMP at J exit ──────────────────────────────────────────────────
-    var bumpR = 16;
-    var exitX = leftX - turnR;
-    ctx.strokeStyle = 'rgba(0,180,255,0.60)';
-    ctx.lineWidth   = 2;
-    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 4;
-    ctx.beginPath();
-    ctx.arc(exitX, floorY, bumpR, Math.PI, 0, false);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    // ── SMALL BUMP removed per request ───────────────────────────────────────
 
-    // ── LEFT RAMP — raised by one ball diameter so it clears the floor ────────
-    // Arc from (0, floorY - rampR*2 + rampR) up to (rampR, floorY - rampR)
-    // Raised so top of arc = floorY - rampR*2 — ball can fit under it
+    // ── LEFT RAMP — quarter-circle at left wall, slightly raised above floor ──
+    // Center at (rampR, floorY - 10) so bottom just grazes floor, ball fits under
     var rampR  = 52;
-    var rampCY = floorY - rampR;  // center at floor minus radius → top at floor-2r, bottom at floor
-    // But we want it raised: shift center up by one ball diameter (≈24px)
-    var lift   = 26;
-    rampCY    -= lift;
+    var rampCY = floorY - 10;   // just a little above floor, not too high
     ctx.strokeStyle = 'rgba(0,190,255,0.60)';
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 6;
     ctx.beginPath();
-    // Arc center at (rampR, rampCY): from angle π (x=0) CCW to π/2 (top)
     ctx.arc(rampR, rampCY, rampR, Math.PI, Math.PI / 2, true);
     ctx.stroke();
     ctx.shadowBlur = 0;
@@ -1352,6 +1367,152 @@ class Game {
     if (this.sling) this._drawSling();
     this._drawSparks();
     this._drawSpeedSlider();
+    if (this._editorMode) this._drawEditor();
+  }
+
+  // ── Brick Editor (§4.3) ───────────────────────────────────────────────────
+
+  toggleEditor() {
+    this._editorMode = !this._editorMode;
+    if (this._editorMode) {
+      this._editorBrickType   = 'breakable_brick';
+      this._editorDragging    = null;
+      this._editorSelected    = null;
+    }
+  }
+
+  _editorOnDown(pos) {
+    // Check if tapping an existing brick to select it
+    for (var i = this.bricks.length - 1; i >= 0; i--) {
+      var b = this.bricks[i];
+      var hw = (b.w || b.r * 2) / 2, hh = (b.h || b.r * 2) / 2;
+      if (Math.abs(pos.x - b.x) < hw + 8 && Math.abs(pos.y - b.y) < hh + 8) {
+        this._editorSelected = b;
+        this._editorDragOffX = pos.x - b.x;
+        this._editorDragOffY = pos.y - b.y;
+        this._editorDragging = b;
+        return;
+      }
+    }
+    // Place new brick
+    var id  = 'brick_' + Date.now();
+    var obj = null;
+    if (this._editorBrickType === 'vertical_brick') {
+      obj = new VerticalBrick(pos.x, pos.y, 22, 60, 100, id, 5000);
+    } else if (this._editorBrickType === 'circular_brick') {
+      obj = new CircularBrick(pos.x, pos.y, 22, 100, id, 5000);
+    } else {
+      obj = new BreakableBrick(pos.x, pos.y, 60, 22, 100, id, 5000);
+    }
+    this.bricks.push(obj);
+    EventManager.registerTarget(id, obj);
+    this._editorSelected = obj;
+    this._editorDragging = obj;
+    this._editorDragOffX = 0;
+    this._editorDragOffY = 0;
+  }
+
+  _editorOnMove(pos) {
+    if (!this._editorDragging) return;
+    this._editorDragging.x = pos.x - (this._editorDragOffX || 0);
+    this._editorDragging.y = pos.y - (this._editorDragOffY || 0);
+  }
+
+  _editorOnUp() {
+    this._editorDragging = null;
+  }
+
+  _editorDeleteSelected() {
+    if (!this._editorSelected) return;
+    var idx = this.bricks.indexOf(this._editorSelected);
+    if (idx >= 0) this.bricks.splice(idx, 1);
+    this._editorSelected = null;
+  }
+
+  _drawEditor() {
+    var ctx = this.ctx, W = this.W;
+
+    // Semi-transparent editor overlay strip at bottom of play area (above floor)
+    var panelH  = 72;
+    var panelY  = this.floorY() - panelH - 4;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,10,30,0.88)';
+    ctx.beginPath(); ctx.roundRect(6, panelY, W - 12, panelH, 8); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(6, panelY, W - 12, panelH, 8); ctx.stroke();
+
+    // Label
+    ctx.fillStyle = '#00ffee'; ctx.font = "bold 9px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('BRICK EDITOR', 14, panelY + 5);
+
+    // Brick type buttons
+    var types  = ['breakable_brick', 'vertical_brick', 'circular_brick'];
+    var labels = ['HORIZ', 'VERT', 'ROUND'];
+    var colors = ['#4488ff', '#ff8844', '#44ff88'];
+    var btnW   = 54, btnH = 24, startX = 14, btnY = panelY + 18;
+    this._editorTypeBtns = [];
+    for (var ti = 0; ti < types.length; ti++) {
+      var bx = startX + ti * (btnW + 6);
+      var active = this._editorBrickType === types[ti];
+      ctx.fillStyle = active ? colors[ti] + '44' : 'rgba(0,15,40,0.8)';
+      ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.fill();
+      ctx.strokeStyle = active ? colors[ti] : colors[ti] + '66';
+      ctx.lineWidth = active ? 2 : 1;
+      ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.stroke();
+      ctx.fillStyle = active ? colors[ti] : colors[ti] + 'aa';
+      ctx.font = "bold 9px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(labels[ti], bx + btnW / 2, btnY + btnH / 2);
+      this._editorTypeBtns.push({ x: bx, y: btnY, w: btnW, h: btnH, type: types[ti] });
+    }
+
+    // Delete button
+    var delX = startX + types.length * (btnW + 6) + 10;
+    this._editorDelBtn = { x: delX, y: btnY, w: 40, h: btnH };
+    ctx.fillStyle = this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)';
+    ctx.beginPath(); ctx.roundRect(delX, btnY, 40, btnH, 4); ctx.fill();
+    ctx.strokeStyle = this._editorSelected ? '#ff4444' : '#882222';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(delX, btnY, 40, btnH, 4); ctx.stroke();
+    ctx.fillStyle = this._editorSelected ? '#ff6666' : '#884444';
+    ctx.font = "bold 9px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('DEL', delX + 20, btnY + btnH / 2);
+
+    // Done button
+    var doneX = W - 60;
+    this._editorDoneBtn = { x: doneX, y: btnY, w: 50, h: btnH };
+    ctx.fillStyle = 'rgba(0,60,30,0.8)';
+    ctx.beginPath(); ctx.roundRect(doneX, btnY, 50, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(doneX, btnY, 50, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#00ff88';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('DONE', doneX + 25, btnY + btnH / 2);
+
+    // Instruction
+    ctx.fillStyle = 'rgba(150,200,255,0.55)';
+    ctx.font = "8px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('Tap canvas to place • drag to move', 14, panelY + panelH - 13);
+
+    // Highlight selected brick
+    if (this._editorSelected) {
+      var sb = this._editorSelected;
+      ctx.strokeStyle = 'rgba(255,255,100,0.8)';
+      ctx.lineWidth   = 2;
+      ctx.setLineDash([4, 4]);
+      if (sb instanceof CircularBrick) {
+        ctx.beginPath(); ctx.arc(sb.x, sb.y, sb.r + 6, 0, Math.PI * 2); ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.roundRect(sb.x - sb.w/2 - 4, sb.y - sb.h/2 - 4, sb.w + 8, sb.h + 8, 4); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    ctx.restore();
   }
 
   _drawBall(obj) {

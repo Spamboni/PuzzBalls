@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1302;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1303;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -246,43 +246,42 @@ var Sound = (function() {
     var density = bs ? (bs.density || 1.0) : 1.0;
     var size    = ballR || 12;
 
-    var velFactor     = Math.min(speed / 15, 1.0);
+    var velFactor     = Math.min(speed / 12, 1.0);
     var densityFactor = (as.impactScaling !== false) ? Math.min(density / 2.0, 1.5) : 1.0;
     var sizeFactor    = (as.impactScaling !== false) ? Math.min(size / 12, 1.5)    : 1.0;
-    var vol = 0.06 * velFactor * densityFactor * sizeFactor * master;
-    vol = Math.max(0.02, Math.min(vol, 0.35));
+    var impactVol     = as.impactVol !== undefined ? as.impactVol : 1.0;
+    var vol = 0.18 * velFactor * densityFactor * sizeFactor * master * impactVol;
+    vol = Math.max(0.04, Math.min(vol, 0.55));
 
     var detune = (as.pitchScaling !== false) ? (1.0 - density) * 220 : 0;
 
     // Ball-specific sounds (§3.2)
     switch (ballType) {
       case 'exploder':
-        // Heavy thud
-        playTone({ type: 'sine', freq: 90, freq2: 35, gain: vol * 1.4,
-                   attack: 0.001, decay: 0.15, duration: 0.18, detune: detune });
+        playTone({ type: 'sine', freq: 90, freq2: 35, gain: vol * 2.0,
+                   attack: 0.001, decay: 0.18, duration: 0.22, detune: detune });
+        playNoise({ filterType: 'lowpass', filterFreq: 400, filterQ: 1.5,
+                    gain: vol * 0.8, duration: 0.08 });
         break;
       case 'sticky':
-        // Soft dull thump
-        playTone({ type: 'sine', freq: 140, freq2: 60, gain: vol * 0.9,
-                   attack: 0.003, decay: 0.12, duration: 0.14, detune: detune });
+        playTone({ type: 'sine', freq: 130, freq2: 55, gain: vol * 1.5,
+                   attack: 0.003, decay: 0.16, duration: 0.18, detune: detune });
         break;
       case 'splitter':
-        // Crisp light click
-        playTone({ type: 'triangle', freq: 320, freq2: 180, gain: vol * 0.7,
-                   attack: 0.001, decay: 0.08, duration: 0.10, detune: detune });
-        playNoise({ filterType: 'highpass', filterFreq: 3000, filterQ: 1,
-                    gain: vol * 0.5, duration: 0.04 });
+        playTone({ type: 'triangle', freq: 340, freq2: 200, gain: vol * 1.2,
+                   attack: 0.001, decay: 0.10, duration: 0.12, detune: detune });
+        playNoise({ filterType: 'highpass', filterFreq: 2800, filterQ: 1,
+                    gain: vol * 0.9, duration: 0.05 });
         break;
       case 'gravity':
-        // Low resonant hum on impact
-        playTone({ type: 'sine', freq: 110, freq2: 70, gain: vol * 1.1,
-                   attack: 0.002, decay: 0.20, duration: 0.22, detune: detune });
+        playTone({ type: 'sine', freq: 110, freq2: 65, gain: vol * 1.8,
+                   attack: 0.002, decay: 0.22, duration: 0.25, detune: detune });
         break;
-      default: // bouncer — standard bounce
-        playTone({ type: 'sine', freq: 180, freq2: 80, gain: vol,
-                   attack: 0.001, decay: 0.10, duration: 0.12, detune: detune });
-        playNoise({ filterType: 'bandpass', filterFreq: 800 + speed * 30,
-                    filterQ: 2, gain: vol * 0.4, duration: 0.05 });
+      default: // bouncer
+        playTone({ type: 'sine', freq: 200, freq2: 90, gain: vol * 1.4,
+                   attack: 0.001, decay: 0.12, duration: 0.14, detune: detune });
+        playNoise({ filterType: 'bandpass', filterFreq: 600 + speed * 25,
+                    filterQ: 2.5, gain: vol * 0.7, duration: 0.06 });
     }
   }
 
