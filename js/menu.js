@@ -9,30 +9,37 @@ var LEVEL_CATALOG = [
     stars:       0,
     locked:      false,
   },
-  // Future levels — locked for now
   {
-    id:          'level_02',
-    name:        'Chain Reaction',
-    description: 'Use the Exploder to clear a path for the Bouncer',
+    id:          'level_2_buttons',
+    name:        'Button Challenge',
+    description: 'Hit the glowing button to open the gate, then sink your bouncer',
     difficulty:  'Easy',
     stars:       0,
-    locked:      true,
+    locked:      false,
   },
   {
-    id:          'level_03',
-    name:        'Gravity Assist',
-    description: 'Slingshot balls through a gravity well maze',
+    id:          'level_3_bricks',
+    name:        'Brick Breaker',
+    description: 'Smash both breakable bricks to open the path — use your Exploders wisely',
+    difficulty:  'Easy',
+    stars:       0,
+    locked:      false,
+  },
+  {
+    id:          'level_4_turnstile',
+    name:        'Turnstile Gauntlet',
+    description: 'Three spinning turnstiles stand between you and the target',
     difficulty:  'Medium',
     stars:       0,
-    locked:      true,
+    locked:      false,
   },
   {
-    id:          'level_04',
-    name:        'Split Decision',
-    description: 'One Splitter, three targets',
+    id:          'level_5_port',
+    name:        'Power the Grid',
+    description: 'Plug the Gravity ball into the electrical port to open the gate',
     difficulty:  'Hard',
     stars:       0,
-    locked:      true,
+    locked:      false,
   },
 ];
 
@@ -85,7 +92,7 @@ var Menu = (function() {
 
     // ── Footer ───────────────────────────────────────────────────────────────
     var footer = _el('div', 'menu-footer');
-    footer.textContent = 'v0.1 — Phase 1';
+    footer.textContent = 'v0.2 — Phase 2';
     _container.appendChild(footer);
   }
 

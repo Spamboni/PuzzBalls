@@ -45,6 +45,16 @@ class Game {
     this.ballQueue  = [];   // remaining balls to be slung, by type
     this.objectives = [];   // { description, met }
 
+    // ── Phase 2: Interactive Objects ─────────────────────────────────────────
+    this.buttons   = [];
+    this.bricks    = [];
+    this.turnstiles = [];
+    this.ports     = [];
+    this.spawners  = [];
+
+    // Store reference for event system
+    window._gameInstance = this;
+
     this.stars = this._buildStars(180);
     this.nebulaOffscreen = null;
 
@@ -115,8 +125,71 @@ class Game {
 
     // Objectives
     this.objectives = ld.objectives.map(function(o) {
-      return { id: o.id, type: o.type, ballType: o.ballType, description: o.description, met: false };
+      return { id: o.id, type: o.type, ballType: o.ballType, portId: o.portId, brickId: o.brickId, description: o.description, met: false };
     });
+
+    // Phase 2: Spawn interactive objects
+    EventManager.reset();
+    this.buttons    = [];
+    this.bricks     = [];
+    this.turnstiles = [];
+    this.ports      = [];
+    this.spawners   = [];
+
+    if (ld.objects) {
+      ld.objects.forEach(function(objDef) {
+        var x = (objDef.rx !== undefined ? objDef.rx * W : objDef.x || W * 0.5);
+        var y = (objDef.ry !== undefined ? objDef.ry * self.floorY() : objDef.y || self.floorY() * 0.5);
+        var obj = null;
+        switch (objDef.type) {
+          case 'button':
+            obj = new Button(x, y, objDef.r || 18, objDef.id);
+            self.buttons.push(obj);
+            break;
+          case 'breakable_brick':
+            obj = new BreakableBrick(x, y, objDef.w || 40, objDef.h || 60, objDef.health || 3, objDef.id);
+            self.bricks.push(obj);
+            break;
+          case 'turnstile':
+            obj = new RotatingTurnstile(x, y, objDef.r || 40, objDef.rotationSpeed || 180, objDef.id);
+            self.turnstiles.push(obj);
+            break;
+          case 'electrical_port':
+            obj = new ElectricalPort(x, y, objDef.r || 20, objDef.requiredBallType || null, objDef.id);
+            self.ports.push(obj);
+            break;
+          case 'spawner':
+            obj = new BallSpawner(x, y, objDef.spawnType || 'bouncer', objDef.spawnInterval || 1000, objDef.spawnCount || null, objDef.id);
+            self.spawners.push(obj);
+            break;
+        }
+        if (obj) {
+          EventManager.registerTarget(objDef.id, obj);
+          if (objDef.triggers) {
+            objDef.triggers.forEach(function(trigger) {
+              EventManager.subscribe(objDef.id + '_triggered', trigger);
+            });
+          }
+        }
+      });
+    }
+
+    // Register barrier so buttons can open_door it
+    if (this.barrier) {
+      var self2 = this;
+      var savedGap = this.barrier.gapHalfAngle;
+      this.barrier.isOpen = false;
+      this.barrier.openDoor = function() {
+        self2.barrier._savedGap = self2.barrier.gapHalfAngle;
+        self2.barrier.gapHalfAngle = Math.PI;
+        self2.barrier.isOpen = true;
+      };
+      this.barrier.closeDoor = function() {
+        self2.barrier.gapHalfAngle = self2.barrier._savedGap || savedGap;
+        self2.barrier.isOpen = false;
+      };
+      EventManager.registerTarget('barrier_main', this.barrier);
+    }
 
     this.sparks     = [];
     this.won        = false;
@@ -253,6 +326,13 @@ class Game {
       if (gw.type === BALL_TYPES.GRAVITY && !gw.inFlight && gw._slungIds && gw._slungIds.length) resetGravityWell(gw);
     }
 
+    // Phase 2: Update interactive objects
+    var dt = 16;
+    for (i = 0; i < this.buttons.length;    i++) this.buttons[i].update();
+    for (i = 0; i < this.ports.length;      i++) this.ports[i].update();
+    for (i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].update(dt);
+    for (i = 0; i < this.spawners.length;   i++) this.spawners[i].update(dt);
+
     // Physics step
     for (i = 0; i < this.objects.length; i++) {
       var obj = this.objects[i];
@@ -287,6 +367,68 @@ class Game {
       }
     }
     for (i = 0; i < toAdd.length; i++) this.objects.push(toAdd[i]);
+
+    // Phase 2: Collisions with interactive objects
+    // Button presses
+    for (i = 0; i < this.buttons.length; i++) {
+      var btn = this.buttons[i];
+      for (j = 0; j < this.objects.length; j++) {
+        var ball = this.objects[j];
+        if (!ball.dead && btn.overlaps(ball)) {
+          if (!btn.pressed) {
+            btn.onPressed();
+            EventManager.dispatch(btn.id + '_triggered');
+          }
+        }
+      }
+    }
+
+    // Brick damage
+    for (i = 0; i < this.bricks.length; i++) {
+      var brick = this.bricks[i];
+      if (!brick.isAlive()) continue;
+      for (j = 0; j < this.objects.length; j++) {
+        var ball = this.objects[j];
+        if (!ball.dead && brick.overlaps(ball)) {
+          var damage = ball.inFlight ? 2 : 1;
+          if (brick.takeDamage(damage)) {
+            EventManager.dispatch(brick.id + '_triggered');
+          }
+          this.collisions++;
+          this.ui.setCollisions(this.collisions);
+        }
+      }
+    }
+
+    // Turnstile bounces
+    for (i = 0; i < this.turnstiles.length; i++) {
+      var turnstile = this.turnstiles[i];
+      for (j = 0; j < this.objects.length; j++) {
+        var ball = this.objects[j];
+        if (!ball.dead && !ball.stuckTo) {
+          if (turnstile.bounceOffArm(ball)) {
+            this.collisions++;
+            this.ui.setCollisions(this.collisions);
+          }
+        }
+      }
+    }
+
+    // Electrical ports
+    for (i = 0; i < this.ports.length; i++) {
+      var port = this.ports[i];
+      for (j = 0; j < this.objects.length; j++) {
+        var ball = this.objects[j];
+        if (!ball.dead && port.overlaps(ball) && port.canAccept(ball)) {
+          if (!port.occupied) {
+            port.occupied = ball;
+            ball.inFlight = false;
+            ball.vx = 0; ball.vy = 0;
+            EventManager.dispatch(port.id + '_triggered');
+          }
+        }
+      }
+    }
 
     // Remove dead exploders, respawn
     var deadIdx = -1;
@@ -327,6 +469,27 @@ class Game {
           if (Math.hypot(dx, dy) < this.target.r + ball.r) {
             obj.met = true;
             this.ui.setObjectives(this.objectives);
+          }
+        }
+      }
+
+      // Phase 2 objective types
+      if (obj.type === 'portActivated') {
+        for (var j = 0; j < this.ports.length; j++) {
+          if (this.ports[j].id === obj.portId && this.ports[j].occupied) {
+            obj.met = true;
+            this.ui.setObjectives(this.objectives);
+            break;
+          }
+        }
+      }
+
+      if (obj.type === 'brickDestroyed') {
+        for (var j = 0; j < this.bricks.length; j++) {
+          if (this.bricks[j].id === obj.brickId && !this.bricks[j].isAlive()) {
+            obj.met = true;
+            this.ui.setObjectives(this.objectives);
+            break;
           }
         }
       }
@@ -382,6 +545,14 @@ class Game {
     this.barrier.draw(ctx);
     this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
+
+    // Phase 2: Draw interactive objects (below balls so balls appear on top)
+    for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
+    for (var i = 0; i < this.bricks.length;     i++) { if (this.bricks[i].isAlive()) this.bricks[i].draw(ctx); }
+    for (var i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].draw(ctx);
+    for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
+    for (var i = 0; i < this.spawners.length;   i++) this.spawners[i].draw(ctx);
+
     for (var j = 0; j < this.objects.length;   j++) this._drawBall(this.objects[j]);
     if (this.sling) this._drawSling();
     this._drawSparks();
@@ -494,6 +665,18 @@ class Game {
     var out = [];
     for (var i = 0; i < n; i++) out.push({x:Math.random()*this.W,y:Math.random()*this.H,r:Math.random()*1.3,phase:Math.random()*Math.PI*2,speed:0.008+Math.random()*0.018});
     return out;
+  }
+
+  // ── Phase 2 public methods (called by EventManager) ───────────────────────
+
+  checkWinCondition() {
+    if (!this.won && this.objectives.every(function(o) { return o.met; })) {
+      this._triggerWin();
+    }
+  }
+
+  respawnAllBalls() {
+    this._spawnLevel();
   }
 }
 

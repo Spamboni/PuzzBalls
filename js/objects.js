@@ -328,3 +328,571 @@ window.PhysObj        = PhysObj;
 window.StaticObstacle = StaticObstacle;
 window.TargetZone     = TargetZone;
 window.TargetBarrier  = TargetBarrier;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PHASE 2 INTERACTIVE OBJECTS
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── Button ────────────────────────────────────────────────────────────────────
+
+class Button {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} r  radius
+   * @param {string} id unique identifier
+   */
+  constructor(x, y, r, id) {
+    this.x       = x;
+    this.y       = y;
+    this.r       = r;
+    this.id      = id;
+    this.pressed = false;
+    this.pulse   = Math.random() * Math.PI * 2;
+    this.hitFlash = 0;  // 0–1, flashes on press
+  }
+
+  overlaps(ball) {
+    return Math.hypot(ball.x - this.x, ball.y - this.y) < this.r + ball.r * 0.7;
+  }
+
+  onPressed() {
+    this.pressed  = true;
+    this.hitFlash = 1;
+  }
+
+  reset() {
+    this.pressed  = false;
+    this.hitFlash = 0;
+  }
+
+  update() {
+    this.pulse += 0.05;
+    if (this.hitFlash > 0) this.hitFlash -= 0.04;
+  }
+
+  draw(ctx) {
+    var p     = 0.5 + 0.5 * Math.sin(this.pulse);
+    var color = this.pressed ? '100,255,120' : '255,200,60';
+    var glow  = this.pressed ? '#64ff78'     : '#ffc83c';
+
+    // Outer glow
+    var grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r * 2.5);
+    grd.addColorStop(0, 'rgba(' + color + ',' + (0.3 + p * 0.2) + ')');
+    grd.addColorStop(1, 'rgba(' + color + ',0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + color + ',' + (this.pressed ? 0.55 : 0.22) + ')';
+    ctx.fill();
+
+    // Border
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.strokeStyle = glow;
+    ctx.lineWidth   = this.pressed ? 3 : 2;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur  = 14 + p * 8;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+
+    // Hit flash ring
+    if (this.hitFlash > 0) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r + 20 * (1 - this.hitFlash), 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(' + color + ',' + this.hitFlash * 0.8 + ')';
+      ctx.lineWidth   = 2.5;
+      ctx.stroke();
+    }
+
+    // Icon: filled circle when pressed, hollow when not
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 0.38, 0, Math.PI * 2);
+    if (this.pressed) {
+      ctx.fillStyle = glow + 'cc';
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = glow + 'aa';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+    }
+
+    // Label
+    ctx.fillStyle    = 'rgba(' + color + ',0.8)';
+    ctx.font         = "bold 8px 'Share Tech Mono', monospace";
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('BTN', this.x, this.y - this.r - 4);
+  }
+}
+
+// ── BreakableBrick ────────────────────────────────────────────────────────────
+
+class BreakableBrick {
+  /**
+   * @param {number} x      center x
+   * @param {number} y      center y
+   * @param {number} w      width
+   * @param {number} h      height
+   * @param {number} health starting health
+   * @param {string} id
+   */
+  constructor(x, y, w, h, health, id) {
+    this.x         = x;
+    this.y         = y;
+    this.w         = w;
+    this.h         = h;
+    this.health    = health;
+    this.maxHealth = health;
+    this.id        = id;
+    this.hitFlash  = 0;
+    this.phase     = Math.random() * Math.PI * 2;
+  }
+
+  overlaps(ball) {
+    // AABB + circle overlap
+    var nearX = Math.max(this.x - this.w / 2, Math.min(ball.x, this.x + this.w / 2));
+    var nearY = Math.max(this.y - this.h / 2, Math.min(ball.y, this.y + this.h / 2));
+    return Math.hypot(ball.x - nearX, ball.y - nearY) < ball.r * 0.8;
+  }
+
+  /** Returns true if brick was just destroyed */
+  takeDamage(amount) {
+    this.health -= amount;
+    this.hitFlash = 1;
+    if (this.health <= 0) {
+      this.health = 0;
+      return true;
+    }
+    return false;
+  }
+
+  isAlive() { return this.health > 0; }
+
+  draw(ctx) {
+    var frac  = this.health / this.maxHealth;   // 1 = full, 0 = dead
+    var pulse = 0.5 + 0.5 * Math.sin(this.phase + performance.now() * 0.002);
+
+    var r = Math.round(180 + (1 - frac) * 70);
+    var g = Math.round(80  - (1 - frac) * 60);
+    var b = 50;
+    var baseColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Shadow glow
+    ctx.shadowColor = 'rgba(' + r + ',' + g + ',50,0.6)';
+    ctx.shadowBlur  = 10;
+
+    // Body
+    var bx = -this.w / 2, by = -this.h / 2;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, this.w, this.h, 5);
+    ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.35)';
+    ctx.fill();
+    ctx.strokeStyle = baseColor;
+    ctx.lineWidth   = 2.5;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+
+    // Crack lines based on damage
+    if (frac < 1) {
+      ctx.strokeStyle = 'rgba(255,255,255,' + (1 - frac) * 0.55 + ')';
+      ctx.lineWidth   = 1;
+      var numCracks = Math.ceil((1 - frac) * 4);
+      for (var c = 0; c < numCracks; c++) {
+        var cx1 = (c / numCracks - 0.5) * this.w * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(cx1, -this.h * 0.4);
+        ctx.lineTo(cx1 + (c % 2 === 0 ? 6 : -6), 0);
+        ctx.lineTo(cx1, this.h * 0.4);
+        ctx.stroke();
+      }
+    }
+
+    // Health bar
+    var barW = this.w - 8, barH = 4;
+    var barX = -barW / 2, barY = -this.h / 2 - 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = frac > 0.5 ? '#64ff78' : frac > 0.25 ? '#ffcc30' : '#ff4444';
+    ctx.fillRect(barX, barY, barW * frac, barH);
+
+    // Hit flash
+    if (this.hitFlash > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,' + this.hitFlash * 0.5 + ')';
+      ctx.beginPath();
+      ctx.roundRect(bx, by, this.w, this.h, 5);
+      ctx.fill();
+      this.hitFlash -= 0.08;
+    }
+
+    ctx.restore();
+  }
+}
+
+// ── RotatingTurnstile ─────────────────────────────────────────────────────────
+
+class RotatingTurnstile {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} r         arm reach radius
+   * @param {number} rotSpeed  deg/s (converted to rad/frame internally)
+   * @param {string} id
+   */
+  constructor(x, y, r, rotSpeed, id) {
+    this.x        = x;
+    this.y        = y;
+    this.r        = r;
+    this.id       = id;
+    this.angle    = 0;
+    this.rotSpeed = (rotSpeed || 180) * (Math.PI / 180) / 60;  // rad per frame @ 60fps
+    this.spinning = true;
+    this.armCount = 4;
+    this.armWidth = 6;
+  }
+
+  update(dt) {
+    if (!this.spinning) return;
+    this.angle += this.rotSpeed;
+  }
+
+  toggleRotation() {
+    this.spinning = !this.spinning;
+  }
+
+  /** Returns true if ball was deflected */
+  bounceOffArm(ball) {
+    // Check each arm
+    for (var i = 0; i < this.armCount; i++) {
+      var armAngle = this.angle + (i / this.armCount) * Math.PI * 2;
+      var ax1 = this.x - Math.cos(armAngle) * this.r;
+      var ay1 = this.y - Math.sin(armAngle) * this.r;
+      var ax2 = this.x + Math.cos(armAngle) * this.r;
+      var ay2 = this.y + Math.sin(armAngle) * this.r;
+
+      // Distance from ball center to line segment
+      var dist = _distToSegment(ball.x, ball.y, ax1, ay1, ax2, ay2);
+      if (dist < ball.r + this.armWidth * 0.5) {
+        // Compute arm normal (perpendicular)
+        var len = Math.hypot(ax2 - ax1, ay2 - ay1);
+        if (len < 0.001) continue;
+        var nx = -(ay2 - ay1) / len;
+        var ny =  (ax2 - ax1) / len;
+        // Ensure normal points away from arm center toward ball
+        var toBallX = ball.x - this.x, toBallY = ball.y - this.y;
+        if (nx * toBallX + ny * toBallY < 0) { nx = -nx; ny = -ny; }
+        // Reflect velocity + add rotational kick
+        var dot = ball.vx * nx + ball.vy * ny;
+        ball.vx -= 2 * dot * nx;
+        ball.vy -= 2 * dot * ny;
+        // Rotational kick proportional to arm speed
+        var kick = this.rotSpeed * this.r * 0.6;
+        ball.vx += -ny * kick;
+        ball.vy +=  nx * kick;
+        ball.inFlight = true;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Hub
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fillStyle = this.spinning ? '#00d4ff' : '#446688';
+    ctx.shadowColor = this.spinning ? '#00d4ff' : '#224';
+    ctx.shadowBlur  = this.spinning ? 12 : 4;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Arms
+    for (var i = 0; i < this.armCount; i++) {
+      var a = this.angle + (i / this.armCount) * Math.PI * 2;
+      ctx.save();
+      ctx.rotate(a);
+
+      ctx.strokeStyle = this.spinning ? 'rgba(0,212,255,0.85)' : 'rgba(100,150,200,0.5)';
+      ctx.lineWidth   = this.armWidth;
+      ctx.lineCap     = 'round';
+      ctx.shadowColor = this.spinning ? '#00d4ff' : 'transparent';
+      ctx.shadowBlur  = this.spinning ? 8 : 0;
+      ctx.beginPath();
+      ctx.moveTo(-this.r, 0);
+      ctx.lineTo( this.r, 0);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Tip caps
+      ctx.beginPath();
+      ctx.arc(this.r, 0, this.armWidth * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = this.spinning ? 'rgba(0,255,255,0.6)' : 'rgba(100,150,200,0.4)';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Label
+    ctx.fillStyle    = 'rgba(0,212,255,0.7)';
+    ctx.font         = "bold 8px 'Share Tech Mono', monospace";
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('TURN', 0, -this.r - 5);
+
+    ctx.restore();
+  }
+}
+
+function _distToSegment(px, py, ax, ay, bx, by) {
+  var dx = bx - ax, dy = by - ay;
+  var lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+  var t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// ── ElectricalPort ────────────────────────────────────────────────────────────
+
+class ElectricalPort {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {number} r
+   * @param {string|null} requiredType  null = accepts any ball type
+   * @param {string} id
+   */
+  constructor(x, y, r, requiredType, id) {
+    this.x            = x;
+    this.y            = y;
+    this.r            = r;
+    this.id           = id;
+    this.requiredType = requiredType;
+    this.active       = true;
+    this.occupied     = null;   // PhysObj | null
+    this.pulse        = Math.random() * Math.PI * 2;
+    this.sparks       = [];
+  }
+
+  overlaps(ball) {
+    return Math.hypot(ball.x - this.x, ball.y - this.y) < this.r + ball.r * 0.6;
+  }
+
+  canAccept(ball) {
+    if (!this.active)    return false;
+    if (this.occupied)   return false;
+    if (this.requiredType && ball.type !== this.requiredType) return false;
+    return true;
+  }
+
+  setActive(state) {
+    this.active = state;
+    if (!state) this.occupied = null;
+  }
+
+  update() {
+    this.pulse += 0.06;
+    // Spawn arc sparks when occupied
+    if (this.occupied && Math.random() < 0.25) {
+      this.sparks.push({
+        x: this.x + (Math.random() - 0.5) * this.r * 2,
+        y: this.y + (Math.random() - 0.5) * this.r * 2,
+        life: 0.7 + Math.random() * 0.3,
+      });
+    }
+    for (var i = this.sparks.length - 1; i >= 0; i--) {
+      this.sparks[i].life -= 0.08;
+      if (this.sparks[i].life <= 0) this.sparks.splice(i, 1);
+    }
+  }
+
+  draw(ctx) {
+    var p     = 0.5 + 0.5 * Math.sin(this.pulse);
+    var color = this.occupied ? '100,220,255' :
+                this.active   ? '255,200,60'  :
+                                '80,80,120';
+    var glow  = this.occupied ? '#64dcff' :
+                this.active   ? '#ffc83c'  : '#505078';
+
+    // Outer glow
+    var grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r * 2.2);
+    grd.addColorStop(0, 'rgba(' + color + ',' + (0.28 + p * 0.18) + ')');
+    grd.addColorStop(1, 'rgba(' + color + ',0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 2.2, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Ring
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.strokeStyle = glow;
+    ctx.lineWidth   = 2.5;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur  = 14 + p * 10;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+
+    // Inner fill
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + color + ',' + (this.occupied ? 0.5 : 0.12) + ')';
+    ctx.fill();
+
+    // ⚡ symbol
+    ctx.fillStyle    = 'rgba(' + color + ',0.9)';
+    ctx.font         = 'bold 14px sans-serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⚡', this.x, this.y);
+
+    // Arc sparks when occupied
+    for (var i = 0; i < this.sparks.length; i++) {
+      var sp = this.sparks[i];
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, 1.5 * sp.life, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(100,220,255,' + sp.life + ')';
+      ctx.fill();
+    }
+
+    // Required type label
+    if (this.requiredType) {
+      ctx.fillStyle    = 'rgba(' + color + ',0.7)';
+      ctx.font         = "bold 7px 'Share Tech Mono', monospace";
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(this.requiredType.toUpperCase().slice(0, 4), this.x, this.y - this.r - 4);
+    }
+  }
+}
+
+// ── BallSpawner ───────────────────────────────────────────────────────────────
+
+class BallSpawner {
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @param {string} spawnType  ball type to spawn
+   * @param {number} spawnInterval  ms between spawns
+   * @param {number|null} spawnCount  total balls to spawn (null = infinite)
+   * @param {string} id
+   */
+  constructor(x, y, spawnType, spawnInterval, spawnCount, id) {
+    this.x             = x;
+    this.y             = y;
+    this.id            = id;
+    this.spawnType     = spawnType     || 'bouncer';
+    this.spawnInterval = spawnInterval || 1000;
+    this.spawnCount    = spawnCount    || null;  // null = infinite
+    this.active        = false;
+    this.elapsed       = 0;
+    this.spawned       = 0;
+    this.w             = 36;
+    this.h             = 48;
+    this.pulse         = Math.random() * Math.PI * 2;
+  }
+
+  activate()   { this.active = true;  this.elapsed = 0; }
+  deactivate() { this.active = false; }
+
+  update(dt) {
+    if (!this.active) return;
+    if (this.spawnCount !== null && this.spawned >= this.spawnCount) {
+      this.active = false;
+      return;
+    }
+    this.elapsed += dt;
+    if (this.elapsed >= this.spawnInterval) {
+      this.elapsed = 0;
+      this.spawn();
+    }
+    this.pulse += 0.08;
+  }
+
+  spawn() {
+    var game = window._gameInstance;
+    if (!game) return;
+    var bs = window.BallSettings && window.BallSettings[this.spawnType];
+    if (!bs) return;
+    var r   = bs.size;
+    var obj = new PhysObj(this.x, this.y - r, r, r / 10, bs.color, bs.glow, bs.label.slice(0, 3));
+    obj.type     = this.spawnType;
+    obj.inFlight = true;
+    obj.pinned   = false;
+    obj.exploded = false;
+    obj.dead     = false;
+    obj.hasStuck = false;
+    obj.hasSplit = false;
+    obj.stuckTo  = null;
+    obj.vx = (Math.random() - 0.5) * 2;
+    obj.vy = -2 - Math.random() * 3;
+    game.objects.push(obj);
+    this.spawned++;
+  }
+
+  draw(ctx) {
+    var p     = 0.5 + 0.5 * Math.sin(this.pulse);
+    var color = this.active ? '255,160,30' : '100,120,160';
+    var glow  = this.active ? '#ffa01e'    : '#647898';
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Chute body
+    var bx = -this.w / 2, by = -this.h;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, this.w, this.h, 4);
+    ctx.fillStyle = 'rgba(' + color + ',0.18)';
+    ctx.fill();
+    ctx.strokeStyle = glow;
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur  = this.active ? 10 + p * 6 : 4;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+
+    // Arrow indicating drop direction
+    ctx.strokeStyle = 'rgba(' + color + ',0.7)';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -this.h * 0.6);
+    ctx.lineTo(0, -this.h * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-6, -this.h * 0.2);
+    ctx.lineTo(0, -this.h * 0.05);
+    ctx.lineTo(6, -this.h * 0.2);
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle    = 'rgba(' + color + ',0.85)';
+    ctx.font         = "bold 7px 'Share Tech Mono', monospace";
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('SPWN', 0, -this.h - 4);
+
+    // Count display
+    if (this.spawnCount !== null) {
+      var remaining = Math.max(0, this.spawnCount - this.spawned);
+      ctx.fillText(remaining + '/' + this.spawnCount, 0, -this.h - 13);
+    }
+
+    ctx.restore();
+  }
+}
+
+// Export Phase 2 classes
+window.Button           = Button;
+window.BreakableBrick   = BreakableBrick;
+window.RotatingTurnstile = RotatingTurnstile;
+window.ElectricalPort   = ElectricalPort;
+window.BallSpawner      = BallSpawner;
