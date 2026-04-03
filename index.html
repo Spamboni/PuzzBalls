@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#000000">
   <title>PuzzBalls</title>
-  <link rel="stylesheet" href="css/styles.css?v=11">
+  <link rel="stylesheet" href="css/styles.css?v=1201">
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#030A18">
@@ -57,15 +57,15 @@
 
 </div><!-- /#game-screen -->
 
-<script src="js/sound.js?v=11"></script>
-<script src="js/physics.js?v=11"></script>
-<script src="js/objects.js?v=11"></script>
-<script src="js/events.js?v=11"></script>
-<script src="js/balls.js?v=11"></script>
-<script src="js/presets.js?v=11"></script>
-<script src="js/menu.js?v=11"></script>
-<script src="js/ui.js?v=11"></script>
-<script src="js/game.js?v=11"></script>
+<script src="js/sound.js?v=1201"></script>
+<script src="js/physics.js?v=1201"></script>
+<script src="js/objects.js?v=1201"></script>
+<script src="js/events.js?v=1201"></script>
+<script src="js/balls.js?v=1201"></script>
+<script src="js/presets.js?v=1201"></script>
+<script src="js/menu.js?v=1201"></script>
+<script src="js/ui.js?v=1201"></script>
+<script src="js/game.js?v=1201"></script>
 
 <script>
 window.addEventListener('DOMContentLoaded', function() {
@@ -98,12 +98,12 @@ window.addEventListener('DOMContentLoaded', function() {
         balls: [],
         obstacles: [],
         objects: [
-          { id: 'brick_r1', type: 'breakable_brick', rx: 0.20, ry: 0.38, w: 55, h: 22, health: 3, regenAfter: 5000 },
-          { id: 'brick_r2', type: 'breakable_brick', rx: 0.45, ry: 0.28, w: 70, h: 22, health: 4, regenAfter: 5000 },
-          { id: 'brick_r3', type: 'breakable_brick', rx: 0.28, ry: 0.55, w: 45, h: 22, health: 2, regenAfter: 5000 },
-          { id: 'brick_r4', type: 'breakable_brick', rx: 0.55, ry: 0.48, w: 60, h: 22, health: 3, regenAfter: 5000 },
-          { id: 'brick_r5', type: 'breakable_brick', rx: 0.15, ry: 0.65, w: 50, h: 22, health: 2, regenAfter: 5000 },
-          { id: 'brick_r6', type: 'breakable_brick', rx: 0.42, ry: 0.68, w: 65, h: 22, health: 4, regenAfter: 5000 },
+          { id: 'brick_r1', type: 'breakable_brick', rx: 0.20, ry: 0.38, w: 55, h: 22, health: 100, regenAfter: 5000 },
+          { id: 'brick_r2', type: 'breakable_brick', rx: 0.45, ry: 0.28, w: 70, h: 22, health: 100, regenAfter: 5000 },
+          { id: 'brick_r3', type: 'breakable_brick', rx: 0.28, ry: 0.55, w: 45, h: 22, health: 100, regenAfter: 5000 },
+          { id: 'brick_r4', type: 'breakable_brick', rx: 0.55, ry: 0.48, w: 60, h: 22, health: 100, regenAfter: 5000 },
+          { id: 'brick_r5', type: 'breakable_brick', rx: 0.15, ry: 0.65, w: 50, h: 22, health: 100, regenAfter: 5000 },
+          { id: 'brick_r6', type: 'breakable_brick', rx: 0.42, ry: 0.68, w: 65, h: 22, health: 100, regenAfter: 5000 },
         ],
         target: { rx: 0.15, ry: 0.10, r: 1, barrierR: 1, barrierThickness: 0, barrierGap: Math.PI, barrierGapAngle: 0 },
         objectives: [],
