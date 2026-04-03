@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1301;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1302;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -154,7 +154,15 @@ class Game {
             self.buttons.push(obj);
             break;
           case 'breakable_brick':
-            obj = new BreakableBrick(x, y, objDef.w || 40, objDef.h || 22, objDef.health || 3, objDef.id, objDef.regenAfter || null);
+            obj = new BreakableBrick(x, y, objDef.w || 40, objDef.h || 22, objDef.health || 100, objDef.id, objDef.regenAfter || null);
+            self.bricks.push(obj);
+            break;
+          case 'vertical_brick':
+            obj = new VerticalBrick(x, y, objDef.w || 22, objDef.h || 60, objDef.health || 100, objDef.id, objDef.regenAfter || null);
+            self.bricks.push(obj);
+            break;
+          case 'circular_brick':
+            obj = new CircularBrick(x, y, objDef.r || 22, objDef.health || 100, objDef.id, objDef.regenAfter || null);
             self.bricks.push(obj);
             break;
           case 'turnstile':
@@ -602,15 +610,25 @@ class Game {
         // Set cooldown so this ball won't re-trigger same brick for 20 frames
         ball[coolKey] = 20;
 
-        // Push ball out of brick
-        var bEdgeX = Math.max(brick.x - brick.w/2, Math.min(ball.x, brick.x + brick.w/2));
-        var bEdgeY = Math.max(brick.y - brick.h/2, Math.min(ball.y, brick.y + brick.h/2));
-        var bndx   = ball.x - bEdgeX, bndy = ball.y - bEdgeY;
-        var bndist = Math.hypot(bndx, bndy) || 1;
-        var bnx = bndx / bndist, bny = bndy / bndist;
-        // Push ball outside brick
-        var overlap = (ball.r * 0.9) - bndist;
-        if (overlap > 0) { ball.x += bnx * (overlap + 1); ball.y += bny * (overlap + 1); }
+        // Push ball out of brick (handles both rect and circular bricks)
+        var bEdgeX, bEdgeY, bndx, bndy, bndist, bnx, bny;
+        if (brick instanceof CircularBrick) {
+          // Circle: push directly away from center
+          bndx   = ball.x - brick.x;
+          bndy   = ball.y - brick.y;
+          bndist = Math.hypot(bndx, bndy) || 1;
+          bnx = bndx / bndist; bny = bndy / bndist;
+          var overlap2 = (brick.r + ball.r * 0.9) - bndist;
+          if (overlap2 > 0) { ball.x += bnx * (overlap2 + 1); ball.y += bny * (overlap2 + 1); }
+        } else {
+          bEdgeX = Math.max(brick.x - brick.w/2, Math.min(ball.x, brick.x + brick.w/2));
+          bEdgeY = Math.max(brick.y - brick.h/2, Math.min(ball.y, brick.y + brick.h/2));
+          bndx   = ball.x - bEdgeX; bndy = ball.y - bEdgeY;
+          bndist = Math.hypot(bndx, bndy) || 1;
+          bnx = bndx / bndist; bny = bndy / bndist;
+          var overlap3 = (ball.r * 0.9) - bndist;
+          if (overlap3 > 0) { ball.x += bnx * (overlap3 + 1); ball.y += bny * (overlap3 + 1); }
+        }
         // Reflect velocity
         var dot = ball.vx * bnx + ball.vy * bny;
         if (dot < 0) {

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1301;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1302;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -185,7 +185,7 @@ function triggerExplosion(exploder, objects, sparks) {
     Physics.spawnSparks(sparks, exploder.x, exploder.y, '#ff3300', 25 + tier * 10);
   }
   _spawnShrapnel(sparks, exploder.x, exploder.y, radius, tier);
-  if (window.Sound) Sound.thud(15 + tier * 5);
+  if (window.Sound) Sound.explode(tier);
 
   for (var i = 0; i < objects.length; i++) {
     var obj = objects[i];

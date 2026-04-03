@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['physics.js'] = 1301;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['physics.js'] = 1302;
 /**
  * physics.js
  * Pure physics engine — no DOM, no canvas, no rendering.
@@ -45,7 +45,7 @@ function stepObject(obj, W, H, sparks, settings) {
     var spd1 = Math.abs(obj.vx);
     obj.vx = Math.abs(obj.vx) * bounce;
     spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 5);
-    if (spd1 > 1.5 && window.Sound) Sound.wallClick(spd1);
+    if (spd1 > 1.5 && window.Sound) Sound.ballImpact(obj.type, spd1, obj.r);
     if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute && spd1 > 1.5) _countExploderBounce(obj);
   }
   if (obj.x + obj.r > W) {
@@ -53,14 +53,14 @@ function stepObject(obj, W, H, sparks, settings) {
     var spd2 = Math.abs(obj.vx);
     obj.vx = -Math.abs(obj.vx) * bounce;
     spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 5);
-    if (spd2 > 1.5 && window.Sound) Sound.wallClick(spd2);
+    if (spd2 > 1.5 && window.Sound) Sound.ballImpact(obj.type, spd2, obj.r);
     if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute && spd2 > 1.5) _countExploderBounce(obj);
   }
   if (obj.y - obj.r < 0) {
     obj.y = obj.r;
     var spd3 = Math.abs(obj.vy);
     obj.vy = Math.abs(obj.vy) * bounce;
-    if (spd3 > 1.5 && window.Sound) Sound.wallClick(spd3);
+    if (spd3 > 1.5 && window.Sound) Sound.ballImpact(obj.type, spd3, obj.r);
     if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute && spd3 > 1.5) _countExploderBounce(obj);
   }
   if (obj.y + obj.r > H) {
@@ -74,7 +74,7 @@ function stepObject(obj, W, H, sparks, settings) {
     if (gf !== undefined) obj.vx *= gf;
     if (spd4 > 1.5) {
       spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 4);
-      if (window.Sound) Sound.wallClick(spd4);
+      if (window.Sound) Sound.ballImpact(obj.type, spd4, obj.r);
       if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute) _countExploderBounce(obj);
     }
   }

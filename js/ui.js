@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1301;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1302;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -148,6 +148,7 @@ class UI {
       { id:'sticky',   label:'🟢 STICKY'  },
       { id:'splitter', label:'🟣 SPLIT'   },
       { id:'gravity',  label:'🔵 GRAVITY' },
+      { id:'audio',    label:'🔊 AUDIO'   },
     ];
 
     var panes = {}, self = this;
@@ -178,7 +179,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.01</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.02</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -201,10 +202,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.01 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.02 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1301) {
-            verEl.textContent = 'v13.01 ✓';
+          } else if (loaded === 1302) {
+            verEl.textContent = 'v13.02 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -223,6 +224,26 @@ class UI {
           'Or open the URL then add <b>?v=1202</b> to the end and reload.';
         pane.appendChild(instrRow);
 
+      } else if (t.id === 'audio') {
+        // Audio settings (§3.3)
+        window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
+        _addSlider(pane,'Master Volume','AudioSettings','masterVol',0,1.0,0.05,function(v){return Math.round(v*100)+'%';});
+        _addSlider(pane,'Explosion Vol','AudioSettings','explosionVol',0,2.0,0.1,function(v){return Math.round(v*100)+'%';});
+        // Toggle rows
+        ['impactScaling','pitchScaling'].forEach(function(key) {
+          var labels = { impactScaling: 'Impact Vol Scaling', pitchScaling: 'Pitch by Density' };
+          var row = _el('div','slider-row');
+          var lbl = _el('span','slider-label'); lbl.textContent = labels[key]; row.appendChild(lbl);
+          var btn = _el('button','toggle-btn');
+          btn.style.cssText = 'padding:3px 10px;font-size:10px;border-radius:4px;border:1px solid #00aaff;background:rgba(0,20,50,0.8);color:#00ccff;cursor:pointer;';
+          btn.textContent = AudioSettings[key] ? 'ON' : 'OFF';
+          function makeToggle(k, b) {
+            function doToggle(e) { e.preventDefault(); AudioSettings[k] = !AudioSettings[k]; b.textContent = AudioSettings[k] ? 'ON' : 'OFF'; b.style.color = AudioSettings[k] ? '#00ffaa' : '#ff4444'; }
+            b.addEventListener('click', doToggle); b.addEventListener('touchend', doToggle);
+          }
+          makeToggle(key, btn);
+          row.appendChild(btn); pane.appendChild(row);
+        });
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
       } else {

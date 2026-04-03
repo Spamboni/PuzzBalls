@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1201;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1302;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -233,7 +233,88 @@ var Sound = (function() {
     }
   }
 
-  return { stretch: stretch, snap: snap, clink: clink, wallClick: wallClick, thud: thud, win: win, getCtx: getCtx };
+  // ── Dynamic impact sound: volume/pitch scaled by velocity, density, size ──
+  // §3.1: volume = baseVol * velFactor * densityFactor * sizeFactor
+  // §3.2: pitch shifted based on density (heavy = lower, light = higher)
+  function ballImpact(ballType, speed, ballR) {
+    if (!enabled) return;
+    var c = getCtx(); if (!c) return;
+    var as      = window.AudioSettings || {};
+    var master  = as.masterVol !== undefined ? as.masterVol : 1.0;
+    if (master <= 0) return;
+    var bs      = window.BallSettings && window.BallSettings[ballType];
+    var density = bs ? (bs.density || 1.0) : 1.0;
+    var size    = ballR || 12;
+
+    var velFactor     = Math.min(speed / 15, 1.0);
+    var densityFactor = (as.impactScaling !== false) ? Math.min(density / 2.0, 1.5) : 1.0;
+    var sizeFactor    = (as.impactScaling !== false) ? Math.min(size / 12, 1.5)    : 1.0;
+    var vol = 0.06 * velFactor * densityFactor * sizeFactor * master;
+    vol = Math.max(0.02, Math.min(vol, 0.35));
+
+    var detune = (as.pitchScaling !== false) ? (1.0 - density) * 220 : 0;
+
+    // Ball-specific sounds (§3.2)
+    switch (ballType) {
+      case 'exploder':
+        // Heavy thud
+        playTone({ type: 'sine', freq: 90, freq2: 35, gain: vol * 1.4,
+                   attack: 0.001, decay: 0.15, duration: 0.18, detune: detune });
+        break;
+      case 'sticky':
+        // Soft dull thump
+        playTone({ type: 'sine', freq: 140, freq2: 60, gain: vol * 0.9,
+                   attack: 0.003, decay: 0.12, duration: 0.14, detune: detune });
+        break;
+      case 'splitter':
+        // Crisp light click
+        playTone({ type: 'triangle', freq: 320, freq2: 180, gain: vol * 0.7,
+                   attack: 0.001, decay: 0.08, duration: 0.10, detune: detune });
+        playNoise({ filterType: 'highpass', filterFreq: 3000, filterQ: 1,
+                    gain: vol * 0.5, duration: 0.04 });
+        break;
+      case 'gravity':
+        // Low resonant hum on impact
+        playTone({ type: 'sine', freq: 110, freq2: 70, gain: vol * 1.1,
+                   attack: 0.002, decay: 0.20, duration: 0.22, detune: detune });
+        break;
+      default: // bouncer — standard bounce
+        playTone({ type: 'sine', freq: 180, freq2: 80, gain: vol,
+                   attack: 0.001, decay: 0.10, duration: 0.12, detune: detune });
+        playNoise({ filterType: 'bandpass', filterFreq: 800 + speed * 30,
+                    filterQ: 2, gain: vol * 0.4, duration: 0.05 });
+    }
+  }
+
+  // Explosion: short punchy, not overpowering (§3.3)
+  function explode(tier) {
+    if (!enabled) return;
+    var c = getCtx(); if (!c) return;
+    var now = c.currentTime;
+    var vol = 0.18 + (tier || 1) * 0.06;
+
+    // Sharp transient crack
+    var bufSize = Math.ceil(c.sampleRate * 0.06);
+    var buf = c.createBuffer(1, bufSize, c.sampleRate);
+    var d   = buf.getChannelData(0);
+    for (var i = 0; i < bufSize; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.08));
+    var src = c.createBufferSource(); src.buffer = buf;
+    var flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 1200 + tier * 200;
+    var g   = c.createGain();
+    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+    src.connect(flt); flt.connect(g); g.connect(c.destination);
+    src.start(now); src.stop(now + 0.08);
+
+    // Low punch body
+    var osc = c.createOscillator(); var g2 = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120 + tier * 20, now);
+    osc.frequency.exponentialRampToValueAtTime(25, now + 0.18);
+    g2.gain.setValueAtTime(vol * 1.3, now); g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+    osc.connect(g2); g2.connect(c.destination); osc.start(now); osc.stop(now + 0.20);
+  }
+
+  return { stretch, snap, clink, wallClick, thud, win, getCtx, ballImpact, explode };
 
 })();
 

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1202;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1302;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -652,7 +652,166 @@ class BreakableBrick {
   }
 }
 
-// ── RotatingTurnstile ─────────────────────────────────────────────────────────
+// ── VerticalBrick ─────────────────────────────────────────────────────────────
+// Same as BreakableBrick but w and h are swapped (tall instead of wide).
+// Collision system works identically — just oriented vertically.
+
+class VerticalBrick extends BreakableBrick {
+  constructor(x, y, w, h, health, id, regenAfter) {
+    // Swap w/h so it stands tall
+    super(x, y, h, w, health, id, regenAfter);
+    this._isVertical = true;
+  }
+  // Draw override: same as parent but cracks rotate 90°
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(Math.PI / 2);
+    ctx.translate(-this.x, -this.y);
+    super.draw(ctx);
+    ctx.restore();
+  }
+}
+
+// ── CircularBrick ─────────────────────────────────────────────────────────────
+// Spherical obstacle. Uses circle-circle collision instead of rect.
+
+class CircularBrick {
+  static _palette() { return BreakableBrick._palette(); }
+
+  constructor(x, y, r, health, id, regenAfter) {
+    this.x          = x;
+    this.y          = y;
+    this.r          = r;
+    this.w          = r * 2;  // for compatibility
+    this.h          = r * 2;
+    this.health     = health;
+    this.maxHealth  = health;
+    this.id         = id;
+    this.regenAfter = regenAfter || null;
+    this.regenTimer = 0;
+    this.hitFlash   = 0;
+    this.phase      = Math.random() * Math.PI * 2;
+    var hash = 0;
+    for (var i = 0; i < (id || '').length; i++) hash = (hash * 31 + id.charCodeAt(i)) & 0xffff;
+    var pal = BreakableBrick._palette();
+    this._pal = pal[hash % pal.length];
+    // Pre-generate cracks same as BreakableBrick
+    this._cracks = [];
+    for (var state = 0; state < 4; state++) {
+      var sc = []; var count = [0, 2, 3, 5][state];
+      for (var c = 0; c < count; c++) {
+        sc.push({
+          angle: Math.random() * Math.PI * 2,
+          len:   0.3 + Math.random() * 0.5,
+          thick: 0.6 + Math.random() * 0.7,
+          branch: state >= 2 && Math.random() > 0.5,
+          bAngle: Math.random() * Math.PI,
+        });
+      }
+      this._cracks.push(sc);
+    }
+  }
+
+  // Circle-ball overlap
+  overlaps(ball) {
+    return Math.hypot(ball.x - this.x, ball.y - this.y) < this.r + ball.r * 0.85;
+  }
+
+  takeDamage(amount) {
+    if (this.health <= 0) return false;
+    this.health -= amount;
+    this.hitFlash = 1;
+    if (this.health <= 0) {
+      this.health = 0;
+      if (this.regenAfter) this.regenTimer = this.regenAfter;
+      return true;
+    }
+    return false;
+  }
+
+  isAlive() { return this.health > 0; }
+
+  updateRegen(dt) {
+    if (this.health > 0 || !this.regenAfter) return;
+    this.regenTimer -= dt;
+    if (this.regenTimer <= 0) { this.health = this.maxHealth; this.hitFlash = 0.8; this.regenTimer = 0; }
+  }
+
+  draw(ctx) {
+    var t    = performance.now();
+    var frac = this.health / this.maxHealth;
+    var pulse= 0.5 + 0.5 * Math.sin(this.phase + t * 0.0018);
+    var pal  = this._pal, col = pal.r, glow = pal.glow;
+
+    if (this.health <= 0) {
+      if (!this.regenAfter) return;
+      ctx.save();
+      ctx.globalAlpha = 0.28 + 0.1 * Math.sin(t * 0.005);
+      ctx.strokeStyle = glow; ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      var prog = 1 - (this.regenTimer / this.regenAfter);
+      ctx.fillStyle = glow + '44';
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.arc(this.x, this.y, this.r, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1; ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    // Outer glow
+    ctx.shadowColor = glow; ctx.shadowBlur = 8 + pulse * 6;
+    ctx.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (0.10 + frac * 0.12) + ')';
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.fill();
+
+    // Neon ring
+    ctx.strokeStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (0.5 + frac * 0.5) + ')';
+    ctx.lineWidth = 2; ctx.stroke(); ctx.shadowBlur = 0;
+
+    // Inner ring
+    ctx.strokeStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0.18)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.r * 0.65, 0, Math.PI * 2); ctx.stroke();
+
+    // Cracks (radiating lines from center)
+    if (frac < 1 && this._cracks) {
+      var crackState = frac > 0.75 ? 0 : frac > 0.5 ? 1 : frac > 0.25 ? 2 : 3;
+      var crackAlpha = [0, 0.40, 0.65, 0.88][crackState];
+      var sc = this._cracks[crackState] || [];
+      for (var c = 0; c < sc.length; c++) {
+        var ck = sc[c];
+        var cr = this.r * ck.len;
+        ctx.strokeStyle = 'rgba(255,255,255,' + crackAlpha + ')';
+        ctx.lineWidth = ck.thick;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(this.x + Math.cos(ck.angle) * cr, this.y + Math.sin(ck.angle) * cr);
+        ctx.stroke();
+        if (ck.branch) {
+          ctx.lineWidth = ck.thick * 0.6;
+          ctx.strokeStyle = 'rgba(255,200,120,' + crackAlpha * 0.7 + ')';
+          ctx.beginPath();
+          var mid = cr * 0.5;
+          ctx.moveTo(this.x + Math.cos(ck.angle) * mid, this.y + Math.sin(ck.angle) * mid);
+          ctx.lineTo(this.x + Math.cos(ck.bAngle) * cr * 0.6, this.y + Math.sin(ck.bAngle) * cr * 0.6);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Hit flash
+    if (this.hitFlash > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,' + this.hitFlash * 0.45 + ')';
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.fill();
+      this.hitFlash -= 0.07;
+    }
+    ctx.restore();
+  }
+}
 
 class RotatingTurnstile {
   /**
