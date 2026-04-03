@@ -66,6 +66,9 @@ function stepObject(obj, W, H, sparks, settings) {
     obj.y = H - obj.r;
     var spd4 = Math.abs(obj.vy);
     obj.vy = -Math.abs(obj.vy) * bounce;
+    // Apply ground friction to horizontal roll
+    var gf = (window.BallSettings && window.BallSettings[obj.type] && window.BallSettings[obj.type].groundFriction);
+    if (gf !== undefined) obj.vx *= gf;
     if (spd4 > 1.5) {
       spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 4);
       if (window.Sound) Sound.wallClick(spd4);

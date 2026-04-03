@@ -175,6 +175,7 @@ class UI {
         _addSlider(pane,'Size',     null, null, 6, 30,  1,   function(v){return v+'px';},       t.id, 'size');
         _addSlider(pane,'Velocity', null, null, 0.3,3.0,0.05,function(v){return Math.round(v*100)+'%';},t.id,'velocity');
         _addSlider(pane,'Bounce',   null, null, 0.0,2.0,0.05,function(v){return Math.round(v*100)+'%';},t.id,'bounciness');
+        _addSlider(pane,'Ground Roll', null, null, 0.50,0.99,0.01,function(v){return Math.round(v*100)+'%';},t.id,'groundFriction');
         if (t.id==='exploder')  { _addSlider(pane,'Blast Radius',null,null,40,250,5,function(v){return v+'px';},t.id,'blastRadius'); _addSlider(pane,'Blast Force',null,null,4,40,1,function(v){return v;},t.id,'blastForce'); }
         if (t.id==='sticky')    { _addSlider(pane,'Stick Strength',null,null,0.1,1.0,0.05,function(v){return Math.round(v*100)+'%';},t.id,'stickyStrength'); _addSlider(pane,'Stick Speed',null,null,1,20,0.5,function(v){return v+' px/f';},t.id,'stickThreshold'); }
         if (t.id==='splitter')  { _addSlider(pane,'Split Count',null,null,1,5,1,function(v){return v+' balls';},t.id,'splitCount'); }

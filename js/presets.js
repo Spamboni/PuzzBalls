@@ -130,7 +130,7 @@ var Presets = (function() {
   function _captureBall(type) {
     if (!window.BallSettings) return {};
     var bs = BallSettings[type];
-    var out = { velocity: bs.velocity || 1.0, bounciness: bs.bounciness || 1.0 };
+    var out = { velocity: bs.velocity || 1.0, bounciness: bs.bounciness || 1.0, groundFriction: bs.groundFriction !== undefined ? bs.groundFriction : 0.88 };
     if (type === 'exploder') { out.blastRadius = bs.blastRadius; out.blastForce = bs.blastForce; }
     if (type === 'sticky')   { out.stickyStrength = bs.stickyStrength; out.stickThreshold = bs.stickThreshold || 6; }
     if (type === 'splitter') { out.splitCount = bs.splitCount; }
@@ -150,6 +150,7 @@ var Presets = (function() {
       var dst = BallSettings[type];
       if (src.velocity   !== undefined) dst.velocity   = src.velocity;
       if (src.bounciness !== undefined) dst.bounciness = src.bounciness;
+      if (src.groundFriction !== undefined) dst.groundFriction = src.groundFriction;
       if (type === 'exploder') {
         if (src.blastRadius !== undefined) dst.blastRadius = src.blastRadius;
         if (src.blastForce  !== undefined) dst.blastForce  = src.blastForce;

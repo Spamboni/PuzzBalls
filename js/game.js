@@ -315,10 +315,26 @@ class Game {
         if (self._tryDeleteBall(pos.x, pos.y)) return;
       }
 
+      // ── Tap stuck sticky ball to drop it ─────────────────────────────────
+      for (var si = 0; si < self.objects.length; si++) {
+        var sobj = self.objects[si];
+        if (sobj.type === BALL_TYPES.STICKY && sobj.stuckTo === '_wall_') {
+          if (Math.hypot(pos.x - sobj.x, pos.y - sobj.y) < sobj.r + 14) {
+            sobj.stuckTo  = null;
+            sobj.inFlight = true;
+            sobj.vy = 0.5;
+            if (window.Sound) Sound.thud(3);
+            return;
+          }
+        }
+      }
+
       var best = null, bestDist = 9999;
       for (var i = 0; i < self.objects.length; i++) {
         var obj = self.objects[i];
-        if (obj.inFlight || obj.stuckTo || obj.dead || obj.exploded) continue;
+        if (obj.inFlight || obj.dead || obj.exploded) continue;
+        if (obj.stuckTo && obj.stuckTo !== '_wall_') continue; // stuck to a ball — skip
+        if (obj.stuckTo === '_wall_') continue;                // wall-stuck — tap handled above
         var dx = pos.x - obj.x, dy = pos.y - obj.y;
         if (self._aimMode === 'push') {
           // Push mode: tap anywhere near a ball (wider pick radius, no direction constraint)
@@ -457,7 +473,15 @@ class Game {
         // Run multiple sub-steps at reduced scale for slow-mo accuracy
         var steps = sm < 0.3 ? 1 : 1;
         Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
-        if (obj.type === BALL_TYPES.STICKY) this._checkStickyWall(obj);
+        // Sticky: only try to stick if ball is actually touching a wall or floor
+        if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
+          var touchingFloor = obj.y + obj.r >= floorY - 1;
+          var touchingWall  = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
+          var touchingTop   = obj.y - obj.r <= 1;
+          if (touchingFloor || touchingWall || touchingTop) {
+            this._checkStickyWall(obj);
+          }
+        }
       }
       if (obj.inFlight && Math.abs(obj.vy) < 1.2 * sm && Math.abs(obj.vx) < 1.2 * sm) obj.inFlight = false;
       // Tick wall bounce cooldown and check explode flag
@@ -486,6 +510,13 @@ class Game {
         if (hit) {
           this.collisions++;
           this.ui.setCollisions(this.collisions);
+          // Sticky knock — check if a fast ball hits a wall-stuck sticky
+          if (a.type === BALL_TYPES.STICKY && a.stuckTo === '_wall_') {
+            this._tryKnockSticky(a, Math.hypot(b.vx, b.vy));
+          }
+          if (b.type === BALL_TYPES.STICKY && b.stuckTo === '_wall_') {
+            this._tryKnockSticky(b, Math.hypot(a.vx, a.vy));
+          }
           // Exploder countdown — only after manually slung
           if (a.type === BALL_TYPES.EXPLODER && !a.exploded && !a._fromChute) {
             a.bouncesLeft = (a.bouncesLeft || 1) - 1;
@@ -671,20 +702,55 @@ class Game {
     return;
   }
 
-  // Called from physics step after wall/floor bounce — check if sticky should stick
-  _checkStickyWall(obj) {
+  // Called after wall/floor/brick bounce — check if sticky should stick
+  // Only sticks if it has JUST hit a surface (touching floor/wall) AND is slow enough
+  _checkStickyWall(obj, surfaceType) {
     if (obj.type !== BALL_TYPES.STICKY) return;
     if (obj.stuckTo || obj._fromChute) return;
     var threshold = (window.BallSettings && BallSettings.sticky.stickThreshold) || 6;
     var speed = Math.hypot(obj.vx, obj.vy);
     if (speed < threshold) {
-      // Stick in place — zero velocity, mark as stuck to 'wall'
       obj.vx = 0; obj.vy = 0;
       obj.inFlight = false;
-      obj.stuckTo  = '_wall_';  // special sentinel — not a ball
+      obj.stuckTo  = '_wall_';
       obj._stickOffX = 0; obj._stickOffY = 0;
       if (window.Sound) Sound.thud(4);
     }
+  }
+
+  // Try to unstick a sticky ball that was hit by another ball
+  _tryKnockSticky(sticky, impactSpeed) {
+    if (sticky.type !== BALL_TYPES.STICKY || sticky.stuckTo !== '_wall_') return;
+    var threshold = (window.BallSettings && BallSettings.sticky.stickThreshold) || 6;
+    if (impactSpeed > threshold * 1.5) {
+      // Hard enough — knock it free
+      sticky.stuckTo  = null;
+      sticky.inFlight = true;
+      sticky.vy = -impactSpeed * 0.4;
+      sticky.vx = (Math.random() - 0.5) * impactSpeed * 0.3;
+      if (window.Sound) Sound.thud(impactSpeed);
+    } else {
+      // Too soft — wiggle in place
+      sticky._wiggleTimer = 12;
+      sticky._wiggleAmt   = 3;
+      if (window.Sound) this._playStickyWiggle();
+    }
+  }
+
+  _playStickyWiggle() {
+    if (!window.Sound || !Sound.getCtx) return;
+    var c = Sound.getCtx(); if (!c) return;
+    var now = c.currentTime;
+    var osc = c.createOscillator(), g = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(280, now);
+    osc.frequency.setValueAtTime(320, now + 0.05);
+    osc.frequency.setValueAtTime(260, now + 0.10);
+    osc.frequency.setValueAtTime(300, now + 0.15);
+    g.gain.setValueAtTime(0.12, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(now); osc.stop(now + 0.20);
   }
 
   _spawnFallingExploder() {
@@ -697,24 +763,53 @@ class Game {
   }
 
   // ── Chute system ───────────────────────────────────────────────────────────
-  // Geometry matches sketch:
-  //   Right wall  = screen right edge (W)
-  //   Left wall   = W - CHUTE_W  (physics hard boundary)
-  //   Curve starts high enough that arc bottom = floorY exactly
-  //   Buttons sit in the lower half of the shaft, visible through the clear walls
+  // Right wall = screen edge (W), straight down.
+  // Left wall  = W - CHUTE_W, straight down then RIGHT-opening quarter-arc:
+  //   arc center = (leftX + turnR, floorY)
+  //   ball enters from top of arc at (leftX, floorY - turnR) going down
+  //   exits at bottom-right of arc at (leftX + turnR, floorY) ... wait that's wrong
+  //
+  // Looking at sketch: the J opens to the LEFT. The bottom of the J curves
+  // the ball from going DOWN into going LEFT along the floor.
+  // Correct geometry:
+  //   left wall straight down → at floorY - turnR, arc center = (leftX, floorY)
+  //   ball travels DOWN the inside-right of the arc:
+  //     start angle = 0 (ball at leftX + turnR, floorY — right of center, but that's in shaft)
+  //   
+  // SIMPLEST CORRECT APPROACH matching the sketch red lines:
+  //   - Right wall: screen edge straight down (already correct)
+  //   - Left wall: straight down, then a quarter-circle that scoops to the LEFT
+  //     Arc: center at (leftX, floorY), radius=turnR
+  //     Going from angle=0 (right, at leftX+turnR, floorY) → sweep to -π/2 ... no
+  //
+  // The ball comes DOWN the shaft center (shaftCX = leftX + CHUTE_W/2)
+  // At bottom: arc center = (leftX + turnR, floorY - turnR) i.e. inside the J curve
+  // Ball goes from (leftX + turnR, floorY - 2*turnR+approx) curving to exit LEFT
+  //
+  // FINAL CORRECT:
+  //   Arc center = (leftX, floorY - turnR)  ← center is inside the curve
+  //   Ball at angle=0 → (leftX + turnR, floorY - turnR) = bottom of shaft
+  //   Ball at angle=π/2 → (leftX, floorY) = floor exit LEFT of shaft ← no, exits below
+  //   Ball at angle=-π/2 → (leftX, floorY - 2*turnR) = top ... 
+  //
+  // Try: center = (leftX + turnR, floorY)
+  //   angle π   → (leftX, floorY)          = left exit at floor ✓
+  //   angle π/2 → (leftX+turnR, floorY+turnR) = below floor ✗
+  //   angle π/2 CCW from top → ... 
+  //
+  // DEFINITIVE: draw a simple smooth curve using bezierCurveTo instead of arc:
+  //   From (leftX, floorY - turnR) curving to (leftX - turnR, floorY) 
+  //   Control point: (leftX, floorY)  ← corner of the J
 
   _chuteGeom() {
     var W        = this.W;
     var floorY   = this.floorY();
-    var CHUTE_W  = 48;
-    var TURN_R   = 42;                    // generous arc
+    var CHUTE_W  = 46;
+    var TURN_R   = 36;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    // Arc center Y: ball at angle=π/2 lands at (LEFT_X - TURN_R, TURN_CY + TURN_R)
-    // We want that exit Y = floorY, so TURN_CY = floorY - TURN_R
-    var TURN_CY  = floorY - TURN_R;
     var TOP_Y    = 160;
-    return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, TURN_CY };
+    return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y };
   }
 
   // Called from physics loop — enforce left wall as hard boundary
@@ -737,14 +832,12 @@ class Game {
     var g       = this._chuteGeom();
     var shaftCX = g.CENTER_X;
     var topY    = g.TOP_Y;
-    var turnCY  = g.TURN_CY;
     var turnR   = g.TURN_R;
     var floorY  = g.floorY;
     var leftX   = g.LEFT_X;
 
-    // Drain entire queue instantly - each ball drops as soon as previous one starts turning
+    // Drain queue: drop next ball as soon as shaft is clear
     while (this._chuteQueue && this._chuteQueue.length > 0) {
-      // Only drop next ball if shaft is clear (no ball currently in 'down' state)
       var shaftBusy = false;
       if (this._chuteActive) {
         for (var ci = 0; ci < this._chuteActive.length; ci++) {
@@ -756,9 +849,9 @@ class Game {
       var ball = this._makeBall(type, shaftCX);
       ball.x = shaftCX; ball.y = topY;
       ball.vy = 5; ball.vx = 0;
-      ball.inFlight  = true;
-      ball._inChute  = 'down';
-      ball._fromChute = true;   // flag: don't count bounces until slung
+      ball.inFlight   = true;
+      ball._inChute   = 'down';
+      ball._fromChute = true;
       this._chuteActive = this._chuteActive || [];
       this._chuteActive.push(ball);
       if (window.Sound) Sound.chuteSlide();
@@ -774,40 +867,44 @@ class Game {
         b.vy = Math.min(b.vy + 0.35, 8);
         b.y += b.vy;
         b.x  = shaftCX;
-        // Trigger arc when ball reaches top of the J curve
+        // Start arc when ball enters the curve zone
         if (b.y >= floorY - turnR) {
           b.y          = floorY - turnR;
           b._inChute   = 'turn';
           b._turnAngle = 0;
-          b._turnSpeed = Math.min(b.vy * 0.06, 0.11);
+          b._turnSpeed = Math.min(b.vy * 0.06, 0.12);
           b.vy = 0; b.vx = 0;
         }
 
       } else if (b._inChute === 'turn') {
-        // Arc center = (leftX, floorY)
-        // Start: ball at (leftX, floorY - turnR) = angle -π/2
-        // End:   ball at (leftX - turnR, floorY) = angle π (=-π)
-        // Sweep CCW by π/2 from -π/2 → -π
-        b._turnAngle += b._turnSpeed + 0.05;
-        if (b._turnAngle >= Math.PI / 2) b._turnAngle = Math.PI / 2;
-        var arcAngle = -Math.PI / 2 - b._turnAngle;
-        b.x = leftX + turnR * Math.cos(arcAngle);
-        b.y = floorY + turnR * Math.sin(arcAngle);
-        if (b._turnAngle >= Math.PI / 2) {
+        // Quadratic bezier animation: from (shaftCX, floorY-turnR) → (leftX-turnR, floorY)
+        // Control point at corner (leftX, floorY)
+        b._turnAngle += b._turnSpeed + 0.055;
+        if (b._turnAngle > 1) b._turnAngle = 1;
+        var t  = b._turnAngle;
+        var mt = 1 - t;
+        // P0 = start, P1 = control, P2 = end
+        var p0x = shaftCX,       p0y = floorY - turnR;
+        var p1x = leftX,          p1y = floorY;
+        var p2x = leftX - turnR,  p2y = floorY - b.r;
+        b.x = mt*mt*p0x + 2*mt*t*p1x + t*t*p2x;
+        b.y = mt*mt*p0y + 2*mt*t*p1y + t*t*p2y;
+
+        if (b._turnAngle >= 1) {
           b._inChute = 'exit';
-          b.x   = leftX - turnR;
-          b.y   = floorY - b.r;
-          var minSpeed = (leftX * 0.5) / 30;
-          var maxSpeed = (leftX * 1.0) / 22;
-          b.vx = -(minSpeed + Math.random() * (maxSpeed - minSpeed));
-          b.vy = -(1 + Math.random() * 1.5);
+          b.x = p2x;
+          b.y = p2y;
+          // Exit velocity: 25%–80% of screen width
+          var minV = (leftX * 0.25) / 28;
+          var maxV = (leftX * 0.80) / 20;
+          b.vx = -(minV + Math.random() * (maxV - minV));
+          b.vy = -(0.5 + Math.random() * 1.0);
           if (window.Sound) Sound.chuteExit();
         }
 
       } else if (b._inChute === 'exit') {
-        // Hand straight off to physics — it carries its own exit velocity
         b._inChute = null;
-        b.inFlight = true;   // keep inFlight so physics carries it
+        b.inFlight = true;
         toRelease.push(i);
       }
     }
@@ -858,20 +955,12 @@ class Game {
 
     // ── Shaft background ─────────────────────────────────────────────────────
     ctx.fillStyle = 'rgba(0,15,35,0.55)';
-    ctx.fillRect(leftX, topY, CW, turnCY - topY);
+    ctx.fillRect(leftX, topY, CW, floorY - topY - turnR);
 
-    // ── LEFT WALL — the J shape ───────────────────────────────────────────────
-    // Straight vertical from top down to arc start, then quarter-circle
-    // sweeping left until it's horizontal, exiting at (leftX - turnR, floorY).
-    //
-    // Arc maths:
-    //   center = (leftX, floorY)   ← corner of the J
-    //   start angle = -π/2 (pointing up = top of arc, which is (leftX, floorY-turnR) = (leftX, turnCY))
-    //   end angle   = π   (pointing left = (leftX - turnR, floorY))
-    //   direction   = clockwise (false in canvas = CCW, so use true = CW)
-    //   Sweep: -π/2 → π  CW  ==  from 12-o'clock around to 9-o'clock
-
-    ctx.strokeStyle = 'rgba(0,180,255,0.75)';
+    // ── LEFT WALL — J shape using bezier for a natural smooth curve ───────────
+    // Straight down, then bezier curves smoothly to exit left at floor level.
+    // Control point = corner (leftX, floorY), end = (leftX - turnR, floorY)
+    ctx.strokeStyle = 'rgba(0,180,255,0.80)';
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = '#00aaff';
     ctx.shadowBlur  = 8;
@@ -879,13 +968,13 @@ class Game {
     ctx.lineJoin    = 'round';
 
     ctx.beginPath();
-    ctx.moveTo(leftX, topY);                             // top of shaft
-    ctx.lineTo(leftX, floorY - turnR);                   // straight down to arc start
-    ctx.arc(leftX, floorY, turnR, -Math.PI/2, Math.PI, false); // CCW: 12-o'clock → 9-o'clock (left)
+    ctx.moveTo(leftX, topY);
+    ctx.lineTo(leftX, floorY - turnR);                          // straight down
+    ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY); // smooth J bend
     ctx.stroke();
 
     // ── RIGHT WALL = screen edge ──────────────────────────────────────────────
-    ctx.strokeStyle = 'rgba(0,120,200,0.25)';
+    ctx.strokeStyle = 'rgba(0,120,200,0.30)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 0;
     ctx.beginPath();
@@ -893,16 +982,31 @@ class Game {
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
+    // ── LEFT RAMP — small quarter-circle bump on far left so balls ride up ────
+    // Located at x=0, a gentle upward curve. Balls roll up and back.
+    var rampR = 45;
+    ctx.strokeStyle = 'rgba(0,180,255,0.40)';
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = '#00aaff';
+    ctx.shadowBlur  = 5;
+    ctx.beginPath();
+    // Arc center at (-rampR, floorY), from angle=0 to angle=π/2
+    // This draws a quarter-circle ramp from (0, floorY) curving up to (-rampR, floorY-rampR)
+    // But we want it on the LEFT side of the playfield, so center at (0, floorY):
+    ctx.arc(0, floorY, rampR, -Math.PI / 2, 0, false); // quarter arc: top → right
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
     // ── Buttons: stacked in lower half of shaft ───────────────────────────────
     var btnTypes  = ['bouncer','exploder','sticky','splitter','gravity'];
     var btnColors = ['#4488ff','#ff4400','#44ff44','#ff44ff','#00ffee'];
     var btnH   = 30;
     var btnW   = CW - 6;
     var btnX   = leftX + 3;
-    // Position buttons in the lower portion of the shaft, above the curve
-    var btnBlockH  = 5 * (btnH + 4) + btnH + 8; // 5 ball btns + delete btn
-    var btnStartY  = turnCY - btnBlockH - 10;
-    // Clamp so buttons don't go above HUD
+    // Position buttons: stack from curve top upward
+    var curveTop   = floorY - turnR;
+    var btnBlockH  = 5 * (btnH + 4) + btnH + 8;
+    var btnStartY  = curveTop - btnBlockH - 10;
     if (btnStartY < 60) btnStartY = 60;
 
     this._chuteButtonRects = [];
@@ -1039,6 +1143,23 @@ class Game {
     var ctx = this.ctx, bs = BallSettings[obj.type] || BallSettings.bouncer;
     var pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.06 + obj.r);
 
+    // Wiggle offset for stuck sticky balls
+    var wx = 0, wy = 0;
+    if (obj._wiggleTimer > 0) {
+      obj._wiggleTimer--;
+      var wAmt = obj._wiggleAmt || 3;
+      wx = Math.sin(obj._wiggleTimer * 1.8) * wAmt * (obj._wiggleTimer / 12);
+      wy = Math.cos(obj._wiggleTimer * 2.2) * wAmt * 0.5 * (obj._wiggleTimer / 12);
+    }
+
+    // Visual indicator for stuck sticky
+    if (obj.stuckTo === '_wall_') {
+      ctx.beginPath();
+      ctx.arc(obj.x + wx, obj.y + wy, obj.r + 5 + pulse * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = bs.glow + '88'; ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+    }
+
     // Outer aura for non-bouncers
     if (obj.type !== BALL_TYPES.BOUNCER && obj.type !== BALL_TYPES.EXPLODER) {
       ctx.beginPath(); ctx.arc(obj.x, obj.y, obj.r + 4 + pulse * 2, 0, Math.PI * 2);
@@ -1081,7 +1202,11 @@ class Game {
       }
     }
 
+    // Apply wiggle offset temporarily for draw
+    var origX = obj.x, origY = obj.y;
+    if (wx !== 0 || wy !== 0) { obj.x += wx; obj.y += wy; }
     obj.draw(ctx);
+    if (wx !== 0 || wy !== 0) { obj.x = origX; obj.y = origY; }
     ctx.fillStyle = bs.glow + 'aa'; ctx.font = "8px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.fillText(bs.label, obj.x, obj.y + obj.r + (obj.type === BALL_TYPES.EXPLODER ? 10 : 3));
