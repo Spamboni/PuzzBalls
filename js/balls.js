@@ -1,3 +1,4 @@
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 11;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {

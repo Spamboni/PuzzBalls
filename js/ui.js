@@ -1,3 +1,4 @@
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 11;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -140,6 +141,7 @@ class UI {
     var tabContent = _el('div', 'tab-content'); panel.appendChild(tabContent);
 
     var tabs = [
+      { id:'version',  label:'📋 VERSION' },
       { id:'global',   label:'🌍 GLOBAL'  },
       { id:'bouncer',  label:'⚪ BOUNCE'  },
       { id:'exploder', label:'💥 EXPLODE' },
@@ -168,7 +170,60 @@ class UI {
       }
       btn.addEventListener('click', activate); btn.addEventListener('touchend', activate);
 
-      if (t.id === 'global') {
+      if (t.id === 'version') {
+        // ── Version info pane ──────────────────────────────────────────────
+        var files = [
+          'index.html', 'css/styles.css',
+          'game.js','balls.js','physics.js','objects.js',
+          'ui.js','sound.js','events.js','presets.js','menu.js'
+        ];
+        var vRow = _el('div', 'version-header');
+        vRow.innerHTML = '<b>PuzzBalls v11</b>';
+        vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
+        pane.appendChild(vRow);
+
+        var hint = _el('div','version-hint');
+        hint.textContent = 'If a file shows wrong version, hard-reload: hold reload button → "Clear cache & reload"';
+        hint.style.cssText = 'color:#aaa;font-size:9px;line-height:1.4;padding:0 4px 10px;';
+        pane.appendChild(hint);
+
+        var tbl = _el('div','version-table');
+        tbl.style.cssText = 'font-size:10px;';
+
+        files.forEach(function(f) {
+          var key    = f.indexOf('/') >= 0 ? f.split('/').pop() : f;
+          var fvObj  = window.PUZZBALLS_FILE_VERSION || {};
+          var loaded = fvObj[key];
+          var row    = _el('div','version-row');
+          row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:3px 4px;border-bottom:1px solid rgba(255,255,255,0.06);';
+          var nameEl = _el('span','');
+          nameEl.textContent = key;
+          nameEl.style.cssText = 'color:#cde;';
+          var verEl = _el('span','');
+          if (loaded === undefined) {
+            verEl.textContent = f === 'index.html' ? 'v11 (this page)' : 'not stamped';
+            verEl.style.color = '#888';
+          } else if (loaded === 11) {
+            verEl.textContent = 'v' + loaded + ' ✓';
+            verEl.style.color = '#44ff88';
+          } else {
+            verEl.textContent = 'v' + loaded + ' ⚠ old!';
+            verEl.style.color = '#ffaa00';
+          }
+          row.appendChild(nameEl); row.appendChild(verEl);
+          tbl.appendChild(row);
+        });
+        pane.appendChild(tbl);
+
+        // Cache clear instructions
+        var instrRow = _el('div','');
+        instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
+        instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
+          'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
+          'Or open the URL then add <b>?v=11</b> to the end and reload.';
+        pane.appendChild(instrRow);
+
+      } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
       } else {
         var bs = BallSettings[t.id];
