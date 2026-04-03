@@ -322,19 +322,29 @@ class Game {
           if (Math.hypot(pos.x - sobj.x, pos.y - sobj.y) < sobj.r + 14) {
             sobj.stuckTo  = null;
             sobj.inFlight = true;
-            sobj.vy = 0.5;
+            sobj.vy = 1.5;  // drop downward
+            // Nudge away from any edge so it won't immediately re-stick
+            var nudgeX = 0;
+            if (sobj.x - sobj.r <= sobj.r + 4) nudgeX = sobj.r + 6;        // left wall
+            else if (sobj.x + sobj.r >= self.W - sobj.r - 4) nudgeX = -(sobj.r + 6); // right wall
+            sobj.x += nudgeX;
+            sobj.vx = nudgeX * 0.15;  // tiny lateral push
             if (window.Sound) Sound.thud(3);
             return;
           }
         }
       }
 
+      // ── Ball selection: floor-resting sticky can be re-slung ─────────────
       var best = null, bestDist = 9999;
       for (var i = 0; i < self.objects.length; i++) {
         var obj = self.objects[i];
-        if (obj.inFlight || obj.dead || obj.exploded) continue;
-        if (obj.stuckTo && obj.stuckTo !== '_wall_') continue; // stuck to a ball — skip
-        if (obj.stuckTo === '_wall_') continue;                // wall-stuck — tap handled above
+        if (obj.dead || obj.exploded) continue;
+        // Skip wall-stuck sticky (handled above) and ball-stuck
+        if (obj.stuckTo && obj.stuckTo !== '_wall_') continue;
+        if (obj.stuckTo === '_wall_') continue;
+        // Sticky on floor: allow re-sling
+        if (obj.inFlight) continue;
         var dx = pos.x - obj.x, dy = pos.y - obj.y;
         if (self._aimMode === 'push') {
           // Push mode: tap anywhere near a ball (wider pick radius, no direction constraint)
@@ -483,7 +493,14 @@ class Game {
           }
         }
       }
-      if (obj.inFlight && Math.abs(obj.vy) < 1.2 * sm && Math.abs(obj.vx) < 1.2 * sm) obj.inFlight = false;
+      if (obj.inFlight && Math.abs(obj.vy) < 1.2 * sm && Math.abs(obj.vx) < 1.2 * sm) {
+        obj.inFlight = false;
+        // Sticky landing on floor: clear fromChute so it can be re-slung
+        if (obj.type === BALL_TYPES.STICKY && obj._fromChute) {
+          var onFloor = obj.y + obj.r >= floorY - 2;
+          if (onFloor) obj._fromChute = false;
+        }
+      }
       // Tick wall bounce cooldown and check explode flag
       if (obj._wallBounceCooldown > 0) obj._wallBounceCooldown--;
       if (obj._needsExplodeCheck) {
@@ -586,12 +603,21 @@ class Game {
               if (ball.bouncesLeft <= 0) triggerExplosion(ball, this.objects, this.sparks);
             }
           }
+          // Splitter: spawn children on brick hit too
+          if (ball.type === BALL_TYPES.SPLITTER && !ball._fromChute && !ball.isSplitChild) {
+            if (!ball._brickSplitCooldown || ball._brickSplitCooldown <= 0) {
+              var splitKids = makeSplitChildren(ball, BallSettings.splitter.splitCount);
+              for (var sk = 0; sk < splitKids.length; sk++) this.objects.push(splitKids[sk]);
+              ball._brickSplitCooldown = 15;
+            }
+          }
           if (destroyed) EventManager.dispatch(brick.id + '_triggered');
           this.collisions++;
           this.ui.setCollisions(this.collisions);
         }
         // Tick brick bounce cooldown
         if (ball._brickBounceCooldown > 0) ball._brickBounceCooldown--;
+        if (ball._brickSplitCooldown  > 0) ball._brickSplitCooldown--;
       }
     }
 
@@ -704,12 +730,15 @@ class Game {
 
   // Called after wall/floor/brick bounce — check if sticky should stick
   // Only sticks if it has JUST hit a surface (touching floor/wall) AND is slow enough
-  _checkStickyWall(obj, surfaceType) {
+  _checkStickyWall(obj) {
     if (obj.type !== BALL_TYPES.STICKY) return;
     if (obj.stuckTo || obj._fromChute) return;
     var threshold = (window.BallSettings && BallSettings.sticky.stickThreshold) || 6;
     var speed = Math.hypot(obj.vx, obj.vy);
     if (speed < threshold) {
+      var touchingFloor = obj.y + obj.r >= this.floorY() - 2;
+      // Never stick to floor — only walls/ceiling/bricks
+      if (touchingFloor) return;
       obj.vx = 0; obj.vy = 0;
       obj.inFlight = false;
       obj.stuckTo  = '_wall_';
@@ -805,11 +834,14 @@ class Game {
     var W        = this.W;
     var floorY   = this.floorY();
     var CHUTE_W  = 46;
-    var TURN_R   = 36;
+    var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 160;
-    return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y };
+    var TOP_Y    = 160;   // where buttons start (below HUD)
+    // The left wall goes straight down from TOP_Y to DIAG_Y,
+    // then angles 45° right up to screen top-right corner.
+    var DIAG_Y   = TOP_Y;  // diagonal starts right at the top of the button area
+    return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, DIAG_Y };
   }
 
   // Called from physics loop — enforce left wall as hard boundary
@@ -818,6 +850,8 @@ class Game {
     for (var i = 0; i < this.objects.length; i++) {
       var obj = this.objects[i];
       if (obj.dead || obj._inChute) continue;
+      // Only enforce below the diagonal start — above that, full screen width is open
+      if (obj.y < g.TOP_Y) continue;
       if (obj.x + obj.r > g.LEFT_X) {
         obj.x = g.LEFT_X - obj.r;
         if (obj.vx > 0) {
@@ -948,18 +982,23 @@ class Game {
     var ctx   = this.ctx;
     var g     = this._chuteGeom();
     var W     = g.W, floorY = g.floorY;
-    var leftX = g.LEFT_X, turnR = g.TURN_R, turnCY = g.TURN_CY, topY = g.TOP_Y;
+    var leftX = g.LEFT_X, turnR = g.TURN_R, topY = g.TOP_Y;
     var CW    = g.CHUTE_W;
 
     ctx.save();
 
     // ── Shaft background ─────────────────────────────────────────────────────
     ctx.fillStyle = 'rgba(0,15,35,0.55)';
-    ctx.fillRect(leftX, topY, CW, floorY - topY - turnR);
+    ctx.fillRect(leftX, topY, CW, floorY - topY);
 
-    // ── LEFT WALL — J shape using bezier for a natural smooth curve ───────────
-    // Straight down, then bezier curves smoothly to exit left at floor level.
-    // Control point = corner (leftX, floorY), end = (leftX - turnR, floorY)
+    // ── LEFT WALL ─────────────────────────────────────────────────────────────
+    // From topY: straight down to J curve bottom.
+    // Above topY: 45° diagonal from (leftX, topY) up to (W, topY - (W - leftX))
+    // — i.e. angled right at 45° until it hits the right edge of the screen.
+    var diagEndX = W;
+    var diagEndY = topY - (W - leftX);  // 45° means deltaY = deltaX
+    if (diagEndY < 0) diagEndY = 0;     // clamp to top of screen
+
     ctx.strokeStyle = 'rgba(0,180,255,0.80)';
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = '#00aaff';
@@ -967,9 +1006,11 @@ class Game {
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
+    // Main left wall: diagonal top → straight down → J curve
     ctx.beginPath();
-    ctx.moveTo(leftX, topY);
-    ctx.lineTo(leftX, floorY - turnR);                          // straight down
+    ctx.moveTo(diagEndX, diagEndY);                              // top-right start of diagonal
+    ctx.lineTo(leftX, topY);                                     // diagonal down-left to shaft top
+    ctx.lineTo(leftX, floorY - turnR);                           // straight down
     ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY); // smooth J bend
     ctx.stroke();
 
@@ -982,32 +1023,27 @@ class Game {
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
-    // ── LEFT RAMP — small quarter-circle bump on far left so balls ride up ────
-    // Located at x=0, a gentle upward curve. Balls roll up and back.
-    var rampR = 45;
-    ctx.strokeStyle = 'rgba(0,180,255,0.40)';
+    // ── LEFT RAMP ────────────────────────────────────────────────────────────
+    var rampR = 40;
+    ctx.strokeStyle = 'rgba(0,180,255,0.45)';
     ctx.lineWidth   = 2;
     ctx.shadowColor = '#00aaff';
-    ctx.shadowBlur  = 5;
+    ctx.shadowBlur  = 4;
     ctx.beginPath();
-    // Arc center at (-rampR, floorY), from angle=0 to angle=π/2
-    // This draws a quarter-circle ramp from (0, floorY) curving up to (-rampR, floorY-rampR)
-    // But we want it on the LEFT side of the playfield, so center at (0, floorY):
-    ctx.arc(0, floorY, rampR, -Math.PI / 2, 0, false); // quarter arc: top → right
+    ctx.arc(rampR, floorY, rampR, Math.PI, Math.PI / 2, true);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // ── Buttons: stacked in lower half of shaft ───────────────────────────────
+    // ── Buttons inside the shaft ──────────────────────────────────────────────
     var btnTypes  = ['bouncer','exploder','sticky','splitter','gravity'];
     var btnColors = ['#4488ff','#ff4400','#44ff44','#ff44ff','#00ffee'];
     var btnH   = 30;
     var btnW   = CW - 6;
     var btnX   = leftX + 3;
-    // Position buttons: stack from curve top upward
-    var curveTop   = floorY - turnR;
-    var btnBlockH  = 5 * (btnH + 4) + btnH + 8;
-    var btnStartY  = curveTop - btnBlockH - 10;
-    if (btnStartY < 60) btnStartY = 60;
+    var curveTop  = floorY - turnR;
+    var btnBlockH = 5 * (btnH + 4) + btnH + 8;
+    var btnStartY = curveTop - btnBlockH - 10;
+    if (btnStartY < topY + 4) btnStartY = topY + 4;
 
     this._chuteButtonRects = [];
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
