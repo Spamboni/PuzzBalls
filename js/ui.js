@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1303;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1304;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -185,7 +185,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.03</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.04</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -208,10 +208,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.03 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.04 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1303) {
-            verEl.textContent = 'v13.03 ✓';
+          } else if (loaded === 1304) {
+            verEl.textContent = 'v13.04 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -227,7 +227,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1202</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1304</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'audio') {
@@ -263,13 +263,33 @@ class UI {
         _addSlider(pane,'Ground Roll',null, null, 0.50,0.99,0.01,function(v){return Math.round(v*100)+'%';},t.id,'groundFriction');
         _addSlider(pane,'Brick Dmg',  null, null, 5, 60, 1,    function(v){return v+' hp';},        t.id,'baseDamage');
         if (t.id==='exploder') { _addSlider(pane,'Blast Radius',null,null,40,250,5,function(v){return v+'px';},t.id,'blastRadius'); _addSlider(pane,'Blast Force',null,null,4,40,1,function(v){return v;},t.id,'blastForce'); _addSlider(pane,'Explode Damage',null,null,0,100,5,function(v){return v+' hp';},t.id,'explosionDamage'); }
-        if (t.id==='sticky')   { _addSlider(pane,'Stick Threshold',null,null,1,20,0.5,function(v){return v+' px/f';},t.id,'stickThreshold'); _addSlider(pane,'Bounce Height Y',null,null,10,200,5,function(v){return v+'px';},t.id,'bounceHeightY'); _addSlider(pane,'Bounce Dist X',null,null,0,150,5,function(v){return v+'px';},t.id,'bounceDistanceX'); _addSlider(pane,'Dead Zone %',null,null,0,100,5,function(v){return v+'%';},t.id,'deadZonePercent'); }
+        if (t.id==='sticky')   { _addSlider(pane,'Stick Threshold',null,null,2,25,0.5,function(v){return v+' px/f';},t.id,'stickThreshold'); _addSlider(pane,'Bounce Height Y',null,null,10,200,5,function(v){return v+'px';},t.id,'bounceHeightY'); _addSlider(pane,'Bounce Dist X',null,null,0,150,5,function(v){return v+'px';},t.id,'bounceDistanceX'); _addSlider(pane,'Dead Zone %',null,null,0,100,5,function(v){return v+'%';},t.id,'deadZonePercent'); }
         if (t.id==='splitter') { _addSlider(pane,'Split Count',null,null,1,5,1,function(v){return v+' balls';},t.id,'splitCount'); }
         if (t.id==='gravity')  { _addSlider(pane,'Pull Range',null,null,50,280,5,function(v){return v+'px';},t.id,'gravRange'); _addSlider(pane,'Pull Strength',null,null,0.05,2.0,0.05,function(v){return v.toFixed(2);},t.id,'gravPull'); }
+
+        // Per-ball reset button
+        (function(ballId, thePane, self2) {
+          var rbtn = _el('button', 'settings-reset-btn');
+          rbtn.textContent = 'RESET ' + ballId.toUpperCase() + ' DEFAULTS';
+          rbtn.style.marginTop = '8px';
+          function doResetBall(e) {
+            e.preventDefault();
+            var defaults = Presets.getById('default');
+            if (defaults.balls && defaults.balls[ballId]) {
+              Presets.applyPreset({ balls: { [ballId]: defaults.balls[ballId] } });
+            }
+            panel.innerHTML = '';
+            self2._buildSettingsPanel();
+            self2._settingsPanel.classList.add('open');
+          }
+          rbtn.addEventListener('click', doResetBall);
+          rbtn.addEventListener('touchend', doResetBall);
+          thePane.appendChild(rbtn);
+        })(t.id, pane, self);
       }
     });
 
-    // Reset defaults
+    // Global reset all
     var resetBtn = _el('button', 'settings-reset-btn');
     resetBtn.textContent = 'RESET ALL DEFAULTS';
     function doReset(e) {

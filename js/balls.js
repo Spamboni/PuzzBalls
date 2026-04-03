@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1302;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1304;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -74,7 +74,7 @@ function _ballMass(type, r) {
 function makeSplitChildren(parent, count) {
   var children = [];
   var bs       = BallSettings.splitter;
-  var childR   = Math.max(4, parent.r * 0.7);
+  var childR   = Math.max(3, Math.round(parent.r * 0.33));  // 1/3 of parent size
   for (var i = 0; i < count; i++) {
     var angle = (i / count) * Math.PI * 2 + Math.random() * 0.6;
     var speed = Math.hypot(parent.vx, parent.vy) * 0.75 + 3;

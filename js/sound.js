@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1303;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1304;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -290,27 +290,49 @@ var Sound = (function() {
     if (!enabled) return;
     var c = getCtx(); if (!c) return;
     var now = c.currentTime;
-    var vol = 0.18 + (tier || 1) * 0.06;
+    var as  = window.AudioSettings || {};
+    var vol = (0.28 + (tier || 1) * 0.08) * (as.masterVol !== undefined ? as.masterVol : 1.0)
+                                           * (as.explosionVol !== undefined ? as.explosionVol : 1.0);
 
-    // Sharp transient crack
-    var bufSize = Math.ceil(c.sampleRate * 0.06);
+    // Deep sub-bass boom — the main body
+    var osc = c.createOscillator(); var g1 = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(55 + (tier||1) * 8, now);
+    osc.frequency.exponentialRampToValueAtTime(18, now + 0.55);
+    g1.gain.setValueAtTime(vol * 1.8, now);
+    g1.gain.exponentialRampToValueAtTime(0.0001, now + 0.60);
+    osc.connect(g1); g1.connect(c.destination); osc.start(now); osc.stop(now + 0.60);
+
+    // Mid punch layer
+    var osc2 = c.createOscillator(); var g2 = c.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(110, now);
+    osc2.frequency.exponentialRampToValueAtTime(30, now + 0.30);
+    g2.gain.setValueAtTime(vol * 1.0, now);
+    g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+    osc2.connect(g2); g2.connect(c.destination); osc2.start(now); osc2.stop(now + 0.35);
+
+    // Noise burst (low-passed rumble for texture)
+    var bufSize = Math.ceil(c.sampleRate * 0.5);
     var buf = c.createBuffer(1, bufSize, c.sampleRate);
     var d   = buf.getChannelData(0);
-    for (var i = 0; i < bufSize; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.08));
+    for (var i = 0; i < bufSize; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.25));
     var src = c.createBufferSource(); src.buffer = buf;
-    var flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 1200 + tier * 200;
-    var g   = c.createGain();
-    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
-    src.connect(flt); flt.connect(g); g.connect(c.destination);
-    src.start(now); src.stop(now + 0.08);
+    var flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 280 + (tier||1) * 60; flt.Q.value = 0.7;
+    var g3  = c.createGain();
+    g3.gain.setValueAtTime(vol * 1.3, now); g3.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+    src.connect(flt); flt.connect(g3); g3.connect(c.destination);
+    src.start(now); src.stop(now + 0.5);
 
-    // Low punch body
-    var osc = c.createOscillator(); var g2 = c.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(120 + tier * 20, now);
-    osc.frequency.exponentialRampToValueAtTime(25, now + 0.18);
-    g2.gain.setValueAtTime(vol * 1.3, now); g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
-    osc.connect(g2); g2.connect(c.destination); osc.start(now); osc.stop(now + 0.20);
+    // Reverb tail — delayed echo for resonance
+    var osc3 = c.createOscillator(); var g4 = c.createGain();
+    osc3.type = 'sine';
+    osc3.frequency.setValueAtTime(38, now + 0.05);
+    osc3.frequency.exponentialRampToValueAtTime(15, now + 0.80);
+    g4.gain.setValueAtTime(0, now);
+    g4.gain.linearRampToValueAtTime(vol * 0.5, now + 0.08);
+    g4.gain.exponentialRampToValueAtTime(0.0001, now + 0.85);
+    osc3.connect(g4); g4.connect(c.destination); osc3.start(now); osc3.stop(now + 0.85);
   }
 
   return { stretch, snap, clink, wallClick, thud, win, getCtx, ballImpact, explode };

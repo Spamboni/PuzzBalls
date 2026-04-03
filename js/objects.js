@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1302;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1304;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -594,39 +594,47 @@ class BreakableBrick {
     }
     ctx.shadowBlur = 0;
 
-    // Cracks — 4 progressive states, each brick has unique pre-randomized geometry
+    // Cracks — clipped to brick bounds so they never overflow edges
     if (frac < 1 && this._cracks) {
       var crackState = frac > 0.75 ? 0 : frac > 0.50 ? 1 : frac > 0.25 ? 2 : 3;
       var crackAlpha = [0, 0.40, 0.65, 0.88][crackState];
       var stateCracks = this._cracks[crackState] || [];
 
-      for (var c = 0; c < stateCracks.length; c++) {
-        var ck  = stateCracks[c];
-        var cx1 = ck.x1 * this.w;
-        var cy1 = ck.y1 * this.h;
-        var jag = ck.jag;
-        var endY = cy1 + this.h * ck.len;
-
-        ctx.strokeStyle = 'rgba(255,255,255,' + crackAlpha + ')';
-        ctx.lineWidth   = ck.thick;
+      if (stateCracks.length > 0) {
         ctx.save();
-        ctx.rotate(ck.rot);
+        // Clip to brick rect so cracks stay inside
         ctx.beginPath();
-        ctx.moveTo(cx1, cy1);
-        ctx.lineTo(cx1 + jag * 0.5, cy1 + this.h * ck.len * 0.45);
-        ctx.lineTo(cx1 + jag,       endY);
-        ctx.stroke();
+        ctx.rect(bx, by, this.w, this.h);
+        ctx.clip();
 
-        // Branch crack for heavier damage states
-        if (ck.branch) {
-          ctx.strokeStyle = 'rgba(255,200,120,' + crackAlpha * 0.7 + ')';
-          ctx.lineWidth   = ck.thick * 0.6;
+        for (var c = 0; c < stateCracks.length; c++) {
+          var ck  = stateCracks[c];
+          var cx1 = ck.x1 * this.w;
+          var cy1 = ck.y1 * this.h;
+          var jag = ck.jag;
+          var endY = cy1 + this.h * ck.len;
+
+          ctx.strokeStyle = 'rgba(255,255,255,' + crackAlpha + ')';
+          ctx.lineWidth   = ck.thick;
+          ctx.save();
+          ctx.rotate(ck.rot);
           ctx.beginPath();
-          ctx.moveTo(cx1 + jag * 0.5, cy1 + this.h * ck.len * 0.4);
-          ctx.lineTo(cx1 + jag * 0.5 + ck.bJag, cy1 + this.h * ck.len * 0.75);
+          ctx.moveTo(cx1, cy1);
+          ctx.lineTo(cx1 + jag * 0.5, cy1 + this.h * ck.len * 0.45);
+          ctx.lineTo(cx1 + jag,       endY);
           ctx.stroke();
+
+          if (ck.branch) {
+            ctx.strokeStyle = 'rgba(255,200,120,' + crackAlpha * 0.7 + ')';
+            ctx.lineWidth   = ck.thick * 0.6;
+            ctx.beginPath();
+            ctx.moveTo(cx1 + jag * 0.5, cy1 + this.h * ck.len * 0.4);
+            ctx.lineTo(cx1 + jag * 0.5 + ck.bJag, cy1 + this.h * ck.len * 0.75);
+            ctx.stroke();
+          }
+          ctx.restore();
         }
-        ctx.restore();
+        ctx.restore(); // remove clip
       }
     }
 

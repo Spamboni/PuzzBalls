@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1303;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1304;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1069,7 +1069,7 @@ class Game {
         this.ui.attachObjects(this.objects);
         Physics.spawnSparks(this.sparks, obj.x, obj.y, '#ff4444', 18);
         if (window.Sound) Sound.thud(10);
-        this._deleteMode = false;
+        // Stay in delete mode — don't auto-exit
         return true;
       }
     }
@@ -1133,7 +1133,7 @@ class Game {
       ctx.beginPath(); ctx.moveTo(leftX, ry); ctx.lineTo(W, ry); ctx.stroke();
     }
 
-    // ── LEFT WALL — diagonal → straight down → J curve ───────────────────────
+    // ── LEFT WALL — diagonal top, straight shaft, J curve at bottom ─────────
     var diagEndX = W;
     var diagEndY = topY - (W - leftX);
     if (diagEndY < 0) diagEndY = 0;
@@ -1152,7 +1152,7 @@ class Game {
     ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY);
     ctx.stroke();
 
-    // Inner tube rim line (gives the pipe a second wall thickness)
+    // Inner tube rim line
     ctx.strokeStyle = 'rgba(0,140,200,0.35)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 3;
@@ -1173,59 +1173,93 @@ class Game {
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
-    // ── FUTURISTIC BALL GENERATOR CAP at top ──────────────────────────────────
-    var capH   = 32;
+    // ── FUTURISTIC BALL GENERATOR CAP — animated mechanical device ────────────
+    var capH   = 44;
     var capY   = topY - capH;
     var capX   = leftX;
     var capW   = CW;
+    var cMid   = capX + capW / 2;
+    var cFrame = this.frame;
 
     // Cap body
-    ctx.fillStyle = 'rgba(0,25,55,0.85)';
-    ctx.beginPath();
-    ctx.roundRect(capX, capY, capW, capH, [6, 6, 0, 0]);
-    ctx.fill();
-
-    // Cap neon border
-    ctx.strokeStyle = 'rgba(0,200,255,0.80)';
+    ctx.fillStyle = 'rgba(5,18,40,0.92)';
+    ctx.beginPath(); ctx.roundRect(capX, capY, capW, capH, [5, 5, 0, 0]); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,200,255,0.75)';
     ctx.lineWidth   = 1.8;
     ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.roundRect(capX, capY, capW, capH, [6, 6, 0, 0]);
-    ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(capX, capY, capW, capH, [5, 5, 0, 0]); ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Cap inner glow
-    var gCap = ctx.createLinearGradient(capX, capY, capX, capY + capH);
-    gCap.addColorStop(0, 'rgba(0,200,255,0.25)');
-    gCap.addColorStop(1, 'rgba(0,100,180,0.05)');
-    ctx.fillStyle = gCap;
-    ctx.beginPath(); ctx.roundRect(capX + 2, capY + 2, capW - 4, capH - 4, [4, 4, 0, 0]); ctx.fill();
+    // Left gear — spinning teeth on vertical spindle
+    var gearCY  = capY + capH / 2;
+    var gearR   = 7;
+    var teeth   = 8;
+    var gAngle  = (cFrame * 0.04) % (Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,180,255,0.70)';
+    ctx.lineWidth   = 1.2;
+    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 4;
+    var gearLX = capX + 8;
+    for (var ti2 = 0; ti2 < teeth; ti2++) {
+      var ta = gAngle + (ti2 / teeth) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(gearLX + Math.cos(ta) * (gearR - 2), gearCY + Math.sin(ta) * (gearR - 2));
+      ctx.lineTo(gearLX + Math.cos(ta) * (gearR + 2), gearCY + Math.sin(ta) * (gearR + 2));
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(gearLX, gearCY, gearR - 2, 0, Math.PI * 2); ctx.stroke();
 
-    // Cap ▼ indicator
-    ctx.fillStyle = 'rgba(0,220,255,0.8)';
-    ctx.font      = "bold 10px 'Share Tech Mono', monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('▼ LOAD', capX + capW / 2, capY + capH / 2);
+    // Right gear — counter-rotating
+    var gearRX  = capX + capW - 8;
+    var gAngle2 = -(cFrame * 0.04) % (Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,180,255,0.70)';
+    for (var ti3 = 0; ti3 < teeth; ti3++) {
+      var ta2 = gAngle2 + (ti3 / teeth) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(gearRX + Math.cos(ta2) * (gearR - 2), gearCY + Math.sin(ta2) * (gearR - 2));
+      ctx.lineTo(gearRX + Math.cos(ta2) * (gearR + 2), gearCY + Math.sin(ta2) * (gearR + 2));
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(gearRX, gearCY, gearR - 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
 
-    // Horizontal scan line on cap
-    ctx.strokeStyle = 'rgba(0,200,255,0.25)';
-    ctx.lineWidth   = 1;
-    ctx.beginPath();
-    ctx.moveTo(capX + 4, capY + capH * 0.55);
-    ctx.lineTo(capX + capW - 4, capY + capH * 0.55);
-    ctx.stroke();
+    // Pistons — horizontal cylinders poking out left and right
+    var pistonOff = Math.sin(cFrame * 0.12) * 4;
+    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
+    ctx.lineWidth   = 3; ctx.lineCap = 'round';
+    ctx.shadowColor = '#00ddff'; ctx.shadowBlur = 5;
+    // Left piston (top)
+    ctx.beginPath(); ctx.moveTo(capX, capY + capH * 0.28); ctx.lineTo(capX - 6 - pistonOff, capY + capH * 0.28); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,200,255,0.8)';
+    ctx.beginPath(); ctx.arc(capX - 7 - pistonOff, capY + capH * 0.28, 2.5, 0, Math.PI * 2); ctx.fill();
+    // Right piston (bottom, opposite phase)
+    ctx.beginPath(); ctx.moveTo(capX + capW, capY + capH * 0.72); ctx.lineTo(capX + capW + 6 - pistonOff, capY + capH * 0.72); ctx.stroke();
+    ctx.beginPath(); ctx.arc(capX + capW + 7 - pistonOff, capY + capH * 0.72, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
 
-    // ── SMALL BUMP removed per request ───────────────────────────────────────
+    // Center energy core
+    var corePulse = 0.5 + 0.5 * Math.sin(cFrame * 0.18);
+    var coreR = 4 + corePulse * 2;
+    var gCore = ctx.createRadialGradient(cMid, gearCY, 0, cMid, gearCY, coreR + 4);
+    gCore.addColorStop(0, 'rgba(0,255,200,' + (0.7 + corePulse * 0.3) + ')');
+    gCore.addColorStop(1, 'rgba(0,80,180,0.00)');
+    ctx.fillStyle = gCore;
+    ctx.beginPath(); ctx.arc(cMid, gearCY, coreR + 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(160,255,240,' + (0.9 + corePulse * 0.1) + ')';
+    ctx.beginPath(); ctx.arc(cMid, gearCY, coreR * 0.35, 0, Math.PI * 2); ctx.fill();
 
-    // ── LEFT RAMP — quarter-circle at left wall, slightly raised above floor ──
-    // Center at (rampR, floorY - 10) so bottom just grazes floor, ball fits under
-    var rampR  = 52;
-    var rampCY = floorY - 10;   // just a little above floor, not too high
+    // Scan lines
+    ctx.strokeStyle = 'rgba(0,180,255,0.10)'; ctx.lineWidth = 0.8;
+    for (var sl = capY + 7; sl < capY + capH - 3; sl += 5) {
+      ctx.beginPath(); ctx.moveTo(capX + 3, sl); ctx.lineTo(capX + capW - 3, sl); ctx.stroke();
+    }
+
+    // ── LEFT RAMP — quarter-circle, bottom sits exactly at floorY ─────────────
+    var rampR  = 48;
     ctx.strokeStyle = 'rgba(0,190,255,0.60)';
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 6;
     ctx.beginPath();
-    ctx.arc(rampR, rampCY, rampR, Math.PI, Math.PI / 2, true);
+    ctx.arc(rampR, floorY, rampR, Math.PI, Math.PI / 2, true);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
