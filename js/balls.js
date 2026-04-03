@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1201;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1202;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -36,7 +36,7 @@ var BallSettings = {
     velocity: 1.0, bounciness: 0.15,
     density: 2.2,
     stickyStrength: 0.85,
-    stickThreshold: 6,
+    stickThreshold: 10,
     groundFriction: 0.70,
     baseDamage: 25,   // dense/heavy so more impact
   },

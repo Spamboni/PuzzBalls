@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1201;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1203;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -583,48 +583,70 @@ class Game {
       if (!brick.isAlive()) continue;
       for (j = 0; j < this.objects.length; j++) {
         var ball = this.objects[j];
-        if (!ball.dead && brick.overlaps(ball)) {
-          // Damage = baseDamage × density × velocity factor (out of 100 HP)
-          var bsBall   = BallSettings[ball.type] || BallSettings.bouncer;
-          var speed    = Math.hypot(ball.vx, ball.vy);
-          var velFactor = Math.max(0.5, Math.min(speed / 8, 3.0)); // 0.5x slow → 3x fast
-          var dmg = Math.round((bsBall.baseDamage || 20) * (bsBall.density || 1.0) * velFactor);
-          var destroyed = brick.takeDamage(dmg);
-          // Directional shards + glass sound
-          if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
-          if (window.Sound) Sound.brickShatter(damage * 0.4);
-          // Bounce ball off brick and check sticky threshold
-          var bEdgeX = Math.max(brick.x - brick.w/2, Math.min(ball.x, brick.x + brick.w/2));
-          var bEdgeY = Math.max(brick.y - brick.h/2, Math.min(ball.y, brick.y + brick.h/2));
-          var bndx = ball.x - bEdgeX, bndy = ball.y - bEdgeY;
-          var bndist = Math.hypot(bndx, bndy) || 1;
-          var bnx = bndx / bndist, bny = bndy / bndist;
-          var dot = ball.vx * bnx + ball.vy * bny;
-          if (dot < 0) { ball.vx -= 2 * dot * bnx; ball.vy -= 2 * dot * bny; }
-          if (ball.type === BALL_TYPES.STICKY) this._checkStickyWall(ball);
-          // Exploder: count brick hit as a bounce
-          if (ball.type === BALL_TYPES.EXPLODER && !ball.exploded) {
-            if (!ball._brickBounceCooldown || ball._brickBounceCooldown <= 0) {
-              ball.bouncesLeft = (ball.bouncesLeft || 1) - 1;
-              ball._brickBounceCooldown = 10;
-              if (ball.bouncesLeft <= 0) triggerExplosion(ball, this.objects, this.sparks);
-            }
-          }
-          // Splitter: spawn children on brick hit too
-          if (ball.type === BALL_TYPES.SPLITTER && !ball._fromChute && !ball.isSplitChild) {
-            if (!ball._brickSplitCooldown || ball._brickSplitCooldown <= 0) {
-              var splitKids = makeSplitChildren(ball, BallSettings.splitter.splitCount);
-              for (var sk = 0; sk < splitKids.length; sk++) this.objects.push(splitKids[sk]);
-              ball._brickSplitCooldown = 15;
-            }
-          }
-          if (destroyed) EventManager.dispatch(brick.id + '_triggered');
-          this.collisions++;
-          this.ui.setCollisions(this.collisions);
+        if (ball.dead || ball.stuckTo === '_wall_') continue;  // stuck ball = no more damage
+
+        // Per-ball-per-brick contact cooldown — prevents going through on overlap
+        var coolKey = '_brickCool_' + brick.id;
+        if (ball[coolKey] > 0) { ball[coolKey]--; continue; }
+
+        if (!brick.overlaps(ball)) continue;
+
+        // Set cooldown so this ball won't re-trigger same brick for 20 frames
+        ball[coolKey] = 20;
+
+        // Push ball out of brick
+        var bEdgeX = Math.max(brick.x - brick.w/2, Math.min(ball.x, brick.x + brick.w/2));
+        var bEdgeY = Math.max(brick.y - brick.h/2, Math.min(ball.y, brick.y + brick.h/2));
+        var bndx   = ball.x - bEdgeX, bndy = ball.y - bEdgeY;
+        var bndist = Math.hypot(bndx, bndy) || 1;
+        var bnx = bndx / bndist, bny = bndy / bndist;
+        // Push ball outside brick
+        var overlap = (ball.r * 0.9) - bndist;
+        if (overlap > 0) { ball.x += bnx * (overlap + 1); ball.y += bny * (overlap + 1); }
+        // Reflect velocity
+        var dot = ball.vx * bnx + ball.vy * bny;
+        if (dot < 0) {
+          ball.vx -= 2 * dot * bnx;
+          ball.vy -= 2 * dot * bny;
+          // Apply some energy loss on brick bounce
+          ball.vx *= 0.82;
+          ball.vy *= 0.82;
         }
-        // Tick brick bounce cooldown
-        if (ball._brickBounceCooldown > 0) ball._brickBounceCooldown--;
-        if (ball._brickSplitCooldown  > 0) ball._brickSplitCooldown--;
+
+        // Damage = baseDamage × density × velocity factor
+        var bsBall    = BallSettings[ball.type] || BallSettings.bouncer;
+        var speed     = Math.hypot(ball.vx, ball.vy);
+        var velFactor = Math.max(0.5, Math.min(speed / 8, 3.0));
+        var dmg       = Math.round((bsBall.baseDamage || 20) * (bsBall.density || 1.0) * velFactor);
+        var destroyed = brick.takeDamage(dmg);
+
+        if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
+        if (window.Sound) Sound.brickShatter(dmg * 0.01);
+
+        if (ball.type === BALL_TYPES.STICKY) this._checkStickyWall(ball);
+
+        // Exploder: count brick hit
+        if (ball.type === BALL_TYPES.EXPLODER && !ball.exploded) {
+          ball.bouncesLeft = (ball.bouncesLeft || 1) - 1;
+          if (ball.bouncesLeft <= 0) triggerExplosion(ball, this.objects, this.sparks);
+        }
+
+        // Splitter: always spawn children on brick hit (no _fromChute guard — brick is a valid trigger)
+        if (ball.type === BALL_TYPES.SPLITTER && !ball.isSplitChild) {
+          if (!ball._brickSplitCooldown || ball._brickSplitCooldown <= 0) {
+            var splitKids = makeSplitChildren(ball, BallSettings.splitter.splitCount);
+            for (var sk = 0; sk < splitKids.length; sk++) this.objects.push(splitKids[sk]);
+            ball._brickSplitCooldown = 20;
+          }
+        }
+
+        if (destroyed) EventManager.dispatch(brick.id + '_triggered');
+        this.collisions++;
+        this.ui.setCollisions(this.collisions);
+      }
+      // Tick brick split cooldown
+      for (j = 0; j < this.objects.length; j++) {
+        if (this.objects[j]._brickSplitCooldown > 0) this.objects[j]._brickSplitCooldown--;
       }
     }
 
@@ -994,17 +1016,46 @@ class Game {
 
     ctx.save();
 
-    // ── Shaft background ─────────────────────────────────────────────────────
-    ctx.fillStyle = 'rgba(0,15,35,0.55)';
-    ctx.fillRect(leftX, topY, CW, floorY - topY);
+    // ── Shaft — 3D tube effect with edge darkening and gloss ─────────────────
+    var shaftTop    = topY;
+    var shaftBottom = floorY;
+    var shaftH      = shaftBottom - shaftTop;
 
-    // ── LEFT WALL ─────────────────────────────────────────────────────────────
-    // From topY: straight down to J curve bottom.
-    // Above topY: 45° diagonal from (leftX, topY) up to (W, topY - (W - leftX))
-    // — i.e. angled right at 45° until it hits the right edge of the screen.
+    // Left edge dark gradient (15% of width)
+    var edgeW = Math.floor(CW * 0.18);
+    var gradL = ctx.createLinearGradient(leftX, 0, leftX + edgeW, 0);
+    gradL.addColorStop(0,   'rgba(0,5,18,0.80)');
+    gradL.addColorStop(0.5, 'rgba(0,20,50,0.45)');
+    gradL.addColorStop(1,   'rgba(0,20,50,0.00)');
+    ctx.fillStyle = gradL;
+    ctx.fillRect(leftX, shaftTop, edgeW, shaftH);
+
+    // Right edge dark gradient
+    var gradR = ctx.createLinearGradient(W - edgeW, 0, W, 0);
+    gradR.addColorStop(0,   'rgba(0,20,50,0.00)');
+    gradR.addColorStop(0.5, 'rgba(0,20,50,0.45)');
+    gradR.addColorStop(1,   'rgba(0,5,18,0.80)');
+    ctx.fillStyle = gradR;
+    ctx.fillRect(W - edgeW, shaftTop, edgeW, shaftH);
+
+    // Center fill — deep space blue, semi-transparent
+    ctx.fillStyle = 'rgba(0,15,38,0.52)';
+    ctx.fillRect(leftX + edgeW, shaftTop, CW - edgeW * 2, shaftH);
+
+    // Gloss highlight — narrow bright strip near left edge, like a cylindrical tube
+    var glossW = Math.max(3, Math.floor(CW * 0.12));
+    var gradG  = ctx.createLinearGradient(leftX + 4, 0, leftX + 4 + glossW, 0);
+    gradG.addColorStop(0,   'rgba(100,200,255,0.00)');
+    gradG.addColorStop(0.3, 'rgba(120,220,255,0.18)');
+    gradG.addColorStop(1,   'rgba(80,180,255,0.00)');
+    ctx.fillStyle = gradG;
+    ctx.fillRect(leftX + 4, shaftTop, glossW, shaftH);
+
+    // ── LEFT WALL of chute ────────────────────────────────────────────────────
+    // Per sketch: diagonal from near top-right → down to shaft → J curve out left
     var diagEndX = W;
-    var diagEndY = topY - (W - leftX);  // 45° means deltaY = deltaX
-    if (diagEndY < 0) diagEndY = 0;     // clamp to top of screen
+    var diagEndY = topY - (W - leftX);
+    if (diagEndY < 0) diagEndY = 0;
 
     ctx.strokeStyle = 'rgba(0,180,255,0.80)';
     ctx.lineWidth   = 2.5;
@@ -1013,16 +1064,15 @@ class Game {
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
-    // Main left wall: diagonal top → straight down → J curve
     ctx.beginPath();
-    ctx.moveTo(diagEndX, diagEndY);                              // top-right start of diagonal
-    ctx.lineTo(leftX, topY);                                     // diagonal down-left to shaft top
-    ctx.lineTo(leftX, floorY - turnR);                           // straight down
-    ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY); // smooth J bend
+    ctx.moveTo(diagEndX, diagEndY);
+    ctx.lineTo(leftX, topY);                                      // diagonal
+    ctx.lineTo(leftX, floorY - turnR);                            // straight down
+    ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY);  // J curve
     ctx.stroke();
 
-    // ── RIGHT WALL = screen edge ──────────────────────────────────────────────
-    ctx.strokeStyle = 'rgba(0,120,200,0.30)';
+    // ── RIGHT WALL = screen edge (faint) ─────────────────────────────────────
+    ctx.strokeStyle = 'rgba(0,120,200,0.25)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 0;
     ctx.beginPath();
@@ -1030,42 +1080,32 @@ class Game {
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
-    // ── LEFT RAMP — raised one ball-height, curves up to left screen edge ──────
-    var ballR   = 12;  // approximate ball radius for clearance
-    var rampR   = 42;
-    var rampY   = floorY - ballR * 2;  // raised so ball fits underneath
-    ctx.strokeStyle = 'rgba(0,180,255,0.55)';
+    // ── SMALL BUMP at J exit (right side of chute exit) ──────────────────────
+    // Per sketch: a small curve bump right where the ball comes out of the J,
+    // sitting ON the floor line
+    var bumpR = 18;
+    var exitX = leftX - turnR;
+    ctx.strokeStyle = 'rgba(0,180,255,0.60)';
     ctx.lineWidth   = 2;
     ctx.shadowColor = '#00aaff';
     ctx.shadowBlur  = 5;
-    ctx.lineCap     = 'round';
     ctx.beginPath();
-    // Arc: center at (rampR, rampY), sweeps from angle π (far left) to π/2 (top)
-    // Draws curve from (0, rampY) rising to (rampR, rampY - rampR)
-    // Then extend line to left screen edge (x=0) so ramp meets the wall
-    ctx.moveTo(0, rampY);
-    ctx.arc(rampR, rampY, rampR, Math.PI, Math.PI / 2, true);
+    // Small upward bump centered at exitX on floor
+    ctx.arc(exitX, floorY, bumpR, Math.PI, 0, false);  // hump up from floor
     ctx.stroke();
-    ctx.shadowBlur = 0;
 
-    // ── FLOOR RAMPS — two small curves at the base ───────────────────────────
-    // Ramp 1: right side, at screen edge (x = W), curves up from floor
-    var fRampR = 28;
-    ctx.strokeStyle = 'rgba(0,180,255,0.45)';
+    // ── LEFT RAMP — curves from floor up to left screen edge ─────────────────
+    // Per sketch: starts at bottom floor, smooth curve that meets left wall (x=0)
+    var rampR = 55;
+    ctx.strokeStyle = 'rgba(0,180,255,0.55)';
     ctx.lineWidth   = 2;
     ctx.shadowColor = '#00aaff';
     ctx.shadowBlur  = 4;
-    // Right floor ramp: center at (W, floorY), arc from angle -π/2 (top) to π (left)
-    // Draws from (W - fRampR, floorY) curving up to (W, floorY - fRampR)
     ctx.beginPath();
-    ctx.arc(W, floorY, fRampR, Math.PI, Math.PI / 2, true);  // left-of-W to above-W
-    ctx.stroke();
-
-    // Ramp 2: aligned with the chute exit (leftX - turnR), raised one ball-height
-    // Center sits at (leftX - turnR, floorY), ramp curves from floor up
-    var exitX = leftX - turnR;
-    ctx.beginPath();
-    ctx.arc(exitX, floorY, fRampR, Math.PI, Math.PI / 2, true);
+    // Arc center at (rampR, floorY): sweeps from π (leftmost point = x=0, y=floorY)
+    // going CCW (upward) to π/2 (topmost point = rampR, floorY-rampR)
+    // This draws a quarter-circle from (0, floorY) rising to (rampR, floorY-rampR)
+    ctx.arc(rampR, floorY, rampR, Math.PI, Math.PI / 2, true);
     ctx.stroke();
     ctx.shadowBlur = 0;
 

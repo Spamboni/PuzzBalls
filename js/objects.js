@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1201;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1202;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -457,17 +457,35 @@ class BreakableBrick {
     this.health     = health;
     this.maxHealth  = health;
     this.id         = id;
-    this.regenAfter = regenAfter || null; // ms until regen (null = no regen)
+    this.regenAfter = regenAfter || null;
     this.regenTimer = 0;
     this.hitFlash   = 0;
     this.phase      = Math.random() * Math.PI * 2;
-    // Pick color from palette deterministically from id string
     var hash = 0;
     for (var i = 0; i < (id || '').length; i++) hash = (hash * 31 + id.charCodeAt(i)) & 0xffff;
     var pal = BreakableBrick._palette();
     this._pal = pal[hash % pal.length];
-    // Pre-bake some random crack seed for consistent texture
-    this._crackSeed = Math.random();
+
+    // Pre-generate unique crack lines for each of 4 damage states
+    // Each crack: { x1, y1, jag, len, branch? }
+    this._cracks = [];
+    for (var state = 0; state < 4; state++) {
+      var stateCracks = [];
+      var count = [0, 2, 4, 7][state];
+      for (var c = 0; c < count; c++) {
+        stateCracks.push({
+          x1:  (Math.random() - 0.5) * 0.75,          // fractional position on w
+          y1:  (Math.random() - 0.45) * 0.6,           // fractional position on h
+          jag: (Math.random() > 0.5 ? 1 : -1) * (4 + Math.random() * 8),
+          len: 0.25 + Math.random() * 0.45,
+          rot: (Math.random() - 0.5) * 0.6,            // slight rotation variance
+          thick: 0.7 + Math.random() * 0.8,
+          branch: state >= 2 && Math.random() > 0.5,   // branches on heavier cracks
+          bJag:  (Math.random() > 0.5 ? 1 : -1) * (3 + Math.random() * 6),
+        });
+      }
+      this._cracks.push(stateCracks);
+    }
   }
 
   overlaps(ball) {
@@ -576,40 +594,39 @@ class BreakableBrick {
     }
     ctx.shadowBlur = 0;
 
-    // Cracks — 4 progressive states based on damage
-    // state 0: 100-75% — pristine
-    // state 1: 75-50%  — light crack
-    // state 2: 50-25%  — medium cracks
-    // state 3: 25-0%   — heavy cracks
-    if (frac < 1) {
-      var seed      = this._crackSeed;
+    // Cracks — 4 progressive states, each brick has unique pre-randomized geometry
+    if (frac < 1 && this._cracks) {
       var crackState = frac > 0.75 ? 0 : frac > 0.50 ? 1 : frac > 0.25 ? 2 : 3;
-      var crackAlpha = [0, 0.35, 0.60, 0.85][crackState];
-      var numCracks  = [0, 2, 4, 6][crackState];
+      var crackAlpha = [0, 0.40, 0.65, 0.88][crackState];
+      var stateCracks = this._cracks[crackState] || [];
 
-      if (numCracks > 0) {
-        for (var c = 0; c < numCracks; c++) {
-          var cx1  = (seed * 0.4 + c * 0.15 - 0.35) * this.w;
-          var cy1  = -this.h * 0.35 + c * 1.5;
-          var jag  = (c % 2 === 0 ? 1 : -1) * (5 + crackState * 3);
-          var len  = 0.3 + crackState * 0.12;
-          ctx.strokeStyle = 'rgba(255,255,255,' + crackAlpha + ')';
-          ctx.lineWidth   = 0.8 + crackState * 0.3;
+      for (var c = 0; c < stateCracks.length; c++) {
+        var ck  = stateCracks[c];
+        var cx1 = ck.x1 * this.w;
+        var cy1 = ck.y1 * this.h;
+        var jag = ck.jag;
+        var endY = cy1 + this.h * ck.len;
+
+        ctx.strokeStyle = 'rgba(255,255,255,' + crackAlpha + ')';
+        ctx.lineWidth   = ck.thick;
+        ctx.save();
+        ctx.rotate(ck.rot);
+        ctx.beginPath();
+        ctx.moveTo(cx1, cy1);
+        ctx.lineTo(cx1 + jag * 0.5, cy1 + this.h * ck.len * 0.45);
+        ctx.lineTo(cx1 + jag,       endY);
+        ctx.stroke();
+
+        // Branch crack for heavier damage states
+        if (ck.branch) {
+          ctx.strokeStyle = 'rgba(255,200,120,' + crackAlpha * 0.7 + ')';
+          ctx.lineWidth   = ck.thick * 0.6;
           ctx.beginPath();
-          ctx.moveTo(cx1, cy1);
-          ctx.lineTo(cx1 + jag,       cy1 + this.h * len * 0.5);
-          ctx.lineTo(cx1 + jag * 0.4, cy1 + this.h * len);
+          ctx.moveTo(cx1 + jag * 0.5, cy1 + this.h * ck.len * 0.4);
+          ctx.lineTo(cx1 + jag * 0.5 + ck.bJag, cy1 + this.h * ck.len * 0.75);
           ctx.stroke();
-          // Extra branching crack for heavy damage
-          if (crackState >= 3) {
-            ctx.strokeStyle = 'rgba(255,200,100,0.5)';
-            ctx.lineWidth   = 0.6;
-            ctx.beginPath();
-            ctx.moveTo(cx1 + jag, cy1 + this.h * len * 0.4);
-            ctx.lineTo(cx1 + jag * 2, cy1 + this.h * len * 0.7);
-            ctx.stroke();
-          }
         }
+        ctx.restore();
       }
     }
 
