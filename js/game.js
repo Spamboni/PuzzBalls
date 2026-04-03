@@ -215,20 +215,26 @@ class Game {
   }
 
   _makeBall(type, x) {
-    var bs = BallSettings[type];
-    var r  = bs.size;
-    var y  = this.floorY() - r;
-    var obj = new PhysObj(x, y, r, r / 10, bs.color, bs.glow, bs.label.slice(0, 3));
-    obj.type     = type;
-    obj.inFlight = false;
-    obj.pinned   = false;
-    obj.exploded = false;
-    obj.dead     = false;
-    obj.hasStuck = false;
-    obj.hasSplit = false;
-    obj.stuckTo  = null;
-    obj.gravActive = false;   // gravity well: only true when manually slung
+    var bs   = BallSettings[type];
+    var r    = bs.size;
+    var y    = this.floorY() - r;
+    var mass = (r / 10) * (bs.density || 1.0);
+    var obj  = new PhysObj(x, y, r, mass, bs.color, bs.glow, bs.label.slice(0, 3));
+    obj.type       = type;
+    obj.inFlight   = false;
+    obj.pinned     = false;
+    obj.exploded   = false;
+    obj.dead       = false;
+    obj.hasStuck   = false;
+    obj.hasSplit   = false;
+    obj.stuckTo    = null;
+    obj.gravActive = false;
     obj._slungIds  = [];
+    // Exploder: assign random tier (1, 2, or 3) and set bounce countdown
+    if (type === BALL_TYPES.EXPLODER) {
+      obj._explodeTier = Math.ceil(Math.random() * 3);
+      obj.bouncesLeft  = obj._explodeTier;
+    }
     return obj;
   }
 
@@ -426,8 +432,15 @@ class Game {
         if (hit) {
           this.collisions++;
           this.ui.setCollisions(this.collisions);
-          if (a.type === BALL_TYPES.EXPLODER && !a.exploded) triggerExplosion(a, this.objects, this.sparks);
-          if (b.type === BALL_TYPES.EXPLODER && !b.exploded) triggerExplosion(b, this.objects, this.sparks);
+          // Exploder: count down bounces before exploding
+          if (a.type === BALL_TYPES.EXPLODER && !a.exploded) {
+            a.bouncesLeft = (a.bouncesLeft || 1) - 1;
+            if (a.bouncesLeft <= 0) triggerExplosion(a, this.objects, this.sparks);
+          }
+          if (b.type === BALL_TYPES.EXPLODER && !b.exploded) {
+            b.bouncesLeft = (b.bouncesLeft || 1) - 1;
+            if (b.bouncesLeft <= 0) triggerExplosion(b, this.objects, this.sparks);
+          }
           this._tryStick(a, b); this._tryStick(b, a);
           if (a.type === BALL_TYPES.SPLITTER && !a.hasSplit && !a.isSplitChild && a.inFlight) { a.hasSplit = true; toAdd = toAdd.concat(makeSplitChildren(a, BallSettings.splitter.splitCount)); }
           if (b.type === BALL_TYPES.SPLITTER && !b.hasSplit && !b.isSplitChild && b.inFlight) { b.hasSplit = true; toAdd = toAdd.concat(makeSplitChildren(b, BallSettings.splitter.splitCount)); }
@@ -509,7 +522,10 @@ class Game {
         var o = this.objects[j];
         if (o.dead || o.stuckTo) continue;
         var oh = Physics.bounceOffObstacle(o, this.obstacles[i], this.sparks);
-        if (oh && o.type === BALL_TYPES.EXPLODER && !o.exploded) triggerExplosion(o, this.objects, this.sparks);
+        if (oh && o.type === BALL_TYPES.EXPLODER && !o.exploded) {
+          o.bouncesLeft = (o.bouncesLeft || 1) - 1;
+          if (o.bouncesLeft <= 0) triggerExplosion(o, this.objects, this.sparks);
+        }
       }
     }
 
@@ -595,10 +611,12 @@ class Game {
     var W        = this.W;
     var floorY   = this.floorY();
     var CHUTE_W  = 48;
-    var TURN_R   = 38;                   // generous curve like the sketch
+    var TURN_R   = 42;                    // generous arc
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TURN_CY  = floorY - TURN_R;     // arc center; bottom of arc = floorY
+    // Arc center Y: ball at angle=π/2 lands at (LEFT_X - TURN_R, TURN_CY + TURN_R)
+    // We want that exit Y = floorY, so TURN_CY = floorY - TURN_R
+    var TURN_CY  = floorY - TURN_R;
     var TOP_Y    = 160;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, TURN_CY };
   }
@@ -662,34 +680,31 @@ class Game {
         }
 
       } else if (b._inChute === 'turn') {
-        // Arc: center at (leftX, turnCY)
-        // angle=0 → ball at (leftX + turnR, turnCY) [bottom of shaft]
-        // angle=π/2 → ball at (leftX, turnCY + turnR) = (leftX, floorY)
-        b._turnAngle += b._turnSpeed + 0.045;
+        // Arc center at (LEFT_X, TURN_CY)
+        // angle=0: ball at (LEFT_X + TURN_R, TURN_CY)  ← bottom of shaft
+        // angle=π/2: ball at (LEFT_X, TURN_CY + TURN_R) = (LEFT_X, floorY)  ← exit
+        b._turnAngle += b._turnSpeed + 0.05;
         if (b._turnAngle >= Math.PI / 2) b._turnAngle = Math.PI / 2;
         var a = b._turnAngle;
-        b.x = leftX + turnR * Math.cos(a - Math.PI / 2 + Math.PI / 2); // = leftX + turnR*cos(a)... simplified:
-        // Clean: start at (leftX+turnR, turnCY), sweep CCW to (leftX, turnCY+turnR)
-        b.x = leftX + turnR * Math.cos(a);
-        b.y = turnCY + turnR * Math.sin(a);
+        b.x = leftX + turnR * Math.cos(a);   // cos goes from 1→0
+        b.y = turnCY + turnR * Math.sin(a);  // sin goes from 0→1
         if (b._turnAngle >= Math.PI / 2) {
           b._inChute = 'exit';
-          b.x  = leftX;
-          b.y  = floorY - b.r;
-          b.vx = -(3 + Math.random() * 1.5);
-          b.vy = 0;
+          b.x   = leftX;
+          b.y   = floorY - b.r;
+          // Random exit velocity: shoot ball left, ranging from ~halfway to full screen
+          var minSpeed = (leftX * 0.5) / 30;   // enough to reach halfway in ~30 frames
+          var maxSpeed = (leftX * 1.0) / 22;   // enough to reach far edge in ~22 frames
+          b.vx = -(minSpeed + Math.random() * (maxSpeed - minSpeed));
+          b.vy = -(1 + Math.random() * 1.5);   // slight upward pop
           if (window.Sound) Sound.chuteExit();
         }
 
       } else if (b._inChute === 'exit') {
-        b.x  += b.vx;
-        b.vx *= 0.87;
-        b.y   = floorY - b.r;
-        if (Math.abs(b.vx) < 0.7) {
-          b._inChute = null; b.inFlight = false;
-          b.vx = 0; b.vy = 0;
-          toRelease.push(i);
-        }
+        // Hand straight off to physics — it carries its own exit velocity
+        b._inChute = null;
+        b.inFlight = true;   // keep inFlight so physics carries it
+        toRelease.push(i);
       }
     }
 
@@ -704,7 +719,7 @@ class Game {
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
                 + (this._chuteActive ? this._chuteActive.length : 0)
                 + (this._chuteQueue  ? this._chuteQueue.length  : 0);
-    if (onField >= 5) return;
+    if (onField >= 15) return;  // max 15
     this._chuteQueue = this._chuteQueue || [];
     this._chuteQueue.push(type);
   }
@@ -791,7 +806,7 @@ class Game {
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
                 + (this._chuteActive ? this._chuteActive.length : 0)
                 + (this._chuteQueue  ? this._chuteQueue.length  : 0);
-    var atMax = onField >= 5;
+    var atMax = onField >= 15;
 
     for (var bi = 0; bi < btnTypes.length; bi++) {
       var by    = btnStartY + bi * (btnH + 4);
@@ -903,14 +918,53 @@ class Game {
     if (obj.dead || obj.exploded) return;
     var ctx = this.ctx, bs = BallSettings[obj.type] || BallSettings.bouncer;
     var pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.06 + obj.r);
-    if (obj.type !== BALL_TYPES.BOUNCER) {
+
+    // Outer aura for non-bouncers
+    if (obj.type !== BALL_TYPES.BOUNCER && obj.type !== BALL_TYPES.EXPLODER) {
       ctx.beginPath(); ctx.arc(obj.x, obj.y, obj.r + 4 + pulse * 2, 0, Math.PI * 2);
       ctx.strokeStyle = bs.glow + '66'; ctx.lineWidth = 1.5; ctx.stroke();
     }
+
+    // Exploder: draw concentric dark-red rings based on tier
+    if (obj.type === BALL_TYPES.EXPLODER) {
+      var tier = obj._explodeTier || 1;
+      // Ring darkness by tier: tier3 = darkest outer rings
+      var ringDefs = [
+        // tier1: 1 medium ring
+        [[1.0, 'rgba(180,30,0,0.55)', 2.5]],
+        // tier2: 2 rings — inner lighter, outer darker
+        [[1.0, 'rgba(140,20,0,0.50)', 2], [1.55, 'rgba(200,40,0,0.70)', 2.5]],
+        // tier3: 3 rings — graduated dark
+        [[1.0, 'rgba(120,15,0,0.45)', 1.8], [1.5, 'rgba(170,25,0,0.60)', 2.2], [2.1, 'rgba(220,40,0,0.75)', 2.8]],
+      ];
+      var rings = ringDefs[tier - 1] || ringDefs[0];
+      for (var ri = 0; ri < rings.length; ri++) {
+        var rDef = rings[ri];
+        ctx.beginPath();
+        ctx.arc(obj.x, obj.y, obj.r * rDef[0] + 3 + pulse * 1.5, 0, Math.PI * 2);
+        ctx.strokeStyle = rDef[1];
+        ctx.lineWidth   = rDef[2];
+        ctx.shadowColor = '#ff3300'; ctx.shadowBlur = 4 + ri * 2;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      // Countdown pips below ball
+      if (!obj.isSplitChild) {
+        var remaining = obj.bouncesLeft || 0;
+        for (var pi = 0; pi < tier; pi++) {
+          var pipColor = pi < remaining ? '#ff4400' : 'rgba(100,20,0,0.4)';
+          ctx.beginPath();
+          ctx.arc(obj.x - (tier - 1) * 4 + pi * 8, obj.y + obj.r + 5, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = pipColor;
+          ctx.fill();
+        }
+      }
+    }
+
     obj.draw(ctx);
     ctx.fillStyle = bs.glow + 'aa'; ctx.font = "8px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(bs.label, obj.x, obj.y + obj.r + 3);
+    ctx.fillText(bs.label, obj.x, obj.y + obj.r + (obj.type === BALL_TYPES.EXPLODER ? 10 : 3));
   }
 
   _drawGravityRange(well) {
