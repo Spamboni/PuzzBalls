@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['physics.js'] = 1201;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['physics.js'] = 1301;
 /**
  * physics.js
  * Pure physics engine — no DOM, no canvas, no rendering.
@@ -66,7 +66,9 @@ function stepObject(obj, W, H, sparks, settings) {
   if (obj.y + obj.r > H) {
     obj.y = H - obj.r;
     var spd4 = Math.abs(obj.vy);
-    obj.vy = -Math.abs(obj.vy) * bounce;
+    var decay = (window.BallSettings && window.BallSettings[obj.type] && window.BallSettings[obj.type].bounceDecay);
+    var effectiveBounce = (decay !== undefined) ? Math.min(bounce, decay) : bounce;
+    obj.vy = -Math.abs(obj.vy) * effectiveBounce;
     // Apply ground friction to horizontal roll
     var gf = (window.BallSettings && window.BallSettings[obj.type] && window.BallSettings[obj.type].groundFriction);
     if (gf !== undefined) obj.vx *= gf;

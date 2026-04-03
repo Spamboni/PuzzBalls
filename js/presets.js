@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 1201;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 1301;
 // presets.js — Physics preset save/load system
 // Presets are stored in localStorage under 'puzzballs_presets'
 
@@ -131,7 +131,7 @@ var Presets = (function() {
   function _captureBall(type) {
     if (!window.BallSettings) return {};
     var bs = BallSettings[type];
-    var out = { velocity: bs.velocity || 1.0, bounciness: bs.bounciness || 1.0, groundFriction: bs.groundFriction !== undefined ? bs.groundFriction : 0.88, density: bs.density || 1.0, baseDamage: bs.baseDamage || 20 };
+    var out = { velocity: bs.velocity || 1.0, bounciness: bs.bounciness || 1.0, groundFriction: bs.groundFriction !== undefined ? bs.groundFriction : 0.88, density: bs.density || 1.0, baseDamage: bs.baseDamage || 20, bounceDecay: bs.bounceDecay !== undefined ? bs.bounceDecay : 0.72 };
     if (type === 'exploder') { out.blastRadius = bs.blastRadius; out.blastForce = bs.blastForce; }
     if (type === 'sticky')   { out.stickyStrength = bs.stickyStrength; out.stickThreshold = bs.stickThreshold || 6; }
     if (type === 'splitter') { out.splitCount = bs.splitCount; }
@@ -154,6 +154,12 @@ var Presets = (function() {
       if (src.groundFriction !== undefined) dst.groundFriction = src.groundFriction;
       if (src.density        !== undefined) dst.density        = src.density;
       if (src.baseDamage     !== undefined) dst.baseDamage     = src.baseDamage;
+      if (src.bounceDecay    !== undefined) dst.bounceDecay    = src.bounceDecay;
+      if (src.explosionDamage!== undefined) dst.explosionDamage= src.explosionDamage;
+      if (src.bounceHeightY  !== undefined) dst.bounceHeightY  = src.bounceHeightY;
+      if (src.bounceDistanceX!== undefined) dst.bounceDistanceX= src.bounceDistanceX;
+      if (src.deadZonePercent!== undefined) dst.deadZonePercent= src.deadZonePercent;
+      if (src.stickThreshold !== undefined) dst.stickThreshold = src.stickThreshold;
       if (type === 'exploder') {
         if (src.blastRadius !== undefined) dst.blastRadius = src.blastRadius;
         if (src.blastForce  !== undefined) dst.blastForce  = src.blastForce;

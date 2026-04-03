@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1203;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1301;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -316,20 +316,28 @@ class Game {
         if (self._tryDeleteBall(pos.x, pos.y)) return;
       }
 
-      // ── Tap stuck sticky ball to drop it ─────────────────────────────────
+      // ── Tap stuck sticky ball — bounce off with dead zone randomization ──────
       for (var si = 0; si < self.objects.length; si++) {
         var sobj = self.objects[si];
         if (sobj.type === BALL_TYPES.STICKY && sobj.stuckTo === '_wall_') {
           if (Math.hypot(pos.x - sobj.x, pos.y - sobj.y) < sobj.r + 14) {
+            var bs_s       = BallSettings.sticky;
+            var maxY       = bs_s.bounceHeightY   || 80;
+            var maxX       = bs_s.bounceDistanceX || 60;
+            var deadZone   = (bs_s.deadZonePercent || 30) / 100;
+            var deadRadius = maxX * deadZone;          // half the blocked center range
+            // Pick X with dead zone: random in [-maxX,-deadRadius] or [deadRadius,maxX]
+            var side   = Math.random() > 0.5 ? 1 : -1;
+            var rawX   = deadRadius + Math.random() * (maxX - deadRadius);
+            var launchX = rawX * side;
+            // Convert pixel targets to per-frame velocities (approximate 30 frames to peak)
+            sobj.vx       = launchX / 22;
+            sobj.vy       = -maxY / 18;
             sobj.stuckTo  = null;
             sobj.inFlight = true;
-            sobj.vy = 1.5;  // drop downward
-            // Nudge away from any edge so it won't immediately re-stick
-            var nudgeX = 0;
-            if (sobj.x - sobj.r <= sobj.r + 4) nudgeX = sobj.r + 6;        // left wall
-            else if (sobj.x + sobj.r >= self.W - sobj.r - 4) nudgeX = -(sobj.r + 6); // right wall
-            sobj.x += nudgeX;
-            sobj.vx = nudgeX * 0.15;  // tiny lateral push
+            // Nudge away from walls
+            if (sobj.x - sobj.r <= sobj.r + 4) { sobj.x += sobj.r + 6; sobj.vx = Math.abs(sobj.vx); }
+            else if (sobj.x + sobj.r >= self.W - sobj.r - 4) { sobj.x -= sobj.r + 6; sobj.vx = -Math.abs(sobj.vx); }
             if (window.Sound) Sound.thud(3);
             return;
           }
@@ -640,7 +648,21 @@ class Game {
           }
         }
 
-        if (destroyed) EventManager.dispatch(brick.id + '_triggered');
+        if (destroyed) {
+          EventManager.dispatch(brick.id + '_triggered');
+          // §1.1: Detach any sticky balls near this brick
+          for (var di = 0; di < this.objects.length; di++) {
+            var dball = this.objects[di];
+            if (dball.type === BALL_TYPES.STICKY && dball.stuckTo === '_wall_') {
+              if (Math.hypot(dball.x - brick.x, dball.y - brick.y) < brick.w + dball.r) {
+                dball.stuckTo  = null;
+                dball.inFlight = true;
+                dball.vy = -1.5;
+                dball.vx = (Math.random() - 0.5) * 2;
+              }
+            }
+          }
+        }
         this.collisions++;
         this.ui.setCollisions(this.collisions);
       }
@@ -1016,96 +1038,161 @@ class Game {
 
     ctx.save();
 
-    // ── Shaft — 3D tube effect with edge darkening and gloss ─────────────────
-    var shaftTop    = topY;
-    var shaftBottom = floorY;
-    var shaftH      = shaftBottom - shaftTop;
+    // ── 3D TUBE BODY ─────────────────────────────────────────────────────────
+    // Dark fill with edge gradients to simulate cylindrical depth
+    var shaftH = floorY - topY;
+    var edgeW  = Math.floor(CW * 0.20);
 
-    // Left edge dark gradient (15% of width)
-    var edgeW = Math.floor(CW * 0.18);
-    var gradL = ctx.createLinearGradient(leftX, 0, leftX + edgeW, 0);
-    gradL.addColorStop(0,   'rgba(0,5,18,0.80)');
-    gradL.addColorStop(0.5, 'rgba(0,20,50,0.45)');
-    gradL.addColorStop(1,   'rgba(0,20,50,0.00)');
-    ctx.fillStyle = gradL;
-    ctx.fillRect(leftX, shaftTop, edgeW, shaftH);
+    // Left dark edge
+    var gL = ctx.createLinearGradient(leftX, 0, leftX + edgeW, 0);
+    gL.addColorStop(0,   'rgba(0,4,14,0.90)');
+    gL.addColorStop(0.6, 'rgba(0,18,45,0.55)');
+    gL.addColorStop(1,   'rgba(0,18,45,0.00)');
+    ctx.fillStyle = gL;
+    ctx.fillRect(leftX, topY, edgeW, shaftH);
 
-    // Right edge dark gradient
-    var gradR = ctx.createLinearGradient(W - edgeW, 0, W, 0);
-    gradR.addColorStop(0,   'rgba(0,20,50,0.00)');
-    gradR.addColorStop(0.5, 'rgba(0,20,50,0.45)');
-    gradR.addColorStop(1,   'rgba(0,5,18,0.80)');
-    ctx.fillStyle = gradR;
-    ctx.fillRect(W - edgeW, shaftTop, edgeW, shaftH);
+    // Right dark edge
+    var gR = ctx.createLinearGradient(W - edgeW, 0, W, 0);
+    gR.addColorStop(0,   'rgba(0,18,45,0.00)');
+    gR.addColorStop(0.4, 'rgba(0,18,45,0.55)');
+    gR.addColorStop(1,   'rgba(0,4,14,0.90)');
+    ctx.fillStyle = gR;
+    ctx.fillRect(W - edgeW, topY, edgeW, shaftH);
 
-    // Center fill — deep space blue, semi-transparent
-    ctx.fillStyle = 'rgba(0,15,38,0.52)';
-    ctx.fillRect(leftX + edgeW, shaftTop, CW - edgeW * 2, shaftH);
+    // Center body fill
+    ctx.fillStyle = 'rgba(0,12,32,0.48)';
+    ctx.fillRect(leftX + edgeW, topY, CW - edgeW * 2, shaftH);
 
-    // Gloss highlight — narrow bright strip near left edge, like a cylindrical tube
-    var glossW = Math.max(3, Math.floor(CW * 0.12));
-    var gradG  = ctx.createLinearGradient(leftX + 4, 0, leftX + 4 + glossW, 0);
-    gradG.addColorStop(0,   'rgba(100,200,255,0.00)');
-    gradG.addColorStop(0.3, 'rgba(120,220,255,0.18)');
-    gradG.addColorStop(1,   'rgba(80,180,255,0.00)');
-    ctx.fillStyle = gradG;
-    ctx.fillRect(leftX + 4, shaftTop, glossW, shaftH);
+    // Left inner gloss streak (near-side of tube catches light)
+    var gG = ctx.createLinearGradient(leftX + 3, 0, leftX + 3 + Math.floor(CW * 0.22), 0);
+    gG.addColorStop(0,   'rgba(140,220,255,0.00)');
+    gG.addColorStop(0.35,'rgba(160,235,255,0.22)');
+    gG.addColorStop(1,   'rgba(100,200,255,0.00)');
+    ctx.fillStyle = gG;
+    ctx.fillRect(leftX + 3, topY, Math.floor(CW * 0.22), shaftH);
 
-    // ── LEFT WALL of chute ────────────────────────────────────────────────────
-    // Per sketch: diagonal from near top-right → down to shaft → J curve out left
+    // Faint right-side secondary gloss (rim light on far side)
+    var gG2 = ctx.createLinearGradient(W - Math.floor(CW * 0.18), 0, W, 0);
+    gG2.addColorStop(0,   'rgba(80,160,220,0.00)');
+    gG2.addColorStop(0.6, 'rgba(80,160,220,0.10)');
+    gG2.addColorStop(1,   'rgba(80,160,220,0.00)');
+    ctx.fillStyle = gG2;
+    ctx.fillRect(W - Math.floor(CW * 0.18), topY, Math.floor(CW * 0.18), shaftH);
+
+    // Tube collar rings — horizontal bands like pipe segments
+    ctx.strokeStyle = 'rgba(0,180,255,0.18)';
+    ctx.lineWidth   = 1;
+    for (var ry = topY + 60; ry < floorY - turnR - 10; ry += 80) {
+      ctx.beginPath(); ctx.moveTo(leftX, ry); ctx.lineTo(W, ry); ctx.stroke();
+    }
+
+    // ── LEFT WALL — diagonal → straight down → J curve ───────────────────────
     var diagEndX = W;
     var diagEndY = topY - (W - leftX);
     if (diagEndY < 0) diagEndY = 0;
 
-    ctx.strokeStyle = 'rgba(0,180,255,0.80)';
+    ctx.strokeStyle = 'rgba(0,200,255,0.85)';
     ctx.lineWidth   = 2.5;
-    ctx.shadowColor = '#00aaff';
-    ctx.shadowBlur  = 8;
+    ctx.shadowColor = '#00ccff';
+    ctx.shadowBlur  = 10;
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
     ctx.beginPath();
     ctx.moveTo(diagEndX, diagEndY);
-    ctx.lineTo(leftX, topY);                                      // diagonal
-    ctx.lineTo(leftX, floorY - turnR);                            // straight down
-    ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY);  // J curve
+    ctx.lineTo(leftX, topY);
+    ctx.lineTo(leftX, floorY - turnR);
+    ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY);
     ctx.stroke();
 
-    // ── RIGHT WALL = screen edge (faint) ─────────────────────────────────────
-    ctx.strokeStyle = 'rgba(0,120,200,0.25)';
+    // Inner tube rim line (gives the pipe a second wall thickness)
+    ctx.strokeStyle = 'rgba(0,140,200,0.35)';
     ctx.lineWidth   = 1.5;
-    ctx.shadowBlur  = 0;
+    ctx.shadowBlur  = 3;
+    var innerOff = 4;
+    ctx.beginPath();
+    ctx.moveTo(diagEndX - innerOff, diagEndY + innerOff);
+    ctx.lineTo(leftX + innerOff, topY + innerOff);
+    ctx.lineTo(leftX + innerOff, floorY - turnR - innerOff);
+    ctx.quadraticCurveTo(leftX + innerOff, floorY - innerOff, leftX - turnR + innerOff, floorY - innerOff);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // ── RIGHT WALL ────────────────────────────────────────────────────────────
+    ctx.strokeStyle = 'rgba(0,140,210,0.30)';
+    ctx.lineWidth   = 1.5;
     ctx.beginPath();
     ctx.moveTo(W, topY);
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
-    // ── SMALL BUMP at J exit (right side of chute exit) ──────────────────────
-    // Per sketch: a small curve bump right where the ball comes out of the J,
-    // sitting ON the floor line
-    var bumpR = 18;
+    // ── FUTURISTIC BALL GENERATOR CAP at top ──────────────────────────────────
+    var capH   = 32;
+    var capY   = topY - capH;
+    var capX   = leftX;
+    var capW   = CW;
+
+    // Cap body
+    ctx.fillStyle = 'rgba(0,25,55,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(capX, capY, capW, capH, [6, 6, 0, 0]);
+    ctx.fill();
+
+    // Cap neon border
+    ctx.strokeStyle = 'rgba(0,200,255,0.80)';
+    ctx.lineWidth   = 1.8;
+    ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.roundRect(capX, capY, capW, capH, [6, 6, 0, 0]);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Cap inner glow
+    var gCap = ctx.createLinearGradient(capX, capY, capX, capY + capH);
+    gCap.addColorStop(0, 'rgba(0,200,255,0.25)');
+    gCap.addColorStop(1, 'rgba(0,100,180,0.05)');
+    ctx.fillStyle = gCap;
+    ctx.beginPath(); ctx.roundRect(capX + 2, capY + 2, capW - 4, capH - 4, [4, 4, 0, 0]); ctx.fill();
+
+    // Cap ▼ indicator
+    ctx.fillStyle = 'rgba(0,220,255,0.8)';
+    ctx.font      = "bold 10px 'Share Tech Mono', monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('▼ LOAD', capX + capW / 2, capY + capH / 2);
+
+    // Horizontal scan line on cap
+    ctx.strokeStyle = 'rgba(0,200,255,0.25)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(capX + 4, capY + capH * 0.55);
+    ctx.lineTo(capX + capW - 4, capY + capH * 0.55);
+    ctx.stroke();
+
+    // ── SMALL BUMP at J exit ──────────────────────────────────────────────────
+    var bumpR = 16;
     var exitX = leftX - turnR;
     ctx.strokeStyle = 'rgba(0,180,255,0.60)';
     ctx.lineWidth   = 2;
-    ctx.shadowColor = '#00aaff';
-    ctx.shadowBlur  = 5;
+    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 4;
     ctx.beginPath();
-    // Small upward bump centered at exitX on floor
-    ctx.arc(exitX, floorY, bumpR, Math.PI, 0, false);  // hump up from floor
+    ctx.arc(exitX, floorY, bumpR, Math.PI, 0, false);
     ctx.stroke();
+    ctx.shadowBlur = 0;
 
-    // ── LEFT RAMP — curves from floor up to left screen edge ─────────────────
-    // Per sketch: starts at bottom floor, smooth curve that meets left wall (x=0)
-    var rampR = 55;
-    ctx.strokeStyle = 'rgba(0,180,255,0.55)';
-    ctx.lineWidth   = 2;
-    ctx.shadowColor = '#00aaff';
-    ctx.shadowBlur  = 4;
+    // ── LEFT RAMP — raised by one ball diameter so it clears the floor ────────
+    // Arc from (0, floorY - rampR*2 + rampR) up to (rampR, floorY - rampR)
+    // Raised so top of arc = floorY - rampR*2 — ball can fit under it
+    var rampR  = 52;
+    var rampCY = floorY - rampR;  // center at floor minus radius → top at floor-2r, bottom at floor
+    // But we want it raised: shift center up by one ball diameter (≈24px)
+    var lift   = 26;
+    rampCY    -= lift;
+    ctx.strokeStyle = 'rgba(0,190,255,0.60)';
+    ctx.lineWidth   = 2.5;
+    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 6;
     ctx.beginPath();
-    // Arc center at (rampR, floorY): sweeps from π (leftmost point = x=0, y=floorY)
-    // going CCW (upward) to π/2 (topmost point = rampR, floorY-rampR)
-    // This draws a quarter-circle from (0, floorY) rising to (rampR, floorY-rampR)
-    ctx.arc(rampR, floorY, rampR, Math.PI, Math.PI / 2, true);
+    // Arc center at (rampR, rampCY): from angle π (x=0) CCW to π/2 (top)
+    ctx.arc(rampR, rampCY, rampR, Math.PI, Math.PI / 2, true);
     ctx.stroke();
     ctx.shadowBlur = 0;
 

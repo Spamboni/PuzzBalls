@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1202;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1301;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -17,48 +17,50 @@ var BallSettings = {
     label: 'BOUNCER', color: '#1040a0', glow: '#4488ff',
     size: Math.round(15 * _S),
     velocity: 1.0, bounciness: 1.0,
-    density: 1.0,
-    groundFriction: 0.88,
-    baseDamage: 20,   // base HP damage per hit (out of 100 HP)
+    density: 1.0, groundFriction: 0.88,
+    baseDamage: 20,
+    bounceDecay: 0.72,
   },
   exploder: {
     label: 'EXPLODER', color: '#8b1a00', glow: '#ff4400',
     size: Math.round(13 * _S),
     velocity: 1.0, bounciness: 0.85,
-    density: 0.9,
-    groundFriction: 0.85,
+    density: 0.9, groundFriction: 0.85,
     blastRadius: 130, blastForce: 20,
     baseDamage: 35,
+    explosionDamage: 40,  // flat extra damage on detonation (per spec §2.1)
+    bounceDecay: 0.65,
   },
   sticky: {
     label: 'STICKY', color: '#1a6b00', glow: '#44ff44',
     size: Math.round(13 * _S),
     velocity: 1.0, bounciness: 0.15,
-    density: 2.2,
+    density: 2.2, groundFriction: 0.70,
     stickyStrength: 0.85,
     stickThreshold: 10,
-    groundFriction: 0.70,
-    baseDamage: 25,   // dense/heavy so more impact
+    baseDamage: 25,
+    bounceDecay: 0.50,
+    bounceHeightY: 80,     // max Y distance on tap-bounce (§1.2)
+    bounceDistanceX: 60,   // max X distance on tap-bounce
+    deadZonePercent: 30,   // % center blocked from straight-up (§1.3)
   },
   splitter: {
     label: 'SPLITTER', color: '#6b006b', glow: '#ff44ff',
     size: Math.round(14 * _S),
     velocity: 1.0, bounciness: 0.9,
-    density: 0.5,
-    groundFriction: 0.90,
-    splitCount: 3,
-    childDensity: 1.8,
-    baseDamage: 15,   // light ball, less damage
+    density: 0.5, groundFriction: 0.90,
+    splitCount: 3, childDensity: 1.8,
+    baseDamage: 15,
+    bounceDecay: 0.75,
   },
   gravity: {
     label: 'GRAV WELL', color: '#005555', glow: '#00ffee',
     size: Math.round(16 * _S),
     velocity: 1.0, bounciness: 0.7,
-    density: 1.2,
-    groundFriction: 0.86,
-    gravRange: 150,
-    gravPull:  0.55,
+    density: 1.2, groundFriction: 0.86,
+    gravRange: 150, gravPull: 0.55,
     baseDamage: 18,
+    bounceDecay: 0.68,
   },
 };
 
@@ -173,6 +175,8 @@ function triggerExplosion(exploder, objects, sparks) {
   var tier   = exploder._explodeTier || 1;
   var radius = bs.blastRadius * (0.7 + tier * 0.3);
   var force  = bs.blastForce  * (0.7 + tier * 0.3);
+  // Static explosion damage (§2.1) — applied to all bricks in range
+  var expDmg = (bs.explosionDamage || 40) * tier;
 
   if (window.Physics) {
     Physics.spawnSparks(sparks, exploder.x, exploder.y, '#ff6600', 50 + tier * 20);
@@ -195,6 +199,35 @@ function triggerExplosion(exploder, objects, sparks) {
     obj.vx += (dx / dist) * strength;
     obj.vy += (dy / dist) * strength;
     obj.inFlight = true;
+  }
+
+  // Apply flat explosion damage to bricks in range (§2.1)
+  var game = window._gameInstance;
+  if (game && game.bricks) {
+    for (var bi = 0; bi < game.bricks.length; bi++) {
+      var brick = game.bricks[bi];
+      if (!brick.isAlive()) continue;
+      var bdx  = brick.x - exploder.x, bdy = brick.y - exploder.y;
+      var bdist = Math.hypot(bdx, bdy);
+      if (bdist < radius + Math.max(brick.w, brick.h) / 2) {
+        var falloff = Math.max(0, 1 - bdist / radius);
+        brick.takeDamage(Math.round(expDmg * falloff));
+        if (window.spawnBrickShards) spawnBrickShards(sparks, brick, exploder);
+        // Detach any sticky balls stuck to this brick if it was destroyed
+        if (!brick.isAlive()) {
+          for (var si = 0; si < objects.length; si++) {
+            if (objects[si].stuckTo === '_wall_') {
+              // Can't easily know which wall — just check proximity
+              if (Math.hypot(objects[si].x - brick.x, objects[si].y - brick.y) < brick.w) {
+                objects[si].stuckTo = null;
+                objects[si].inFlight = true;
+                objects[si].vy = -2;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 
