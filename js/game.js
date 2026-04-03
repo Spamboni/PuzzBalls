@@ -44,6 +44,7 @@ class Game {
 
     this.ballQueue  = [];   // remaining balls to be slung, by type
     this.objectives = [];   // { description, met }
+    this.speedMult  = 1.0;  // global simulation speed — controlled by slider
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
     this.buttons   = [];
@@ -150,7 +151,7 @@ class Game {
             self.buttons.push(obj);
             break;
           case 'breakable_brick':
-            obj = new BreakableBrick(x, y, objDef.w || 40, objDef.h || 60, objDef.health || 3, objDef.id);
+            obj = new BreakableBrick(x, y, objDef.w || 40, objDef.h || 22, objDef.health || 3, objDef.id, objDef.regenAfter || null);
             self.bricks.push(obj);
             break;
           case 'turnstile':
@@ -261,7 +262,18 @@ class Game {
 
       var pos = getPos(e);
 
-      // ── Chute button taps ────────────────────────────────────────────────
+      // ── Speed slider ─────────────────────────────────────────────────────
+      if (self._sliderRect) {
+        var sr = self._sliderRect;
+        if (pos.y >= sr.y - 10 && pos.y <= sr.y + sr.h + 10 &&
+            pos.x >= sr.x - 15  && pos.x <= sr.x + sr.w + 15) {
+          self._draggingSlider = true;
+          var t = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
+          // Map 0→1 to 0.125→1.0
+          self.speedMult = 0.125 + t * 0.875;
+          return;
+        }
+      }
       if (self._chuteButtonRects) {
         for (var bi = 0; bi < self._chuteButtonRects.length; bi++) {
           var br = self._chuteButtonRects[bi];
@@ -305,6 +317,13 @@ class Game {
 
     function onMove(e) {
       e.preventDefault();
+      var pos = getPos(e);
+      if (self._draggingSlider && self._sliderRect) {
+        var sr = self._sliderRect;
+        var t  = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
+        self.speedMult = 0.125 + t * 0.875;
+        return;
+      }
       if (!self.sling) return;
       var pos = getPos(e);
       self.sling.pullX = pos.x; self.sling.pullY = pos.y;
@@ -315,6 +334,7 @@ class Game {
 
     function onUp(e) {
       e.preventDefault();
+      self._draggingSlider = false;
       if (!self.sling) return;
       var s = self.sling, obj = s.obj;
       var dx = s.anchorX - s.pullX, dy = s.anchorY - s.pullY;
@@ -365,25 +385,29 @@ class Game {
     }
 
     // Phase 2: Update interactive objects
-    var dt = 16;
+    var dt = 16 * this.speedMult;
     for (i = 0; i < this.buttons.length;    i++) this.buttons[i].update();
     for (i = 0; i < this.ports.length;      i++) this.ports[i].update();
     for (i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].update(dt);
     for (i = 0; i < this.spawners.length;   i++) this.spawners[i].update(dt);
+    for (i = 0; i < this.bricks.length;     i++) this.bricks[i].updateRegen(dt);
 
     // Chute feed
     this._updateChute(dt);
 
     // Physics step
+    var sm = this.speedMult;
     for (i = 0; i < this.objects.length; i++) {
       var obj = this.objects[i];
       if (obj.dead) continue;
       if (obj.stuckTo) { obj.x = obj.stuckTo.x + (obj._stickOffX||0); obj.y = obj.stuckTo.y + (obj._stickOffY||0); continue; }
       if (!obj.pinned) {
         var bs = BallSettings[obj.type] || BallSettings.bouncer;
-        Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult, bounceMult: bs.bounciness });
+        // Run multiple sub-steps at reduced scale for slow-mo accuracy
+        var steps = sm < 0.3 ? 1 : 1;
+        Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
       }
-      if (obj.inFlight && Math.abs(obj.vy) < 1.2 && Math.abs(obj.vx) < 1.2) obj.inFlight = false;
+      if (obj.inFlight && Math.abs(obj.vy) < 1.2 * sm && Math.abs(obj.vx) < 1.2 * sm) obj.inFlight = false;
     }
 
     // Enforce chute left wall as physics boundary
@@ -544,10 +568,11 @@ class Game {
   }
 
   _tryStick(sticky, other) {
-    if (sticky.type !== BALL_TYPES.STICKY || sticky.stuckTo || other.stuckTo || other.dead) return;
-    sticky.stuckTo = other; sticky._stickOffX = sticky.x - other.x; sticky._stickOffY = sticky.y - other.y;
-    sticky.vx = 0; sticky.vy = 0; sticky.inFlight = false;
-    if (window.Sound) Sound.thud(8);
+    // Sticky only sticks to static things (bricks, floor) — NOT other balls
+    // Ball-to-ball: bounce normally, no sticking
+    if (sticky.type !== BALL_TYPES.STICKY) return;
+    // Do nothing — sticky-on-ball sticking is disabled
+    // Sticking to floor/obstacles is handled in physics.js wall collisions
   }
 
   _spawnFallingExploder() {
@@ -560,24 +585,21 @@ class Game {
   }
 
   // ── Chute system ───────────────────────────────────────────────────────────
-  //
-  // Geometry: right wall IS the screen edge. Left wall is a physics boundary.
-  // U-turn arc bottom aligns exactly with floorY so balls exit at floor level.
-  //
-  //   shaftRightX = W  (screen edge)
-  //   shaftLeftX  = W - CHUTE_W        ← solid wall, balls bounce off
-  //   turnCenterY = floorY - turnR     ← arc center
-  //   after turn, ball exits left at y = floorY - ballR  ✓
+  // Geometry matches sketch:
+  //   Right wall  = screen right edge (W)
+  //   Left wall   = W - CHUTE_W  (physics hard boundary)
+  //   Curve starts high enough that arc bottom = floorY exactly
+  //   Buttons sit in the lower half of the shaft, visible through the clear walls
 
   _chuteGeom() {
-    var W       = this.W;
-    var floorY  = this.floorY();
-    var CHUTE_W = 44;   // shaft inner width
-    var TURN_R  = 26;   // U-turn radius
-    var LEFT_X  = W - CHUTE_W;          // left (inner) wall — physics boundary
-    var CENTER_X= W - CHUTE_W / 2;      // shaft center for drawing ball path
-    var TOP_Y   = 200;                   // top of shaft (below button strip)
-    var TURN_CY = floorY - TURN_R;      // arc center Y; arc bottom = floorY
+    var W        = this.W;
+    var floorY   = this.floorY();
+    var CHUTE_W  = 48;
+    var TURN_R   = 38;                   // generous curve like the sketch
+    var LEFT_X   = W - CHUTE_W;
+    var CENTER_X = W - CHUTE_W / 2;
+    var TURN_CY  = floorY - TURN_R;     // arc center; bottom of arc = floorY
+    var TOP_Y    = 160;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, TURN_CY };
   }
 
@@ -606,17 +628,14 @@ class Game {
     var floorY  = g.floorY;
     var leftX   = g.LEFT_X;
 
-    // Feed next ball from queue with delay
     if (this._chuteQueue && this._chuteQueue.length > 0) {
       this._chuteTimer = (this._chuteTimer || 0) + dt;
-      if (this._chuteTimer >= (this._chuteDelay || 600)) {
+      if (this._chuteTimer >= (this._chuteDelay || 500)) {
         this._chuteTimer = 0;
         var type = this._chuteQueue.shift();
         var ball = this._makeBall(type, shaftCX);
-        ball.x        = shaftCX;
-        ball.y        = topY;
-        ball.vy       = 3.5;
-        ball.vx       = 0;
+        ball.x = shaftCX; ball.y = topY;
+        ball.vy = 3.5; ball.vx = 0;
         ball.inFlight = true;
         ball._inChute = 'down';
         this._chuteActive = this._chuteActive || [];
@@ -626,44 +645,39 @@ class Game {
     }
 
     if (!this._chuteActive) return;
-
     var toRelease = [];
+
     for (var i = this._chuteActive.length - 1; i >= 0; i--) {
       var b = this._chuteActive[i];
 
       if (b._inChute === 'down') {
         b.vy = Math.min(b.vy + 0.35, 8);
         b.y += b.vy;
-        b.x  = shaftCX; // keep centered in shaft
-        // Transition to turn when ball center reaches turn arc top
+        b.x  = shaftCX;
         if (b.y >= turnCY) {
-          b._inChute      = 'turn';
-          b._turnAngle    = 0;            // 0 = pointing down, sweeps to π/2 = pointing left
-          b._turnSpeed    = Math.min(b.vy * 0.06, 0.11);
+          b._inChute   = 'turn';
+          b._turnAngle = 0;
+          b._turnSpeed = Math.min(b.vy * 0.06, 0.11);
           b.vy = 0; b.vx = 0;
         }
 
       } else if (b._inChute === 'turn') {
-        // Quarter-circle: center is at (leftX, turnCY)
-        // At angle=0: ball is at (leftX + turnR, turnCY) — right of center = in shaft
-        // At angle=π/2: ball is at (leftX, turnCY + turnR) = (leftX, floorY)
+        // Arc: center at (leftX, turnCY)
+        // angle=0 → ball at (leftX + turnR, turnCY) [bottom of shaft]
+        // angle=π/2 → ball at (leftX, turnCY + turnR) = (leftX, floorY)
         b._turnAngle += b._turnSpeed + 0.045;
         if (b._turnAngle >= Math.PI / 2) b._turnAngle = Math.PI / 2;
-
         var a = b._turnAngle;
-        b.x = leftX + turnR * Math.cos(a - Math.PI / 2 + Math.PI); // sweeps right→left
+        b.x = leftX + turnR * Math.cos(a - Math.PI / 2 + Math.PI / 2); // = leftX + turnR*cos(a)... simplified:
+        // Clean: start at (leftX+turnR, turnCY), sweep CCW to (leftX, turnCY+turnR)
+        b.x = leftX + turnR * Math.cos(a);
         b.y = turnCY + turnR * Math.sin(a);
-
-        // Simpler clean parametric: arc from top of turn to floor exit
-        b.x = leftX + turnR * Math.sin(Math.PI / 2 - a); // cos(π/2 - a) = sin(a)
-        b.y = turnCY + turnR * (1 - Math.cos(a));         // 0→turnR as a→π/2
-
         if (b._turnAngle >= Math.PI / 2) {
           b._inChute = 'exit';
-          b.x   = leftX;
-          b.y   = floorY - b.r;
-          b.vx  = -(3.5 + Math.random() * 1.5);
-          b.vy  = 0;
+          b.x  = leftX;
+          b.y  = floorY - b.r;
+          b.vx = -(3 + Math.random() * 1.5);
+          b.vy = 0;
           if (window.Sound) Sound.chuteExit();
         }
 
@@ -672,8 +686,7 @@ class Game {
         b.vx *= 0.87;
         b.y   = floorY - b.r;
         if (Math.abs(b.vx) < 0.7) {
-          b._inChute = null;
-          b.inFlight = false;
+          b._inChute = null; b.inFlight = false;
           b.vx = 0; b.vy = 0;
           toRelease.push(i);
         }
@@ -687,20 +700,16 @@ class Game {
     }
   }
 
-  // Queue one ball of the given type from the chute buttons
   _chuteDropBall(type) {
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
                 + (this._chuteActive ? this._chuteActive.length : 0)
                 + (this._chuteQueue  ? this._chuteQueue.length  : 0);
-    if (onField >= 5) return; // max 5
+    if (onField >= 5) return;
     this._chuteQueue = this._chuteQueue || [];
     this._chuteQueue.push(type);
   }
 
-  // Enter delete mode: next tap on a floor ball removes it
-  _toggleDeleteMode() {
-    this._deleteMode = !this._deleteMode;
-  }
+  _toggleDeleteMode() { this._deleteMode = !this._deleteMode; }
 
   _tryDeleteBall(px, py) {
     if (!this._deleteMode) return false;
@@ -712,7 +721,7 @@ class Game {
         this.ui.attachObjects(this.objects);
         Physics.spawnSparks(this.sparks, obj.x, obj.y, '#ff4444', 18);
         if (window.Sound) Sound.thud(10);
-        this._deleteMode = false; // one tap = one delete, then auto-exit
+        this._deleteMode = false;
         return true;
       }
     }
@@ -720,38 +729,45 @@ class Game {
   }
 
   _drawChute() {
-    var ctx = this.ctx;
-    var g   = this._chuteGeom();
-    var W   = g.W, floorY = g.floorY;
-    var leftX = g.LEFT_X, turnR = g.TURN_R, turnCY = g.TURN_CY;
-    var topY  = g.TOP_Y;
+    var ctx   = this.ctx;
+    var g     = this._chuteGeom();
+    var W     = g.W, floorY = g.floorY;
+    var leftX = g.LEFT_X, turnR = g.TURN_R, turnCY = g.TURN_CY, topY = g.TOP_Y;
+    var CW    = g.CHUTE_W;
 
     ctx.save();
 
-    // ── Shaft background fill ────────────────────────────────────────────────
-    ctx.fillStyle = 'rgba(0,20,45,0.60)';
+    // ── Shaft background (semi-transparent so you can see balls inside) ──────
+    ctx.fillStyle = 'rgba(0,15,35,0.55)';
+    // Vertical section
+    ctx.fillRect(leftX, topY, CW, turnCY - topY);
+    // U-turn arc fill
     ctx.beginPath();
-    ctx.rect(leftX, topY, g.CHUTE_W, turnCY - topY);
+    ctx.arc(leftX, turnCY, turnR, 0, Math.PI / 2);
+    ctx.lineTo(leftX, turnCY);
+    ctx.closePath();
     ctx.fill();
 
-    // ── Walls ────────────────────────────────────────────────────────────────
-    ctx.strokeStyle = 'rgba(0,180,255,0.55)';
+    // ── Left wall + curve (the physics boundary — bright neon) ───────────────
+    ctx.strokeStyle = 'rgba(0,180,255,0.75)';
     ctx.lineWidth   = 2.5;
     ctx.shadowColor = '#00aaff';
-    ctx.shadowBlur  = 7;
+    ctx.shadowBlur  = 8;
+    ctx.lineCap     = 'round';
 
-    // Left wall (physics boundary) — full height from top to floor
+    // Draw as single continuous path: top → down → arc → floor stub
     ctx.beginPath();
     ctx.moveTo(leftX, topY);
-    ctx.lineTo(leftX, turnCY);
-    // Arc inner corner: sweeps from pointing-down to pointing-left
-    ctx.arc(leftX, turnCY, turnR, Math.PI / 2, Math.PI, false);
-    // Short exit floor stub
-    ctx.lineTo(leftX - turnR - 20, floorY);
+    ctx.lineTo(leftX, turnCY);                    // straight down
+    ctx.arc(leftX, turnCY, turnR, Math.PI / 2, Math.PI); // CCW quarter arc
+    // After arc, we're at (leftX - turnR, turnCY) — but we want floor level exit
+    // Actually arc endpoint: angle=π → (leftX - turnR, turnCY)
+    // We want it to reach floorY, so extend down-left slightly
+    ctx.lineTo(leftX - turnR - 15, floorY);
     ctx.stroke();
 
-    // Right wall = screen edge — just draw a faint line for clarity
-    ctx.strokeStyle = 'rgba(0,120,200,0.30)';
+    // ── Right wall = screen edge (faint) ─────────────────────────────────────
+    ctx.strokeStyle = 'rgba(0,120,200,0.25)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 0;
     ctx.beginPath();
@@ -759,86 +775,76 @@ class Game {
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
-    // ── Spawn buttons — 5 colored pill buttons on the chute strip ────────────
+    // ── Buttons: stacked in lower half of shaft ───────────────────────────────
     var btnTypes  = ['bouncer','exploder','sticky','splitter','gravity'];
     var btnColors = ['#4488ff','#ff4400','#44ff44','#ff44ff','#00ffee'];
-    var btnH      = 28;
-    var btnW      = g.CHUTE_W - 8;
-    var btnX      = leftX + 4;
-    var btnStartY = topY - (btnH + 6) * 5 - 8;  // stack of 5 above topY
-    // If that goes off screen, start just below HUD
-    if (btnStartY < 55) btnStartY = 55;
+    var btnH   = 30;
+    var btnW   = CW - 6;
+    var btnX   = leftX + 3;
+    // Position buttons in the lower portion of the shaft, above the curve
+    var btnBlockH  = 5 * (btnH + 4) + btnH + 8; // 5 ball btns + delete btn
+    var btnStartY  = turnCY - btnBlockH - 10;
+    // Clamp so buttons don't go above HUD
+    if (btnStartY < 60) btnStartY = 60;
 
-    this._chuteButtonRects = []; // store for hit-testing in input handler
-
+    this._chuteButtonRects = [];
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
                 + (this._chuteActive ? this._chuteActive.length : 0)
                 + (this._chuteQueue  ? this._chuteQueue.length  : 0);
-    var atMax   = onField >= 5;
+    var atMax = onField >= 5;
 
     for (var bi = 0; bi < btnTypes.length; bi++) {
-      var by    = btnStartY + bi * (btnH + 5);
+      var by    = btnStartY + bi * (btnH + 4);
       var btype = btnTypes[bi];
       var bcol  = btnColors[bi];
-      var alpha = atMax ? 0.35 : 0.85;
+      var alpha = atMax ? 0.3 : 0.9;
 
-      // Store rect for touch detection
       this._chuteButtonRects.push({ x: btnX, y: by, w: btnW, h: btnH, type: btype });
 
-      // Background pill
-      ctx.fillStyle = 'rgba(0,20,45,0.7)';
-      ctx.beginPath();
-      ctx.roundRect(btnX, by, btnW, btnH, 6);
-      ctx.fill();
+      // Pill background
+      ctx.fillStyle = 'rgba(0,10,28,0.80)';
+      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 7); ctx.fill();
 
-      // Colored border + glow
-      ctx.strokeStyle = bcol + Math.round(alpha * 255).toString(16).padStart(2,'0');
+      // Glowing border
+      var hexAlpha = Math.round(alpha * 255).toString(16).padStart(2,'0');
+      ctx.strokeStyle = bcol + hexAlpha;
       ctx.lineWidth   = 1.8;
       ctx.shadowColor = bcol;
-      ctx.shadowBlur  = atMax ? 2 : 8;
-      ctx.beginPath();
-      ctx.roundRect(btnX, by, btnW, btnH, 6);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.shadowBlur  = atMax ? 2 : 10;
+      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 7); ctx.stroke();
+      ctx.shadowBlur  = 0;
 
-      // Mini ball dot
-      var dotR = 6;
-      ctx.beginPath();
-      ctx.arc(btnX + dotR + 4, by + btnH / 2, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = bcol + Math.round(alpha * 255).toString(16).padStart(2,'0');
-      ctx.fill();
+      // Dot
+      var dotR = 7, dotX = btnX + dotR + 3, dotY = by + btnH / 2;
+      ctx.beginPath(); ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = bcol + hexAlpha; ctx.fill();
 
-      // Label
-      ctx.fillStyle    = 'rgba(200,230,255,' + alpha + ')';
-      ctx.font         = "bold 8px 'Share Tech Mono', monospace";
+      // Label (abbreviated)
+      var labels = {bouncer:'BNC',exploder:'EXP',sticky:'STK',splitter:'SPL',gravity:'GRV'};
+      ctx.fillStyle    = 'rgba(210,235,255,' + alpha + ')';
+      ctx.font         = "bold 9px 'Share Tech Mono', monospace";
       ctx.textAlign    = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(btype.toUpperCase().slice(0,4), btnX + dotR * 2 + 10, by + btnH / 2);
+      ctx.fillText(labels[btype] || btype.slice(0,3).toUpperCase(), dotX + dotR + 4, dotY);
     }
 
-    // ── Delete mode button ───────────────────────────────────────────────────
-    var delY = btnStartY + 5 * (btnH + 5) + 4;
+    // Delete button
+    var delY      = btnStartY + 5 * (btnH + 4) + 4;
     var delActive = this._deleteMode;
     this._chuteDeleteRect = { x: btnX, y: delY, w: btnW, h: btnH };
-    ctx.fillStyle = delActive ? 'rgba(255,40,40,0.35)' : 'rgba(0,20,45,0.7)';
-    ctx.beginPath();
-    ctx.roundRect(btnX, delY, btnW, btnH, 6);
-    ctx.fill();
-    ctx.strokeStyle = delActive ? '#ff2222' : 'rgba(255,80,80,0.5)';
-    ctx.lineWidth   = 1.8;
-    ctx.shadowColor = '#ff2222';
-    ctx.shadowBlur  = delActive ? 10 : 2;
-    ctx.beginPath();
-    ctx.roundRect(btnX, delY, btnW, btnH, 6);
-    ctx.stroke();
-    ctx.shadowBlur   = 0;
-    ctx.fillStyle    = delActive ? '#ff6666' : 'rgba(255,100,100,0.7)';
-    ctx.font         = "bold 8px 'Share Tech Mono', monospace";
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(delActive ? '✕ TAP BALL' : '🗑 DELETE', btnX + btnW / 2, delY + btnH / 2);
+    ctx.fillStyle = delActive ? 'rgba(200,20,20,0.40)' : 'rgba(0,10,28,0.80)';
+    ctx.beginPath(); ctx.roundRect(btnX, delY, btnW, btnH, 7); ctx.fill();
+    ctx.strokeStyle = delActive ? '#ff3333' : 'rgba(255,60,60,0.55)';
+    ctx.lineWidth = 1.8; ctx.shadowColor = '#ff2222';
+    ctx.shadowBlur = delActive ? 12 : 3;
+    ctx.beginPath(); ctx.roundRect(btnX, delY, btnW, btnH, 7); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle    = delActive ? '#ff8888' : 'rgba(255,100,100,0.8)';
+    ctx.font         = "bold 9px 'Share Tech Mono', monospace";
+    ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(delActive ? '✕ TAP BALL' : '✕ DEL', btnX + btnW / 2, delY + btnH / 2);
 
-    // ── Draw balls in chute ──────────────────────────────────────────────────
+    // ── Balls in chute ───────────────────────────────────────────────────────
     if (this._chuteActive) {
       for (var ci = 0; ci < this._chuteActive.length; ci++) {
         this._drawBall(this._chuteActive[ci]);
@@ -882,7 +888,7 @@ class Game {
 
     // Phase 2: Draw interactive objects (below balls so balls appear on top)
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
-    for (var i = 0; i < this.bricks.length;     i++) { if (this.bricks[i].isAlive()) this.bricks[i].draw(ctx); }
+    for (var i = 0; i < this.bricks.length;     i++) this.bricks[i].draw(ctx);  // draws regen ghost when dead
     for (var i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].draw(ctx);
     for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
     for (var i = 0; i < this.spawners.length;   i++) this.spawners[i].draw(ctx);
@@ -890,6 +896,7 @@ class Game {
     for (var j = 0; j < this.objects.length;   j++) this._drawBall(this.objects[j]);
     if (this.sling) this._drawSling();
     this._drawSparks();
+    this._drawSpeedSlider();
   }
 
   _drawBall(obj) {
@@ -952,6 +959,63 @@ class Game {
     }
     ctx.beginPath(); ctx.arc(s.pullX, s.pullY, 10 + power * 7, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(255,200,60,' + (0.35 + power*0.5) + ')'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawSpeedSlider() {
+    var ctx    = this.ctx;
+    var W      = this.W;
+    var H      = this.H;
+    var sliderW = Math.min(W * 0.55, 220);
+    var sliderH = 28;
+    var sx     = (W - sliderW) / 2;
+    var sy     = H - 36;  // sits below the floor line, above bottom of screen
+    var trackY = sy + sliderH / 2;
+
+    // Store rect for touch handling
+    this._sliderRect = { x: sx, y: sy, w: sliderW, h: sliderH, trackY: trackY };
+
+    // Background pill
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,10,28,0.75)';
+    ctx.beginPath(); ctx.roundRect(sx - 8, sy - 2, sliderW + 16, sliderH + 4, 10); ctx.fill();
+
+    // Track
+    ctx.strokeStyle = 'rgba(0,150,220,0.35)';
+    ctx.lineWidth   = 3;
+    ctx.lineCap     = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, trackY); ctx.lineTo(sx + sliderW, trackY); ctx.stroke();
+
+    // Filled portion (left of thumb)
+    var thumbX = sx + this.speedMult * sliderW;
+    ctx.strokeStyle = 'rgba(0,200,255,0.7)';
+    ctx.lineWidth   = 3;
+    ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.moveTo(sx, trackY); ctx.lineTo(thumbX, trackY); ctx.stroke();
+    ctx.shadowBlur  = 0;
+
+    // Thumb
+    ctx.beginPath(); ctx.arc(thumbX, trackY, 9, 0, Math.PI * 2);
+    ctx.fillStyle = '#00ccff'; ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 12;
+    ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Labels
+    ctx.fillStyle    = 'rgba(0,180,255,0.6)';
+    ctx.font         = "bold 8px 'Share Tech Mono', monospace";
+    ctx.textAlign    = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('1/8', sx - 8, trackY);
+    ctx.textAlign = 'right';
+    ctx.fillText('1x', sx + sliderW + 8, trackY);
+
+    // Current speed label
+    var pct = Math.round(this.speedMult * 100);
+    ctx.fillStyle    = 'rgba(180,230,255,0.9)';
+    ctx.font         = "bold 9px 'Share Tech Mono', monospace";
+    ctx.textAlign    = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('SPEED ' + pct + '%', sx + sliderW / 2, sy - 1);
+
     ctx.restore();
   }
 

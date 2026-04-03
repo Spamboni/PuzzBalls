@@ -434,103 +434,180 @@ class Button {
 // ── BreakableBrick ────────────────────────────────────────────────────────────
 
 class BreakableBrick {
-  /**
-   * @param {number} x      center x
-   * @param {number} y      center y
-   * @param {number} w      width
-   * @param {number} h      height
-   * @param {number} health starting health
-   * @param {string} id
-   */
-  constructor(x, y, w, h, health, id) {
-    this.x         = x;
-    this.y         = y;
-    this.w         = w;
-    this.h         = h;
-    this.health    = health;
-    this.maxHealth = health;
-    this.id        = id;
-    this.hitFlash  = 0;
-    this.phase     = Math.random() * Math.PI * 2;
+  // Neon-themed destructible brick with color variety and regen support.
+  // Color palette cycles by id hash so each brick has its own consistent hue.
+
+  static _palette() {
+    return [
+      { r:[0,180,255],   glow:'#00b4ff' },  // cyan
+      { r:[255,80,180],  glow:'#ff50b4' },  // pink
+      { r:[80,255,120],  glow:'#50ff78' },  // green
+      { r:[255,160,30],  glow:'#ffa01e' },  // amber
+      { r:[160,80,255],  glow:'#a050ff' },  // purple
+      { r:[255,60,60],   glow:'#ff3c3c' },  // red
+    ];
+  }
+
+  constructor(x, y, w, h, health, id, regenAfter) {
+    this.x          = x;
+    this.y          = y;
+    this.w          = w;
+    this.h          = h;
+    this.health     = health;
+    this.maxHealth  = health;
+    this.id         = id;
+    this.regenAfter = regenAfter || null; // ms until regen (null = no regen)
+    this.regenTimer = 0;
+    this.hitFlash   = 0;
+    this.phase      = Math.random() * Math.PI * 2;
+    // Pick color from palette deterministically from id string
+    var hash = 0;
+    for (var i = 0; i < (id || '').length; i++) hash = (hash * 31 + id.charCodeAt(i)) & 0xffff;
+    var pal = BreakableBrick._palette();
+    this._pal = pal[hash % pal.length];
+    // Pre-bake some random crack seed for consistent texture
+    this._crackSeed = Math.random();
   }
 
   overlaps(ball) {
-    // AABB + circle overlap
     var nearX = Math.max(this.x - this.w / 2, Math.min(ball.x, this.x + this.w / 2));
     var nearY = Math.max(this.y - this.h / 2, Math.min(ball.y, this.y + this.h / 2));
     return Math.hypot(ball.x - nearX, ball.y - nearY) < ball.r * 0.8;
   }
 
-  /** Returns true if brick was just destroyed */
   takeDamage(amount) {
+    if (this.health <= 0) return false;
     this.health -= amount;
     this.hitFlash = 1;
     if (this.health <= 0) {
       this.health = 0;
-      return true;
+      if (this.regenAfter) this.regenTimer = this.regenAfter;
+      return true; // destroyed
     }
     return false;
   }
 
   isAlive() { return this.health > 0; }
 
-  draw(ctx) {
-    var frac  = this.health / this.maxHealth;   // 1 = full, 0 = dead
-    var pulse = 0.5 + 0.5 * Math.sin(this.phase + performance.now() * 0.002);
+  // Call each frame from game loop (dt in ms)
+  updateRegen(dt) {
+    if (this.health > 0 || !this.regenAfter) return;
+    this.regenTimer -= dt;
+    if (this.regenTimer <= 0) {
+      this.health = this.maxHealth;
+      this.hitFlash = 0.8; // flash on respawn
+      this.regenTimer = 0;
+    }
+  }
 
-    var r = Math.round(180 + (1 - frac) * 70);
-    var g = Math.round(80  - (1 - frac) * 60);
-    var b = 50;
-    var baseColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+  draw(ctx) {
+    var t = performance.now();
+    var frac  = this.health / this.maxHealth;
+    var pulse = 0.5 + 0.5 * Math.sin(this.phase + t * 0.0018);
+    var pal   = this._pal;
+    var col   = pal.r;
+    var glow  = pal.glow;
+
+    // When dead, draw ghost regen countdown
+    if (this.health <= 0) {
+      if (!this.regenAfter) return;
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.globalAlpha = 0.28 + 0.1 * Math.sin(t * 0.005);
+      ctx.strokeStyle = glow;
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.roundRect(-this.w/2, -this.h/2, this.w, this.h, 4);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Progress bar for regen
+      var prog = 1 - (this.regenTimer / this.regenAfter);
+      ctx.fillStyle = glow + '55';
+      ctx.fillRect(-this.w/2, -this.h/2, this.w * prog, this.h);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+      return;
+    }
 
     ctx.save();
     ctx.translate(this.x, this.y);
 
-    // Shadow glow
-    ctx.shadowColor = 'rgba(' + r + ',' + g + ',50,0.6)';
-    ctx.shadowBlur  = 10;
-
-    // Body
     var bx = -this.w / 2, by = -this.h / 2;
+
+    // Outer glow halo
+    ctx.shadowColor = glow;
+    ctx.shadowBlur  = 8 + pulse * 6;
+
+    // Body fill — semi-transparent with color tint
     ctx.beginPath();
-    ctx.roundRect(bx, by, this.w, this.h, 5);
-    ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.35)';
+    ctx.roundRect(bx, by, this.w, this.h, 4);
+    ctx.fillStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (0.12 + frac * 0.15) + ')';
     ctx.fill();
-    ctx.strokeStyle = baseColor;
-    ctx.lineWidth   = 2.5;
+
+    // Neon border — full brightness, fades as damaged
+    ctx.strokeStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (0.5 + frac * 0.5) + ')';
+    ctx.lineWidth   = 2;
     ctx.stroke();
     ctx.shadowBlur  = 0;
 
-    // Crack lines based on damage
+    // Inner panel lines (texture — horizontal ribs)
+    var ribCount = Math.max(2, Math.floor(this.h / 7));
+    ctx.strokeStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0.18)';
+    ctx.lineWidth   = 0.8;
+    for (var ri = 1; ri < ribCount; ri++) {
+      var ry = by + (this.h / ribCount) * ri;
+      ctx.beginPath(); ctx.moveTo(bx + 3, ry); ctx.lineTo(bx + this.w - 3, ry); ctx.stroke();
+    }
+
+    // Corner dots (neon rivets)
+    var dotR = 2.5;
+    var corners = [
+      [bx + 5, by + 5], [bx + this.w - 5, by + 5],
+      [bx + 5, by + this.h - 5], [bx + this.w - 5, by + this.h - 5],
+    ];
+    ctx.fillStyle = glow;
+    ctx.shadowColor = glow; ctx.shadowBlur = 5;
+    for (var ci = 0; ci < corners.length; ci++) {
+      ctx.beginPath();
+      ctx.arc(corners[ci][0], corners[ci][1], dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // Cracks (appear as health drops)
     if (frac < 1) {
-      ctx.strokeStyle = 'rgba(255,255,255,' + (1 - frac) * 0.55 + ')';
+      ctx.strokeStyle = 'rgba(255,255,255,' + (1 - frac) * 0.6 + ')';
       ctx.lineWidth   = 1;
-      var numCracks = Math.ceil((1 - frac) * 4);
+      var seed = this._crackSeed;
+      var numCracks = Math.ceil((1 - frac) * 5);
       for (var c = 0; c < numCracks; c++) {
-        var cx1 = (c / numCracks - 0.5) * this.w * 0.7;
+        var cx1 = (seed * 0.3 + c * 0.18 - 0.35) * this.w;
+        var cy1 = -this.h * 0.3 + c * 2;
         ctx.beginPath();
-        ctx.moveTo(cx1, -this.h * 0.4);
-        ctx.lineTo(cx1 + (c % 2 === 0 ? 6 : -6), 0);
-        ctx.lineTo(cx1, this.h * 0.4);
+        ctx.moveTo(cx1, cy1);
+        ctx.lineTo(cx1 + (c % 2 === 0 ? 8 : -8), cy1 + this.h * 0.35);
+        ctx.lineTo(cx1 + (c % 2 === 0 ? 3 : -3), cy1 + this.h * 0.6);
         ctx.stroke();
       }
     }
 
-    // Health bar
-    var barW = this.w - 8, barH = 4;
-    var barX = -barW / 2, barY = -this.h / 2 - 8;
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(barX, barY, barW, barH);
-    ctx.fillStyle = frac > 0.5 ? '#64ff78' : frac > 0.25 ? '#ffcc30' : '#ff4444';
-    ctx.fillRect(barX, barY, barW * frac, barH);
+    // Health pips along bottom edge
+    var pipW = (this.w - 8) / this.maxHealth - 2;
+    for (var pi = 0; pi < this.maxHealth; pi++) {
+      var alive = pi < this.health;
+      ctx.fillStyle = alive ? glow : 'rgba(80,80,100,0.4)';
+      ctx.shadowColor = alive ? glow : 'transparent';
+      ctx.shadowBlur  = alive ? 4 : 0;
+      ctx.fillRect(bx + 4 + pi * (pipW + 2), by + this.h - 5, pipW, 3);
+    }
+    ctx.shadowBlur = 0;
 
     // Hit flash
     if (this.hitFlash > 0) {
-      ctx.fillStyle = 'rgba(255,255,255,' + this.hitFlash * 0.5 + ')';
-      ctx.beginPath();
-      ctx.roundRect(bx, by, this.w, this.h, 5);
-      ctx.fill();
-      this.hitFlash -= 0.08;
+      ctx.fillStyle = 'rgba(255,255,255,' + this.hitFlash * 0.45 + ')';
+      ctx.beginPath(); ctx.roundRect(bx, by, this.w, this.h, 4); ctx.fill();
+      this.hitFlash -= 0.07;
     }
 
     ctx.restore();

@@ -27,14 +27,16 @@ function stepObject(obj, W, H, sparks, settings) {
   var s = settings || {};
   var gravMult  = s.gravityMult  || 1.0;
   var bncMult   = s.bounceMult   || 1.0;
+  var speedMult = s.speedMult    !== undefined ? s.speedMult : 1.0;
   var bounce    = Math.min(PHYSICS.BOUNCE * bncMult, 1.0);
 
   obj.vy += PHYSICS.GRAVITY * gravMult;
-  obj.vx *= PHYSICS.FRICTION;
-  obj.vy *= PHYSICS.FRICTION;
+  // Apply speedMult to velocity each frame
+  obj.vx *= Math.pow(PHYSICS.FRICTION, speedMult);
+  obj.vy *= Math.pow(PHYSICS.FRICTION, speedMult);
 
-  obj.x += obj.vx;
-  obj.y += obj.vy;
+  obj.x += obj.vx * speedMult;
+  obj.y += obj.vy * speedMult;
 
   // ── wall collisions ──────────────────────────────────────────────
   if (obj.x - obj.r < 0) {
