@@ -31,6 +31,7 @@ var BallSettings = {
     velocity: 1.0, bounciness: 0.15,
     density: 2.2,
     stickyStrength: 0.85,
+    stickThreshold: 6,   // speed below which sticky ball adheres to surfaces
   },
   splitter: {
     label: 'SPLITTER', color: '#6b006b', glow: '#ff44ff',

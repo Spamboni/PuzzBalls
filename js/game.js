@@ -44,7 +44,7 @@ class Game {
 
     this.ballQueue  = [];   // remaining balls to be slung, by type
     this.objectives = [];   // { description, met }
-    this.speedMult  = 1.0;  // global simulation speed — controlled by slider
+    this.speedMult  = 0.5;  // global simulation speed — 50% default
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
@@ -377,6 +377,7 @@ class Game {
           obj.vx = (dx / dist) * power;
           obj.vy = (dy / dist) * power;
           obj.inFlight = true;
+          obj._fromChute = false;   // now active — bounces count, splits trigger
           if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
           if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
         }
@@ -391,6 +392,7 @@ class Game {
           obj.vx = (dx / dist) * power;
           obj.vy = (dy / dist) * power;
           obj.inFlight = true;
+          obj._fromChute = false;   // now active
           if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
           if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
         }
@@ -443,12 +445,19 @@ class Game {
     for (i = 0; i < this.objects.length; i++) {
       var obj = this.objects[i];
       if (obj.dead) continue;
-      if (obj.stuckTo) { obj.x = obj.stuckTo.x + (obj._stickOffX||0); obj.y = obj.stuckTo.y + (obj._stickOffY||0); continue; }
+      if (obj.stuckTo) {
+        // '_wall_' = stuck to wall/floor/ceiling — just stay put
+        if (obj.stuckTo === '_wall_') continue;
+        obj.x = obj.stuckTo.x + (obj._stickOffX||0);
+        obj.y = obj.stuckTo.y + (obj._stickOffY||0);
+        continue;
+      }
       if (!obj.pinned) {
         var bs = BallSettings[obj.type] || BallSettings.bouncer;
         // Run multiple sub-steps at reduced scale for slow-mo accuracy
         var steps = sm < 0.3 ? 1 : 1;
         Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
+        if (obj.type === BALL_TYPES.STICKY) this._checkStickyWall(obj);
       }
       if (obj.inFlight && Math.abs(obj.vy) < 1.2 * sm && Math.abs(obj.vx) < 1.2 * sm) obj.inFlight = false;
       // Tick wall bounce cooldown and check explode flag
@@ -477,18 +486,26 @@ class Game {
         if (hit) {
           this.collisions++;
           this.ui.setCollisions(this.collisions);
-          // Exploder: count down bounces before exploding
-          if (a.type === BALL_TYPES.EXPLODER && !a.exploded) {
+          // Exploder countdown — only after manually slung
+          if (a.type === BALL_TYPES.EXPLODER && !a.exploded && !a._fromChute) {
             a.bouncesLeft = (a.bouncesLeft || 1) - 1;
             if (a.bouncesLeft <= 0) triggerExplosion(a, this.objects, this.sparks);
           }
-          if (b.type === BALL_TYPES.EXPLODER && !b.exploded) {
+          if (b.type === BALL_TYPES.EXPLODER && !b.exploded && !b._fromChute) {
             b.bouncesLeft = (b.bouncesLeft || 1) - 1;
             if (b.bouncesLeft <= 0) triggerExplosion(b, this.objects, this.sparks);
           }
           this._tryStick(a, b); this._tryStick(b, a);
-          if (a.type === BALL_TYPES.SPLITTER && !a.hasSplit && !a.isSplitChild && a.inFlight) { a.hasSplit = true; toAdd = toAdd.concat(makeSplitChildren(a, BallSettings.splitter.splitCount)); }
-          if (b.type === BALL_TYPES.SPLITTER && !b.hasSplit && !b.isSplitChild && b.inFlight) { b.hasSplit = true; toAdd = toAdd.concat(makeSplitChildren(b, BallSettings.splitter.splitCount)); }
+          // Splitter: splits on every collision after being slung (infinite splits)
+          // but NOT the gravity ball — gravity ball passes through
+          if (a.type === BALL_TYPES.SPLITTER && !a._fromChute && !a.isSplitChild &&
+              b.type !== BALL_TYPES.GRAVITY) {
+            toAdd = toAdd.concat(makeSplitChildren(a, BallSettings.splitter.splitCount));
+          }
+          if (b.type === BALL_TYPES.SPLITTER && !b._fromChute && !b.isSplitChild &&
+              a.type !== BALL_TYPES.GRAVITY) {
+            toAdd = toAdd.concat(makeSplitChildren(b, BallSettings.splitter.splitCount));
+          }
         }
       }
     }
@@ -521,7 +538,7 @@ class Game {
           // Directional shards + glass sound
           if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
           if (window.Sound) Sound.brickShatter(damage * 0.4);
-          // Bounce ball off brick surface (simple reflect)
+          // Bounce ball off brick and check sticky threshold
           var bEdgeX = Math.max(brick.x - brick.w/2, Math.min(ball.x, brick.x + brick.w/2));
           var bEdgeY = Math.max(brick.y - brick.h/2, Math.min(ball.y, brick.y + brick.h/2));
           var bndx = ball.x - bEdgeX, bndy = ball.y - bEdgeY;
@@ -529,6 +546,7 @@ class Game {
           var bnx = bndx / bndist, bny = bndy / bndist;
           var dot = ball.vx * bnx + ball.vy * bny;
           if (dot < 0) { ball.vx -= 2 * dot * bnx; ball.vy -= 2 * dot * bny; }
+          if (ball.type === BALL_TYPES.STICKY) this._checkStickyWall(ball);
           // Exploder: count brick hit as a bounce
           if (ball.type === BALL_TYPES.EXPLODER && !ball.exploded) {
             if (!ball._brickBounceCooldown || ball._brickBounceCooldown <= 0) {
@@ -649,11 +667,24 @@ class Game {
   }
 
   _tryStick(sticky, other) {
-    // Sticky only sticks to static things (bricks, floor) — NOT other balls
-    // Ball-to-ball: bounce normally, no sticking
-    if (sticky.type !== BALL_TYPES.STICKY) return;
-    // Do nothing — sticky-on-ball sticking is disabled
-    // Sticking to floor/obstacles is handled in physics.js wall collisions
+    // Sticky never sticks to other balls — ball-to-ball always bounces
+    return;
+  }
+
+  // Called from physics step after wall/floor bounce — check if sticky should stick
+  _checkStickyWall(obj) {
+    if (obj.type !== BALL_TYPES.STICKY) return;
+    if (obj.stuckTo || obj._fromChute) return;
+    var threshold = (window.BallSettings && BallSettings.sticky.stickThreshold) || 6;
+    var speed = Math.hypot(obj.vx, obj.vy);
+    if (speed < threshold) {
+      // Stick in place — zero velocity, mark as stuck to 'wall'
+      obj.vx = 0; obj.vy = 0;
+      obj.inFlight = false;
+      obj.stuckTo  = '_wall_';  // special sentinel — not a ball
+      obj._stickOffX = 0; obj._stickOffY = 0;
+      if (window.Sound) Sound.thud(4);
+    }
   }
 
   _spawnFallingExploder() {
@@ -711,20 +742,26 @@ class Game {
     var floorY  = g.floorY;
     var leftX   = g.LEFT_X;
 
-    if (this._chuteQueue && this._chuteQueue.length > 0) {
-      this._chuteTimer = (this._chuteTimer || 0) + dt;
-      if (this._chuteTimer >= (this._chuteDelay || 500)) {
-        this._chuteTimer = 0;
-        var type = this._chuteQueue.shift();
-        var ball = this._makeBall(type, shaftCX);
-        ball.x = shaftCX; ball.y = topY;
-        ball.vy = 3.5; ball.vx = 0;
-        ball.inFlight = true;
-        ball._inChute = 'down';
-        this._chuteActive = this._chuteActive || [];
-        this._chuteActive.push(ball);
-        if (window.Sound) Sound.chuteSlide();
+    // Drain entire queue instantly - each ball drops as soon as previous one starts turning
+    while (this._chuteQueue && this._chuteQueue.length > 0) {
+      // Only drop next ball if shaft is clear (no ball currently in 'down' state)
+      var shaftBusy = false;
+      if (this._chuteActive) {
+        for (var ci = 0; ci < this._chuteActive.length; ci++) {
+          if (this._chuteActive[ci]._inChute === 'down') { shaftBusy = true; break; }
+        }
       }
+      if (shaftBusy) break;
+      var type = this._chuteQueue.shift();
+      var ball = this._makeBall(type, shaftCX);
+      ball.x = shaftCX; ball.y = topY;
+      ball.vy = 5; ball.vx = 0;
+      ball.inFlight  = true;
+      ball._inChute  = 'down';
+      ball._fromChute = true;   // flag: don't count bounces until slung
+      this._chuteActive = this._chuteActive || [];
+      this._chuteActive.push(ball);
+      if (window.Sound) Sound.chuteSlide();
     }
 
     if (!this._chuteActive) return;
@@ -842,9 +879,9 @@ class Game {
     ctx.lineJoin    = 'round';
 
     ctx.beginPath();
-    ctx.moveTo(leftX, topY);                          // top of shaft
-    ctx.lineTo(leftX, floorY - turnR);                // straight down to arc start
-    ctx.arc(leftX, floorY, turnR, -Math.PI/2, Math.PI, true); // CW quarter arc → exit left
+    ctx.moveTo(leftX, topY);                             // top of shaft
+    ctx.lineTo(leftX, floorY - turnR);                   // straight down to arc start
+    ctx.arc(leftX, floorY, turnR, -Math.PI/2, Math.PI, false); // CCW: 12-o'clock → 9-o'clock (left)
     ctx.stroke();
 
     // ── RIGHT WALL = screen edge ──────────────────────────────────────────────

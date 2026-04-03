@@ -132,7 +132,7 @@ var Presets = (function() {
     var bs = BallSettings[type];
     var out = { velocity: bs.velocity || 1.0, bounciness: bs.bounciness || 1.0 };
     if (type === 'exploder') { out.blastRadius = bs.blastRadius; out.blastForce = bs.blastForce; }
-    if (type === 'sticky')   { out.stickyStrength = bs.stickyStrength; }
+    if (type === 'sticky')   { out.stickyStrength = bs.stickyStrength; out.stickThreshold = bs.stickThreshold || 6; }
     if (type === 'splitter') { out.splitCount = bs.splitCount; }
     if (type === 'gravity')  { out.gravRange = bs.gravRange; out.gravPull = bs.gravPull; }
     return out;
@@ -155,6 +155,7 @@ var Presets = (function() {
         if (src.blastForce  !== undefined) dst.blastForce  = src.blastForce;
       }
       if (type === 'sticky'   && src.stickyStrength !== undefined) dst.stickyStrength = src.stickyStrength;
+      if (type === 'sticky'   && src.stickThreshold !== undefined) dst.stickThreshold = src.stickThreshold;
       if (type === 'splitter' && src.splitCount     !== undefined) dst.splitCount     = src.splitCount;
       if (type === 'gravity') {
         if (src.gravRange !== undefined) dst.gravRange = src.gravRange;

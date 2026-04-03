@@ -45,7 +45,7 @@ function stepObject(obj, W, H, sparks, settings) {
     obj.vx = Math.abs(obj.vx) * bounce;
     spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 5);
     if (spd1 > 1.5 && window.Sound) Sound.wallClick(spd1);
-    if (obj.type === 'exploder' && !obj.exploded && spd1 > 1.5) _countExploderBounce(obj);
+    if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute && spd1 > 1.5) _countExploderBounce(obj);
   }
   if (obj.x + obj.r > W) {
     obj.x = W - obj.r;
@@ -53,14 +53,14 @@ function stepObject(obj, W, H, sparks, settings) {
     obj.vx = -Math.abs(obj.vx) * bounce;
     spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 5);
     if (spd2 > 1.5 && window.Sound) Sound.wallClick(spd2);
-    if (obj.type === 'exploder' && !obj.exploded && spd2 > 1.5) _countExploderBounce(obj);
+    if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute && spd2 > 1.5) _countExploderBounce(obj);
   }
   if (obj.y - obj.r < 0) {
     obj.y = obj.r;
     var spd3 = Math.abs(obj.vy);
     obj.vy = Math.abs(obj.vy) * bounce;
     if (spd3 > 1.5 && window.Sound) Sound.wallClick(spd3);
-    if (obj.type === 'exploder' && !obj.exploded && spd3 > 1.5) _countExploderBounce(obj);
+    if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute && spd3 > 1.5) _countExploderBounce(obj);
   }
   if (obj.y + obj.r > H) {
     obj.y = H - obj.r;
@@ -69,7 +69,7 @@ function stepObject(obj, W, H, sparks, settings) {
     if (spd4 > 1.5) {
       spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 4);
       if (window.Sound) Sound.wallClick(spd4);
-      if (obj.type === 'exploder' && !obj.exploded) _countExploderBounce(obj);
+      if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute) _countExploderBounce(obj);
     }
   }
 
