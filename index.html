@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <title>PuzzBalls</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- ══════════ MAIN MENU ══════════ -->
+<div id="menu-screen"></div>
+
+<!-- ══════════ GAME SCREEN ══════════ -->
+<div id="game-screen" style="display:none">
+
+  <canvas id="canvas"></canvas>
+
+  <!-- HUD overlay -->
+  <div id="hud-overlay">
+    <div id="hud-left">
+      <button id="btn-back" title="Menu">◀</button>
+      <div id="level-title">PUZZBALLS</div>
+    </div>
+    <div id="hud-right">
+      <div class="hud-item">
+        <span class="hud-label">SCORE</span>
+        <span class="hud-value" id="score">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">HITS</span>
+        <span class="hud-value" id="collisions">0</span>
+      </div>
+      <button id="btn-reset" title="Reset">⟳</button>
+      <button id="btn-settings" title="Settings">⚙</button>
+    </div>
+  </div>
+
+  <!-- Objectives panel -->
+  <div id="objectives-panel"></div>
+
+  <!-- Settings panel (built dynamically) -->
+  <div id="settings-panel"></div>
+
+  <!-- Win overlay -->
+  <div id="message-overlay">
+    <div id="message-title"></div>
+    <div id="message-sub"></div>
+  </div>
+
+</div><!-- /#game-screen -->
+
+<script src="js/sound.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/objects.js"></script>
+<script src="js/balls.js"></script>
+<script src="js/presets.js"></script>
+<script src="js/menu.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+
+<script>
+window.addEventListener('DOMContentLoaded', function() {
+  document.body.addEventListener('touchstart', function unlock() {
+    if (window.Sound) Sound.getCtx();
+    document.body.removeEventListener('touchstart', unlock);
+  }, { once: true });
+
+  var menuScreen = document.getElementById('menu-screen');
+  var gameScreen = document.getElementById('game-screen');
+  var canvas     = document.getElementById('canvas');
+  var game       = null;
+
+  function showMenu() {
+    if (game) { game.stop(); game = null; }
+    gameScreen.style.display = 'none';
+    menuScreen.style.display = 'flex';
+  }
+
+  function playLevel(levelId, presetId) {
+    // Apply chosen preset
+    var preset = Presets.getById(presetId);
+    Presets.applyPreset(preset);
+
+    // Build level data (for now, inline the test level)
+    var levelData = {
+      id: 'test_level',
+      name: 'Test Level',
+      balls: [
+        { type: 'bouncer',  count: 2 },
+        { type: 'exploder', count: 1 },
+        { type: 'sticky',   count: 1 },
+        { type: 'splitter', count: 1 },
+        { type: 'gravity',  count: 1 },
+      ],
+      obstacles: [
+        { rx: 0.22, ry: 0.50, shape: 'triangle', size: 28 },
+        { rx: 0.75, ry: 0.42, shape: 'square',   size: 24 },
+        { rx: 0.50, ry: 0.32, shape: 'hexagon',  size: 30 },
+      ],
+      target: {
+        rx: 0.50, ry: 0.10, r: 30,
+        barrierR: 70, barrierThickness: 13,
+        barrierGap: Math.PI * 0.26, barrierGapAngle: -Math.PI / 2,
+      },
+      objectives: [
+        { id: 'goal_1', type: 'ballInZone', ballType: 'bouncer', description: 'Land the BOUNCER in the target zone' }
+      ],
+    };
+
+    menuScreen.style.display = 'none';
+    gameScreen.style.display = 'block';
+
+    game = new Game(canvas, showMenu);
+    game.loadLevel(levelData);
+  }
+
+  Menu.init(menuScreen, playLevel);
+  showMenu();
+});
+</script>
+</body>
+</html>
