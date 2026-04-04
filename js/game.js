@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1322;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1323;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -725,25 +725,20 @@ class Game {
         }
       }
       if (best) {
-        // If the ball is just resting on the floor (not in flight), give it a pop upward
         var onFloor = !best.inFlight && best.y + best.r >= self.floorY() - 4;
         if (onFloor) {
-          // Calculate velocity needed to reach just below zoneTop (10px clearance)
-          var targetY  = zoneTop + 10;
-          var dy2      = best.y - targetY;   // upward distance (positive)
-          var grav     = 0.4 * (window.Settings ? Settings.gravityMult : 1.0);  // approx per-frame gravity
-          // v = sqrt(2 * g * dy)
-          var popVY    = -Math.sqrt(Math.max(0, 2 * grav * dy2));
-          best.vy      = Math.min(popVY, -2);  // cap so it always moves up
-          best.vx      = 0;
-          best.inFlight= true;
-          best.pinned  = false;
-          // Don't start a sling — just launch the pop
-          return;
+          // Floor ball: begin as a "pending" interaction.
+          // If finger moves > 8px it becomes a sling drag.
+          // If finger lifts without moving (pure tap), it pops.
+          self._pendingFloorBall = { obj: best, touchX: pos.x, touchY: pos.y, zoneTop: zoneTop };
+          best.vx = 0; best.vy = 0; best.pinned = true;
+          self.sling = { obj: best, anchorX: best.x, anchorY: best.y,
+                         startX: pos.x, startY: pos.y, pullX: pos.x, pullY: pos.y };
+        } else {
+          best.vx = 0; best.vy = 0; best.pinned = true;
+          self.sling = { obj: best, anchorX: best.x, anchorY: best.y,
+                         startX: pos.x, startY: pos.y, pullX: pos.x, pullY: pos.y };
         }
-        best.vx = 0; best.vy = 0; best.pinned = true;
-        self.sling = { obj: best, anchorX: best.x, anchorY: best.y,
-                       startX: pos.x, startY: pos.y, pullX: pos.x, pullY: pos.y };
       }
     }
 
@@ -763,6 +758,13 @@ class Game {
           return;
         }
         self._editorOnMove(pos); return;
+      }
+      // If dragging from a floor ball, check if it's a real drag (> 8px = sling, not pop)
+      if (self._pendingFloorBall) {
+        var pfb = self._pendingFloorBall;
+        if (Math.hypot(pos.x - pfb.touchX, pos.y - pfb.touchY) > 8) {
+          self._pendingFloorBall = null;  // committed to sling drag
+        }
       }
       if (self._draggingZoneSlider && self._zoneSliderRect) {
         var zr2 = self._zoneSliderRect;
@@ -794,6 +796,24 @@ class Game {
       self._draggingSlider = false;
       self._draggingBrickSlider = false;
       self._draggingZoneSlider = false;
+
+      // Quick tap on floor ball → pop it up (no drag happened)
+      if (self._pendingFloorBall) {
+        var pfb2 = self._pendingFloorBall;
+        self._pendingFloorBall = null;
+        var bPop = pfb2.obj;
+        bPop.pinned  = false;
+        self.sling   = null;
+        // Calculate pop velocity to reach just below zone line
+        var targetY2 = pfb2.zoneTop + 10;
+        var dPop     = bPop.y - targetY2;
+        var gPop     = 0.4 * (window.Settings ? Settings.gravityMult : 1.0);
+        var popVY2   = -Math.sqrt(Math.max(0, 2 * gPop * dPop));
+        bPop.vy      = Math.min(popVY2, -2);
+        bPop.vx      = 0;
+        bPop.inFlight= true;
+        return;
+      }
       if (self._editorMode) {
         self._editorPinchStart = null;
         self._editorScrollStart  = undefined;
@@ -1741,19 +1761,10 @@ class Game {
       ctx.beginPath(); ctx.moveTo(leftX, ry); ctx.lineTo(W, ry); ctx.stroke();
     }
 
-    // ── LEFT WALL — diagonal top, straight shaft, J curve at bottom ─────────
-    // LIFT: the visual J is raised above where balls actually travel, so balls
-    // pass underneath the drawn arc rather than clipping through it.
-    // The arc is purely visual — the physics wall is at leftX (straight line).
-    var LIFT     = 28;   // how high above the physics exit the drawn J sits
+    // ── LEFT WALL — diagonal top, straight shaft down to floor ─────────────
     var diagEndX = W;
     var diagEndY = topY - (W - leftX);
     if (diagEndY < 0) diagEndY = 0;
-    // J bottom point: raised by LIFT above floor
-    var jBottomY = floorY - LIFT;
-    // J exit point: leftX - turnR, at same height as bottom
-    var jExitX   = leftX - turnR;
-    var jExitY   = jBottomY;
 
     ctx.strokeStyle = 'rgba(0,200,255,0.85)';
     ctx.lineWidth   = 2.5;
@@ -1762,35 +1773,14 @@ class Game {
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
-    // Main left wall: diagonal → straight down → raised J curve
+    // Left wall: diagonal → straight down to floor (no J-curve, no stub)
     ctx.beginPath();
     ctx.moveTo(diagEndX, diagEndY);
     ctx.lineTo(leftX, topY);
-    ctx.lineTo(leftX, jBottomY - turnR + LIFT);
-    ctx.quadraticCurveTo(leftX, jBottomY, jExitX, jExitY);
+    ctx.lineTo(leftX, floorY);
     ctx.stroke();
 
-    // ── TUBE MOUTH — vertical line from J exit down to floor ─────────────────
-    // Purely visual: represents the open end of the 3D cylindrical tube.
-    // Balls pass through this line freely (no physics).
-    ctx.strokeStyle = 'rgba(0,180,255,0.50)';
-    ctx.lineWidth   = 2;
-    ctx.shadowBlur  = 5;
-    ctx.beginPath();
-    ctx.moveTo(jExitX, jExitY);
-    ctx.lineTo(jExitX, floorY);
-    ctx.stroke();
-
-    // Small horizontal cap at top of mouth opening (the tube rim)
-    ctx.strokeStyle = 'rgba(0,200,255,0.45)';
-    ctx.lineWidth   = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(jExitX - 4, jExitY);
-    ctx.lineTo(jExitX + 8, jExitY);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // Inner tube rim line (depth effect)
+    // Inner depth line
     ctx.strokeStyle = 'rgba(0,140,200,0.30)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 2;
@@ -1798,8 +1788,7 @@ class Game {
     ctx.beginPath();
     ctx.moveTo(diagEndX - innerOff, diagEndY + innerOff);
     ctx.lineTo(leftX + innerOff, topY + innerOff);
-    ctx.lineTo(leftX + innerOff, jBottomY - turnR + LIFT - innerOff);
-    ctx.quadraticCurveTo(leftX + innerOff, jBottomY - innerOff, jExitX + innerOff, jExitY - innerOff);
+    ctx.lineTo(leftX + innerOff, floorY);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
@@ -1947,12 +1936,15 @@ class Game {
       var g = parseInt(bcol.slice(3,5),16);
       var b = parseInt(bcol.slice(5,7),16);
 
-      // ── Deep background with colour tint ──────────────────────────────────
+      // ── Background: 25% opacity with tube-wrap horizontal gradient ──────────
+      // Tube-wrap: dark edges, brighter centre (simulates cylindrical depth)
       ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 8);
-      var bgGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnH);
-      bgGrad.addColorStop(0,   'rgba(' + r*0.18 + ',' + g*0.18 + ',' + b*0.18 + ',' + (alpha * 0.95) + ')');
-      bgGrad.addColorStop(0.5, 'rgba(0,8,22,' + (alpha * 0.92) + ')');
-      bgGrad.addColorStop(1,   'rgba(' + r*0.12 + ',' + g*0.12 + ',' + b*0.12 + ',' + (alpha * 0.90) + ')');
+      var bgGrad = ctx.createLinearGradient(btnX, by, btnX + btnW, by);
+      bgGrad.addColorStop(0,    'rgba(0,4,14,' + (alpha * 0.25) + ')');
+      bgGrad.addColorStop(0.15, 'rgba(' + Math.round(r*0.08)+','+Math.round(g*0.06)+','+Math.round(b*0.10)+',' + (alpha * 0.22) + ')');
+      bgGrad.addColorStop(0.5,  'rgba(' + Math.round(r*0.18)+','+Math.round(g*0.15)+','+Math.round(b*0.22)+',' + (alpha * 0.18) + ')');
+      bgGrad.addColorStop(0.85, 'rgba(' + Math.round(r*0.08)+','+Math.round(g*0.06)+','+Math.round(b*0.10)+',' + (alpha * 0.22) + ')');
+      bgGrad.addColorStop(1,    'rgba(0,4,14,' + (alpha * 0.25) + ')');
       ctx.fillStyle = bgGrad; ctx.fill();
 
       // ── Outer glow halo (behind border) ───────────────────────────────────
@@ -3228,9 +3220,9 @@ class Game {
     ];
     // Row B (bottom): ball display buttons
     var leftBtns = [
-      { key: '_showVelocityArrows', label: '↗',   default: true  },
-      { key: '_showBallLabel',      label: 'Aa',  default: true  },
-      { key: '_showBallAbbr',       label: 'BNC', default: false },
+      { key: '_showVelocityArrows', label: '↗',   default: false },
+      { key: '_showBallLabel',      label: 'Aa',  default: false },
+      { key: '_showBallAbbr',       label: 'BNC', default: true  },
     ];
     var rowAY = btmY - btnH - gap;
     this._cornerBrickBtns = [];
