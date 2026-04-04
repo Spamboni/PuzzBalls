@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1310;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1312;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -41,17 +41,6 @@ class UI {
       function doEditor(e) { e.preventDefault(); e.stopPropagation(); opts.game.toggleEditor(); }
       this._btnEditor.addEventListener('click',    doEditor);
       this._btnEditor.addEventListener('touchend', doEditor);
-    }
-    if (this._btnArrows) {
-      window._showVelocityArrows = true;
-      var self2 = this;
-      function doArrows(e) {
-        e.preventDefault(); e.stopPropagation();
-        window._showVelocityArrows = !window._showVelocityArrows;
-        self2._btnArrows.style.opacity = window._showVelocityArrows ? '1' : '0.4';
-      }
-      this._btnArrows.addEventListener('click',    doArrows);
-      this._btnArrows.addEventListener('touchend', doArrows);
     }
 
     function closeIfOutside(e) {
@@ -209,7 +198,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.10</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.12</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -232,10 +221,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.10 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.12 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1310) {
-            verEl.textContent = 'v13.10 ✓';
+          } else if (loaded === 1312) {
+            verEl.textContent = 'v13.12 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';

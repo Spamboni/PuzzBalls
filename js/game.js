@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1311;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1312;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -280,6 +280,23 @@ class Game {
 
       var pos = getPos(e);
 
+      // ── Corner HUD buttons (bottom strip) ───────────────────────────────────
+      if (self._cornerLeftRects) {
+        for (var cli = 0; cli < self._cornerLeftRects.length; cli++) {
+          var cr = self._cornerLeftRects[cli];
+          if (pos.x >= cr.x && pos.x <= cr.x + cr.w && pos.y >= cr.y && pos.y <= cr.y + cr.h) {
+            window[cr.key] = !window[cr.key];
+            return;
+          }
+        }
+      }
+      if (self._cornerEditorBtn) {
+        var ceb = self._cornerEditorBtn;
+        if (pos.x >= ceb.x && pos.x <= ceb.x + ceb.w && pos.y >= ceb.y && pos.y <= ceb.y + ceb.h) {
+          self.toggleEditor(); return;
+        }
+      }
+
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
         // All panel buttons are below floorY — handle them, then return
@@ -336,8 +353,12 @@ class Game {
                 if (pos.x >= ir.x && pos.x <= ir.x + ir.w && pos.y >= ir.y && pos.y <= ir.y + ir.h) {
                   if (self._editorSelected) {
                     self._editorSelected._invincible = !self._editorSelected._invincible;
-                    if (self._editorSelected._invincible) self._editorSelected.maxHealth = Infinity;
-                    else { self._editorSelected.maxHealth = 100; self._editorSelected.health = 100; }
+                    // Don't set maxHealth to Infinity — just use _invincible flag for immunity
+                    if (!self._editorSelected._invincible) {
+                      // Restore normal HP when turning off
+                      self._editorSelected.maxHealth = 100;
+                      self._editorSelected.health    = 100;
+                    }
                   }
                   return;
                 }
@@ -659,17 +680,30 @@ class Game {
         mbrick.x += (mbrick._vx || 0);
         mbrick.y += (mbrick._vy || 0);
         var prevRot = mbrick._rotation || 0;
-        mbrick._rotation = prevRot + (mbrick._angularV || 0);
-        // Translate-on-rotate: brick moves as a whole when rotating (not just spinning in place)
-        if (mbrick._translateOnRotate !== false && mbrick._angularV) {
-          var pivStr  = mbrick._pivot || 'C';
-          var pivOff  = pivStr === 'L' ? -(mbrick.w || 60) / 2
-                      : pivStr === 'R' ?  (mbrick.w || 60) / 2 : 0;
-          // Apply rotation around the pivot point, translating the brick center accordingly
-          var da2   = mbrick._angularV || 0;
-          var cos2  = Math.cos(da2), sin2 = Math.sin(da2);
-          mbrick.x += pivOff * (cos2 - 1);
-          mbrick.y += pivOff * sin2;
+        var da2 = mbrick._angularV || 0;
+        mbrick._rotation = prevRot + da2;
+
+        // Pivot rotation: brick center orbits around the chosen pivot point
+        // translateOnRotate=false means free rotation + translation separately
+        // translateOnRotate=true (default) means pivot is STATIONARY, center orbits it
+        var pivStr2 = mbrick._pivot || 'C';
+        if (da2 !== 0 && mbrick._translateOnRotate !== false) {
+          // World-space pivot offset along brick's current orientation
+          var pivLen  = pivStr2 === 'L' ? -(mbrick.w || 60) / 2
+                      : pivStr2 === 'R' ?  (mbrick.w || 60) / 2 : 0;
+          if (pivLen !== 0) {
+            // Pivot point in world space (along brick's rotated axis)
+            var curAngle = prevRot;
+            var pivWX = mbrick.x + Math.cos(curAngle) * pivLen;
+            var pivWY = mbrick.y + Math.sin(curAngle) * pivLen;
+            // Rotate center around that pivot by da2
+            var cos2 = Math.cos(da2), sin2 = Math.sin(da2);
+            var relX = mbrick.x - pivWX, relY = mbrick.y - pivWY;
+            mbrick.x = pivWX + relX * cos2 - relY * sin2;
+            mbrick.y = pivWY + relX * sin2 + relY * cos2;
+            // No linear velocity when pivot-constrained
+            mbrick._vx = 0; mbrick._vy = 0;
+          }
         }
         mbrick._vx = (mbrick._vx || 0) * decel;
         mbrick._vy = (mbrick._vy || 0) * decel;
@@ -896,14 +930,22 @@ class Game {
           var overlap3 = (ball.r * 0.9) - bndist;
           if (overlap3 > 0) { ball.x += bnx * (overlap3 + 1); ball.y += bny * (overlap3 + 1); }
         }
-        // Reflect velocity
-        var dot = ball.vx * bnx + ball.vy * bny;
-        if (dot < 0) {
-          ball.vx -= 2 * dot * bnx;
-          ball.vy -= 2 * dot * bny;
-          // Apply some energy loss on brick bounce
-          ball.vx *= 0.82;
-          ball.vy *= 0.82;
+        // Reflect velocity — ONLY if this hit doesn't destroy the brick
+        // Pre-check: will this hit destroy?
+        var bsBall2   = BallSettings[ball.type] || BallSettings.bouncer;
+        var speed2    = Math.hypot(ball.vx, ball.vy);
+        var velFactor2= Math.max(0.5, Math.min(speed2 / 8, 3.0));
+        var dmgPreview= Math.round((bsBall2.baseDamage || 20) * (bsBall2.density || 1.0) * velFactor2);
+        var willDestroy = !brick._invincible && (brick.health - dmgPreview) <= 0;
+
+        if (!willDestroy) {
+          var dot = ball.vx * bnx + ball.vy * bny;
+          if (dot < 0) {
+            ball.vx -= 2 * dot * bnx;
+            ball.vy -= 2 * dot * bny;
+            ball.vx *= 0.82;
+            ball.vy *= 0.82;
+          }
         }
 
         // Damage = baseDamage × density × velocity factor
@@ -941,6 +983,8 @@ class Game {
         }
 
         if (destroyed) {
+          // Freeze brick in place — no physics on last hit
+          brick._vx = 0; brick._vy = 0; brick._angularV = 0;
           EventManager.dispatch(brick.id + '_triggered');
           // Detach any sticky balls near this brick
           for (var di = 0; di < this.objects.length; di++) {
@@ -1731,6 +1775,7 @@ class Game {
     if (this.sling) this._drawSling();
     this._drawSparks();
     this._drawSpeedSlider();
+    this._drawCornerButtons();
     if (this._editorMode) this._drawEditor();
   }
 
@@ -2000,7 +2045,7 @@ class Game {
 
     var halfW  = Math.floor((W - 16) / 2);
     var lblW   = 34;   // label area
-    var infW   = 18;   // ∞ button on HP slider
+    var infW   = 26;   // ∞ button on HP slider — bigger so it's tappable
     var padding = 8;
 
     // Helper to draw a labeled slider on canvas
@@ -2050,19 +2095,20 @@ class Game {
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillText(valText, thumbX + 8, slY);
 
-      // ∞ button
+      // ∞ button — larger and separated from slider track
       var infRect = null;
       if (isInf) {
-        var ix = slX + slW + 3;
-        ctx.fillStyle = infActive ? 'rgba(255,140,0,0.35)' : 'rgba(0,15,40,0.8)';
-        ctx.beginPath(); ctx.roundRect(ix, sy + 4, infW, 14, 3); ctx.fill();
-        ctx.strokeStyle = infActive ? '#ffaa00' : '#446688'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.roundRect(ix, sy + 4, infW, 14, 3); ctx.stroke();
-        ctx.fillStyle = infActive ? '#ffcc44' : '#668899';
-        ctx.font = "bold 9px 'Share Tech Mono',monospace";
+        var ix = slX + slW + 6;  // more gap from slider
+        var iH = sliderRowH - 2;
+        ctx.fillStyle = infActive ? 'rgba(255,140,0,0.45)' : 'rgba(0,15,40,0.85)';
+        ctx.beginPath(); ctx.roundRect(ix, sy + 1, infW, iH, 4); ctx.fill();
+        ctx.strokeStyle = infActive ? '#ffaa00' : '#4477aa'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.roundRect(ix, sy + 1, infW, iH, 4); ctx.stroke();
+        ctx.fillStyle = infActive ? '#ffdd44' : '#7799bb';
+        ctx.font = "bold 12px 'Share Tech Mono',monospace";
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('∞', ix + infW/2, sy + sliderRowH/2);
-        infRect = { x: ix, y: sy + 4, w: infW, h: 14 };
+        infRect = { x: ix, y: sy, w: infW, h: sliderRowH };
       }
 
       ctx.globalAlpha = 1.0;
@@ -2216,11 +2262,17 @@ class Game {
     // Apply wiggle offset temporarily for draw
     var origX = obj.x, origY = obj.y;
     if (wx !== 0 || wy !== 0) { obj.x += wx; obj.y += wy; }
+    // Pass display flags into draw context
+    ctx._showAbbr = window._showBallAbbr !== false;
     obj.draw(ctx);
+    ctx._showAbbr = true;  // reset
     if (wx !== 0 || wy !== 0) { obj.x = origX; obj.y = origY; }
-    ctx.fillStyle = bs.glow + 'aa'; ctx.font = "8px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(bs.label, obj.x, obj.y + obj.r + (obj.type === BALL_TYPES.EXPLODER ? 10 : 3));
+    // Below-ball label (full name)
+    if (window._showBallLabel !== false) {
+      ctx.fillStyle = bs.glow + 'aa'; ctx.font = "8px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(bs.label, obj.x, obj.y + obj.r + (obj.type === BALL_TYPES.EXPLODER ? 10 : 3));
+    }
   }
 
   _drawGravityRange(well) {
@@ -2375,6 +2427,53 @@ class Game {
     ctx.fillText('SPEED ' + pct + '%', sx + sliderW / 2, sy - 1);
 
     ctx.restore();
+  }
+
+  _drawCornerButtons() {
+    var ctx = this.ctx, W = this.W, H = this.H;
+    var btnW = 28, btnH = 28, gap = 4, margin = 6;
+    var btmY = H - margin - btnH;
+
+    // Bottom-left: arrows toggle, label toggle, abbr toggle
+    var leftBtns = [
+      { key: '_showVelocityArrows', label: '↗', title: 'arrows',   default: true },
+      { key: '_showBallLabel',      label: 'Aa', title: 'name',    default: true },
+      { key: '_showBallAbbr',       label: 'BNC', title: 'abbr',   default: true },
+    ];
+    this._cornerLeftRects = [];
+    for (var li = 0; li < leftBtns.length; li++) {
+      var lb = leftBtns[li];
+      if (window[lb.key] === undefined) window[lb.key] = lb.default;
+      var lx = margin + li * (btnW + gap);
+      var on = window[lb.key];
+      ctx.fillStyle = on ? 'rgba(0,30,60,0.75)' : 'rgba(30,0,0,0.75)';
+      ctx.beginPath(); ctx.roundRect(lx, btmY, btnW, btnH, 5); ctx.fill();
+      ctx.strokeStyle = on ? 'rgba(0,160,255,0.55)' : 'rgba(180,50,50,0.55)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(lx, btmY, btnW, btnH, 5); ctx.stroke();
+      ctx.fillStyle = on ? '#aaddff' : '#aa6666';
+      ctx.font = "bold 7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(lb.label, lx + btnW/2, btmY + btnH/2);
+      if (!on) {
+        // Strikethrough line
+        ctx.strokeStyle = 'rgba(200,80,80,0.7)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(lx + 4, btmY + 4); ctx.lineTo(lx + btnW - 4, btmY + btnH - 4); ctx.stroke();
+      }
+      this._cornerLeftRects.push({ x: lx, y: btmY, w: btnW, h: btnH, key: lb.key });
+    }
+
+    // Bottom-right: brick editor button
+    var ex = W - margin - btnW;
+    this._cornerEditorBtn = { x: ex, y: btmY, w: btnW, h: btnH };
+    var edOn = this._editorMode;
+    ctx.fillStyle = edOn ? 'rgba(0,60,30,0.85)' : 'rgba(0,20,40,0.75)';
+    ctx.beginPath(); ctx.roundRect(ex, btmY, btnW, btnH, 5); ctx.fill();
+    ctx.strokeStyle = edOn ? '#00ff88' : 'rgba(255,140,0,0.55)'; ctx.lineWidth = edOn ? 1.5 : 1;
+    ctx.beginPath(); ctx.roundRect(ex, btmY, btnW, btnH, 5); ctx.stroke();
+    ctx.fillStyle = edOn ? '#00ff88' : '#ffaa44';
+    ctx.font = "bold 10px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🧱', ex + btnW/2, btmY + btnH/2);
   }
 
   _drawGrid() {

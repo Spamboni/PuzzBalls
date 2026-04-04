@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1311;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1312;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -130,11 +130,13 @@ class PhysObj {
     }
 
     // ── label ─────────────────────────────────────────────────────
-    ctx.fillStyle     = '#ffffffbb';
-    ctx.font          = "bold 8px 'Share Tech Mono', monospace";
-    ctx.textAlign     = 'center';
-    ctx.textBaseline  = 'middle';
-    ctx.fillText(this.label, this.x, this.y);
+    if (ctx._showAbbr !== false) {
+      ctx.fillStyle     = '#ffffffbb';
+      ctx.font          = "bold 8px 'Share Tech Mono', monospace";
+      ctx.textAlign     = 'center';
+      ctx.textBaseline  = 'middle';
+      ctx.fillText(this.label, this.x, this.y);
+    }
   }
 
   /** Returns true if point (px, py) is inside the pick radius. */
