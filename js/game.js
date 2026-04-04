@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1309;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1310;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -282,7 +282,11 @@ class Game {
 
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
-        // Mode toggle (SELECT/BUILD)
+        // All panel buttons are below floorY — handle them, then return
+        // Taps above floorY go to the play area (brick placement/selection)
+        var inPanel = pos.y >= self.floorY();
+
+        // Always check panel buttons regardless of Y position (buttons are below floor)
         if (self._editorModeBtn) {
           var mb2 = self._editorModeBtn;
           if (pos.x >= mb2.x && pos.x <= mb2.x + mb2.w && pos.y >= mb2.y && pos.y <= mb2.y + mb2.h) {
@@ -402,7 +406,8 @@ class Game {
             self.toggleEditor(); return;
           }
         }
-        self._editorOnDown(pos);
+        // Only place/select bricks in the play area (above floor)
+        if (!inPanel) self._editorOnDown(pos);
         return;
       }
 
@@ -800,21 +805,23 @@ class Game {
     }
     for (i = 0; i < toAdd.length; i++) this.objects.push(toAdd[i]);
 
-    // Brick overlap separation — bricks that overlap push each other apart
-    for (i = 0; i < this.bricks.length; i++) {
-      for (j = i + 1; j < this.bricks.length; j++) {
-        var ba = this.bricks[i], bb = this.bricks[j];
-        if (!ba.isAlive() || !bb.isAlive()) continue;
-        var dx2   = bb.x - ba.x, dy2 = bb.y - ba.y;
-        var dist2 = Math.hypot(dx2, dy2) || 1;
-        var wa = (ba instanceof CircularBrick) ? ba.r : Math.max(ba.w, ba.h) / 2;
-        var wb = (bb instanceof CircularBrick) ? bb.r : Math.max(bb.w, bb.h) / 2;
-        var minD = wa + wb;
-        if (dist2 < minD) {
-          var push = (minD - dist2) * 0.08;  // gentle push per frame
-          var nx2  = dx2 / dist2, ny2 = dy2 / dist2;
-          ba.x -= nx2 * push; ba.y -= ny2 * push;
-          bb.x += nx2 * push; bb.y += ny2 * push;
+    // Brick overlap separation — only when editor is NOT open
+    if (!this._editorMode) {
+      for (i = 0; i < this.bricks.length; i++) {
+        for (j = i + 1; j < this.bricks.length; j++) {
+          var ba = this.bricks[i], bb = this.bricks[j];
+          if (!ba.isAlive() || !bb.isAlive()) continue;
+          var dx2   = bb.x - ba.x, dy2 = bb.y - ba.y;
+          var dist2 = Math.hypot(dx2, dy2) || 1;
+          var wa = (ba instanceof CircularBrick) ? ba.r : Math.max(ba.w, ba.h) / 2;
+          var wb = (bb instanceof CircularBrick) ? bb.r : Math.max(bb.w, bb.h) / 2;
+          var minD = wa + wb;
+          if (dist2 < minD) {
+            var push = (minD - dist2) * 0.08;
+            var nx2  = dx2 / dist2, ny2 = dy2 / dist2;
+            ba.x -= nx2 * push; ba.y -= ny2 * push;
+            bb.x += nx2 * push; bb.y += ny2 * push;
+          }
         }
       }
     }
@@ -1829,125 +1836,114 @@ class Game {
   }
 
   _drawEditor() {
-    var ctx = this.ctx, W = this.W;
-    var panelH = 98;
-    var panelY = this.floorY() - panelH - 4;
+    var ctx = this.ctx, W = this.W, H = this.H;
+    var floorY = this.floorY();
+
+    // Panel sits BELOW the floor line — play area fully visible above it
+    var panelY = floorY + 6;
+    this._editorPanelRect = { y: floorY };  // taps below this line go to panel
 
     ctx.save();
-    ctx.fillStyle = 'rgba(0,10,30,0.90)';
-    ctx.beginPath(); ctx.roundRect(6, panelY, W - 12, panelH, 8); ctx.fill();
+    ctx.fillStyle = 'rgba(0,8,22,0.97)';
+    ctx.fillRect(0, floorY, W, H - floorY);
     ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(6, panelY, W - 12, panelH, 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, floorY + 1); ctx.lineTo(W, floorY + 1); ctx.stroke();
 
     ctx.fillStyle = '#00ffee'; ctx.font = "bold 9px 'Share Tech Mono',monospace";
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText('BRICK EDITOR', 14, panelY + 5);
+    ctx.fillText('BRICK EDITOR', 10, panelY + 2);
 
-    var btnH = 24, btnY = panelY + 18, startX = 14;
-
-    // SELECT / BUILD mode toggle
-    var modeW = 52;
+    var btnH = 26, btnY = panelY + 14, startX = 8;
     var isSelect = this._editorSelectMode || false;
+
+    // ── ROW 1 — left side: mode + build options, right side: CLR ALL + DONE ──────
+    // Right-anchored buttons first so we know available space
+    var doneX = W - 60;
+    this._editorDoneBtn = { x: doneX, y: btnY, w: 56, h: btnH };
+    ctx.fillStyle = 'rgba(0,60,30,0.85)'; ctx.beginPath(); ctx.roundRect(doneX, btnY, 56, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(doneX, btnY, 56, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#00ff88'; ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('DONE', doneX + 28, btnY + btnH/2);
+
+    var clearX = doneX - 56;
+    this._editorClearBtn = { x: clearX, y: btnY, w: 52, h: btnH };
+    ctx.fillStyle = 'rgba(80,20,0,0.8)'; ctx.beginPath(); ctx.roundRect(clearX, btnY, 52, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(clearX, btnY, 52, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#ff8844'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('CLR ALL', clearX + 26, btnY + btnH/2);
+
+    // Left side: SELECT/BUILD + type-specific
+    var modeW = 52;
     this._editorModeBtn = { x: startX, y: btnY, w: modeW, h: btnH };
-    ctx.fillStyle = isSelect ? 'rgba(255,180,0,0.20)' : 'rgba(0,50,100,0.40)';
+    ctx.fillStyle = isSelect ? 'rgba(255,180,0,0.22)' : 'rgba(0,50,100,0.50)';
     ctx.beginPath(); ctx.roundRect(startX, btnY, modeW, btnH, 4); ctx.fill();
     ctx.strokeStyle = isSelect ? '#ffcc00' : '#00aaff'; ctx.lineWidth = 1.8;
     ctx.beginPath(); ctx.roundRect(startX, btnY, modeW, btnH, 4); ctx.stroke();
     ctx.fillStyle = isSelect ? '#ffcc00' : '#00ccff';
-    ctx.font = "bold 8px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(isSelect ? '✦ SELECT' : '+ BUILD', startX + modeW/2, btnY + btnH/2);
+    ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isSelect ? '✦ SEL' : '+ BLD', startX + modeW/2, btnY + btnH/2);
 
-    // Row 1: Brick type + snap + movable + DEL + CLEAR + DONE
-    var btnStartX2 = startX + modeW + 6;
-    var brickTypes2 = ['breakable_brick', 'circular_brick'];
-    var labels2 = ['BRICK', 'ROUND'];
-    var tColors2 = ['#4488ff', '#44ff88'];
-    var btnW = 46;
+    var curX = startX + modeW + 4;
     this._editorTypeBtns = [];
+
     if (!isSelect) {
-      for (var ti = 0; ti < brickTypes2.length; ti++) {
-        var bx = btnStartX2 + ti * (btnW + 4);
-        var active = this._editorBrickType === brickTypes2[ti];
-        ctx.fillStyle = active ? tColors2[ti] + '44' : 'rgba(0,15,40,0.8)';
-        ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.fill();
-        ctx.strokeStyle = active ? tColors2[ti] : tColors2[ti] + '66';
-        ctx.lineWidth = active ? 2 : 1;
-        ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.stroke();
-        ctx.fillStyle = active ? tColors2[ti] : tColors2[ti] + 'aa';
-        ctx.font = "bold 8px 'Share Tech Mono',monospace";
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(labels2[ti], bx + btnW / 2, btnY + btnH / 2);
-        this._editorTypeBtns.push({ x: bx, y: btnY, w: btnW, h: btnH, type: brickTypes2[ti] });
+      var bTypes  = ['breakable_brick','circular_brick'];
+      var bLabels = ['BRICK','ROUND'];
+      var bColors = ['#4488ff','#44ff88'];
+      var tW = 44;
+      for (var ti = 0; ti < bTypes.length; ti++) {
+        if (curX + tW > clearX - 8) break;  // prevent overflow into right buttons
+        var active = this._editorBrickType === bTypes[ti];
+        ctx.fillStyle = active ? bColors[ti] + '44' : 'rgba(0,15,40,0.8)';
+        ctx.beginPath(); ctx.roundRect(curX, btnY, tW, btnH, 4); ctx.fill();
+        ctx.strokeStyle = active ? bColors[ti] : bColors[ti] + '55'; ctx.lineWidth = active ? 1.8 : 1;
+        ctx.beginPath(); ctx.roundRect(curX, btnY, tW, btnH, 4); ctx.stroke();
+        ctx.fillStyle = active ? bColors[ti] : bColors[ti] + 'aa';
+        ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(bLabels[ti], curX + tW/2, btnY + btnH/2);
+        this._editorTypeBtns.push({ x: curX, y: btnY, w: tW, h: btnH, type: bTypes[ti] });
+        curX += tW + 4;
       }
+      // Snap
+      var snapW2 = 40, snaps2 = [0,15,30,45], sLabels2 = ['FREE','15°','30°','45°'];
+      var sIdx = snaps2.indexOf(this._editorSnapDeg || 0);
+      if (curX + snapW2 < clearX - 8) {
+        this._editorSnapBtn = { x: curX, y: btnY, w: snapW2, h: btnH };
+        ctx.fillStyle = 'rgba(0,15,40,0.8)'; ctx.beginPath(); ctx.roundRect(curX, btnY, snapW2, btnH, 4); ctx.fill();
+        ctx.strokeStyle = '#aaccff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(curX, btnY, snapW2, btnH, 4); ctx.stroke();
+        ctx.fillStyle = '#aaccff'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(sLabels2[sIdx < 0 ? 0 : sIdx], curX + snapW2/2, btnY + btnH/2);
+        curX += snapW2 + 4;
+      } else { this._editorSnapBtn = null; }
+      // MOV
+      var movW2 = 40, isMovable = this._editorMovable || false;
+      if (curX + movW2 < clearX - 8) {
+        this._editorMovBtn = { x: curX, y: btnY, w: movW2, h: btnH };
+        ctx.fillStyle = isMovable ? 'rgba(255,150,0,0.22)' : 'rgba(0,15,40,0.8)';
+        ctx.beginPath(); ctx.roundRect(curX, btnY, movW2, btnH, 4); ctx.fill();
+        ctx.strokeStyle = isMovable ? '#ffaa00' : '#666688'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(curX, btnY, movW2, btnH, 4); ctx.stroke();
+        ctx.fillStyle = isMovable ? '#ffaa00' : '#668899';
+        ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(isMovable ? '●MOV' : '■STA', curX + movW2/2, btnY + btnH/2);
+        curX += movW2 + 4;
+      } else { this._editorMovBtn = null; }
+    } else {
+      this._editorSnapBtn = null; this._editorMovBtn = null;
     }
 
-    // Snap selector
-    var snapX = btnStartX2 + (isSelect ? 0 : brickTypes2.length * (btnW + 4) + 6);
-    var snapW_new = 44;
-    var snapW = snapW_new;
-    var snaps = [0, 15, 30, 45];
-    var snapLabels = ['FREE', '15°', '30°', '45°'];
-    this._editorSnapBtn = { x: snapX, y: btnY, w: snapW, h: btnH };
-    var curSnap = this._editorSnapDeg || 0;
-    var snapIdx = snaps.indexOf(curSnap);
-    ctx.fillStyle = 'rgba(0,15,40,0.8)';
-    ctx.beginPath(); ctx.roundRect(snapX, btnY, snapW, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#aaccff'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(snapX, btnY, snapW, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#aaccff';
-    ctx.font = "bold 8px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('⚙ ' + snapLabels[snapIdx < 0 ? 0 : snapIdx], snapX + snapW / 2, btnY + btnH / 2);
-
-    // Movable toggle
-    var movX = snapX + snapW + 6;
-    var movW = 52;
-    this._editorMovBtn = { x: movX, y: btnY, w: movW, h: btnH };
-    var isMovable = this._editorMovable || false;
-    ctx.fillStyle = isMovable ? 'rgba(255,150,0,0.20)' : 'rgba(0,15,40,0.8)';
-    ctx.beginPath(); ctx.roundRect(movX, btnY, movW, btnH, 4); ctx.fill();
-    ctx.strokeStyle = isMovable ? '#ffaa00' : '#666688'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(movX, btnY, movW, btnH, 4); ctx.stroke();
-    ctx.fillStyle = isMovable ? '#ffaa00' : '#668899';
-    ctx.font = "bold 8px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(isMovable ? '● MOV' : '■ STAT', movX + movW / 2, btnY + btnH / 2);
-
-    // DEL button
-    var delX = movX + movW + 6;
-    var delW = 38;
-    this._editorDelBtn = { x: delX, y: btnY, w: delW, h: btnH };
-    ctx.fillStyle = this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)';
-    ctx.beginPath(); ctx.roundRect(delX, btnY, delW, btnH, 4); ctx.fill();
-    ctx.strokeStyle = this._editorSelected ? '#ff4444' : '#882222'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(delX, btnY, delW, btnH, 4); ctx.stroke();
-    ctx.fillStyle = this._editorSelected ? '#ff6666' : '#884444';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DEL', delX + delW / 2, btnY + btnH / 2);
-
-    // CLEAR ALL button
-    var clearX = W - 116;
-    this._editorClearBtn = { x: clearX, y: btnY, w: 48, h: btnH };
-    ctx.fillStyle = 'rgba(80,20,0,0.7)';
-    ctx.beginPath(); ctx.roundRect(clearX, btnY, 48, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(clearX, btnY, 48, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#ff8844'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('CLR ALL', clearX + 24, btnY + btnH / 2);
-
-    // DONE button
-    var doneX = W - 62;
-    this._editorDoneBtn = { x: doneX, y: btnY, w: 52, h: btnH };
-    ctx.fillStyle = 'rgba(0,60,30,0.8)';
-    ctx.beginPath(); ctx.roundRect(doneX, btnY, 52, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(doneX, btnY, 52, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#00ff88'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DONE', doneX + 26, btnY + btnH / 2);
-
+    // DEL — always shown after other buttons, before CLR ALL
+    var delW2 = 36;
+    if (curX + delW2 < clearX - 4) {
+      this._editorDelBtn = { x: curX, y: btnY, w: delW2, h: btnH };
+      ctx.fillStyle = this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)';
+      ctx.beginPath(); ctx.roundRect(curX, btnY, delW2, btnH, 4); ctx.fill();
+      ctx.strokeStyle = this._editorSelected ? '#ff4444' : '#882222'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(curX, btnY, delW2, btnH, 4); ctx.stroke();
+      ctx.fillStyle = this._editorSelected ? '#ff6666' : '#884444';
+      ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('DEL', curX + delW2/2, btnY + btnH/2);
+    }
     // Row 2: Brick settings — always visible, uses selected brick or shows defaults
     var row2Y = btnY + btnH + 8;
     var bd2   = window.BrickDefaults || {};

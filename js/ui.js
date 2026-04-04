@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1309;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1310;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -96,6 +96,17 @@ class UI {
   // ── Settings panel ─────────────────────────────────────────────────────────
 
   _buildSettingsPanel() {
+    // Ensure globals exist before building any sliders that reference them
+    window.Settings      = window.Settings      || { gravityMult: 1.0 };
+    window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
+    window.BrickDefaults = window.BrickDefaults || {
+      rectHP: 100, rectRegen: 5000, rectW: 70, rectH: 22,
+      circularHP: 100, circularRegen: 5000, circularR: 22,
+      density: 1.0, maxTravel: 60, decel: 0.88,
+    };
+    window.SoundVariants = window.SoundVariants || {};
+    window.SoundVolumes  = window.SoundVolumes  || {};
+
     var panel = this._settingsPanel;
     panel.innerHTML = '';
 
@@ -198,7 +209,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.09</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.10</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -221,10 +232,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.09 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.10 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1309) {
-            verEl.textContent = 'v13.09 ✓';
+          } else if (loaded === 1310) {
+            verEl.textContent = 'v13.10 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
