@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1324;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1325;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1675,11 +1675,13 @@ class Game {
           b._inChute = 'exit';
           b.x = p2x;
           b.y = p2y;
-          // Exit velocity: 25%–80% of screen width
+          // Exit velocity: straight left along floor level
           var minV = (leftX * 0.25) / 28;
           var maxV = (leftX * 0.80) / 20;
           b.vx = -(minV + Math.random() * (maxV - minV));
           b.vy = -(0.5 + Math.random() * 1.0);
+          // Swing trapdoor open
+          this._trapdoorAngle = 1.1;  // ~63 degrees open
           if (window.Sound) Sound.chuteExit();
         }
 
@@ -1794,14 +1796,45 @@ class Game {
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
-    // Left wall: diagonal → straight down to floor (no J-curve, no stub)
+    // Trapdoor state — angle in radians, 0 = closed (vertical), positive = swung open
+    if (this._trapdoorAngle === undefined) this._trapdoorAngle = 0;
+    if (this._trapdoorAngle > 0) {
+      this._trapdoorAngle = Math.max(0, this._trapdoorAngle - 0.06);  // snap back
+    }
+    var tdA     = this._trapdoorAngle;
+    var doorLen = floorY - topY;  // full shaft height
+    // Pivot point is at (leftX, floorY) — bottom of the wall
+    // Door swings left (negative X direction) when open
+    var tdEndX  = leftX - Math.sin(tdA) * doorLen;
+    var tdEndY  = floorY - Math.cos(tdA) * doorLen;
+
+    // Left wall: diagonal → straight down to pivot, then trapdoor segment
     ctx.beginPath();
     ctx.moveTo(diagEndX, diagEndY);
     ctx.lineTo(leftX, topY);
-    ctx.lineTo(leftX, floorY);
+    ctx.lineTo(leftX, floorY);  // always draw full closed position as base
     ctx.stroke();
 
-    // Inner depth line
+    // Trapdoor overlay — draws over the lower portion when open
+    if (tdA > 0.01) {
+      // Clear the old lower wall section with background color (mask it out)
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'rgba(0,200,255,0.85)';
+      ctx.lineWidth   = 2.5;
+      ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(leftX, topY);
+      ctx.lineTo(tdEndX, tdEndY);  // door swung open
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Hinge dot at pivot
+      ctx.beginPath(); ctx.arc(leftX, floorY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,220,255,0.9)'; ctx.fill();
+      ctx.restore();
+    }
+
+    // Inner depth line (follows door)
     ctx.strokeStyle = 'rgba(0,140,200,0.30)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 2;
@@ -1809,7 +1842,11 @@ class Game {
     ctx.beginPath();
     ctx.moveTo(diagEndX - innerOff, diagEndY + innerOff);
     ctx.lineTo(leftX + innerOff, topY + innerOff);
-    ctx.lineTo(leftX + innerOff, floorY);
+    if (tdA > 0.01) {
+      ctx.lineTo(tdEndX + Math.cos(tdA) * innerOff, tdEndY + Math.sin(tdA) * innerOff);
+    } else {
+      ctx.lineTo(leftX + innerOff, floorY);
+    }
     ctx.stroke();
     ctx.shadowBlur = 0;
 
@@ -1911,18 +1948,7 @@ class Game {
       ctx.beginPath(); ctx.moveTo(capX + 3, sl); ctx.lineTo(capX + capW - 3, sl); ctx.stroke();
     }
 
-    // ── LEFT RAMP — quarter-circle, base exactly at floor level ─────────────
-    // Arc center at (rampR, floorY): leftmost point (0, floorY) is at floor,
-    // top point (rampR, floorY-rampR) is rampR above floor.
-    // Ball rolls in along floor, hits ramp, curves upward.
-    var rampR  = 48;
-    ctx.strokeStyle = 'rgba(0,190,255,0.60)';
-    ctx.lineWidth   = 2.5;
-    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 6;
-    ctx.beginPath();
-    ctx.arc(rampR, floorY, rampR, Math.PI, Math.PI / 2, true);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+
 
     // ── Buttons inside the shaft ──────────────────────────────────────────────
     var btnTypes  = ['bouncer','exploder','sticky','splitter','gravity'];
@@ -2160,6 +2186,7 @@ class Game {
       this._editorBrickType   = 'breakable_brick';
       this._editorDragging    = null;
       this._editorSelected    = null;
+      if (this._editorTranslate === undefined) this._editorTranslate = false;  // default ⊕ROT
     } else {
       this._editorNotePopup = false;
       // Lock in current position/rotation as spawn point for all bricks
@@ -2303,8 +2330,9 @@ class Game {
       var rawVal = sl.min + t * (sl.max - sl.min);
       rawVal = Math.round(rawVal / (sl.step || 0.001)) * (sl.step || 0.001);
       rawVal = Math.max(sl.min, Math.min(sl.max, rawVal));
-      // Inverted sliders: display shows "slowness", actual value = max - displayVal + min
-      var val = sl.invert ? (sl.max + sl.min - rawVal) : rawVal;
+      // Inverted sliders: STOP/RSTOP are drawn as (1 - actual) with range [0.01, 0.5]
+      // actual stored value = 1 - rawVal (keeping it in [0.5, 0.99])
+      var val = sl.invert ? (1 - rawVal) : rawVal;
       val = Math.max(sl.min, Math.min(sl.max, val));
       this._setSliderVal(sl.key, sl.defKey, val, sl);
       return;
