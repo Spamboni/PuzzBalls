@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1304;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1305;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -104,7 +104,7 @@ class PhysObj {
 
     // ── velocity arrow ────────────────────────────────────────────
     const speed = Math.hypot(this.vx, this.vy);
-    if (!this.dragging && speed > 0.9) {
+    if (!this.dragging && speed > 0.9 && !this.isSplitChild && window._showVelocityArrows !== false) {
       const scale = Math.min(speed * 3.5, 32);
       const nx  = this.vx / speed, ny = this.vy / speed;
       const tip = {

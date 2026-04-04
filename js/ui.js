@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1304;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1305;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -14,10 +14,11 @@ class UI {
     this._msgTitle   = document.getElementById('message-title');
     this._msgSub     = document.getElementById('message-sub');
     this._objPanel   = document.getElementById('objectives-panel');
-    this._btnReset   = document.getElementById('btn-reset');
-    this._btnBack    = document.getElementById('btn-back');
+    this._btnReset    = document.getElementById('btn-reset');
+    this._btnBack     = document.getElementById('btn-back');
     this._btnSettings = document.getElementById('btn-settings');
-    this._btnEditor  = document.getElementById('btn-editor');
+    this._btnEditor   = document.getElementById('btn-editor');
+    this._btnArrows   = document.getElementById('btn-arrows');
     this._settingsPanel = document.getElementById('settings-panel');
 
     var self = this;
@@ -40,6 +41,17 @@ class UI {
       function doEditor(e) { e.preventDefault(); e.stopPropagation(); opts.game.toggleEditor(); }
       this._btnEditor.addEventListener('click',    doEditor);
       this._btnEditor.addEventListener('touchend', doEditor);
+    }
+    if (this._btnArrows) {
+      window._showVelocityArrows = true;
+      var self2 = this;
+      function doArrows(e) {
+        e.preventDefault(); e.stopPropagation();
+        window._showVelocityArrows = !window._showVelocityArrows;
+        self2._btnArrows.style.opacity = window._showVelocityArrows ? '1' : '0.4';
+      }
+      this._btnArrows.addEventListener('click',    doArrows);
+      this._btnArrows.addEventListener('touchend', doArrows);
     }
 
     function closeIfOutside(e) {
@@ -185,7 +197,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.04</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.05</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -208,10 +220,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.04 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.05 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1304) {
-            verEl.textContent = 'v13.04 ✓';
+          } else if (loaded === 1305) {
+            verEl.textContent = 'v13.05 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';

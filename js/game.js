@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1304;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1305;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -291,6 +291,27 @@ class Game {
             }
           }
         }
+        // Snap selector cycle
+        if (self._editorSnapBtn) {
+          var sb = self._editorSnapBtn;
+          if (pos.x >= sb.x && pos.x <= sb.x + sb.w && pos.y >= sb.y && pos.y <= sb.y + sb.h) {
+            var snaps = [0, 15, 30, 45];
+            var cur = snaps.indexOf(self._editorSnapDeg || 0);
+            self._editorSnapDeg = snaps[(cur + 1) % snaps.length];
+            return;
+          }
+        }
+        // Movable toggle
+        if (self._editorMovBtn) {
+          var mb = self._editorMovBtn;
+          if (pos.x >= mb.x && pos.x <= mb.x + mb.w && pos.y >= mb.y && pos.y <= mb.y + mb.h) {
+            self._editorMovable = !self._editorMovable;
+            if (self._editorSelected) {
+              self._editorSelected._movable = self._editorMovable;
+            }
+            return;
+          }
+        }
         if (self._editorDelBtn) {
           var db = self._editorDelBtn;
           if (pos.x >= db.x && pos.x <= db.x + db.w && pos.y >= db.y && pos.y <= db.y + db.h) {
@@ -352,28 +373,43 @@ class Game {
         if (self._tryDeleteBall(pos.x, pos.y)) return;
       }
 
-      // ── Tap stuck sticky ball — bounce off with dead zone randomization ──────
+      // ── Tap stuck sticky ball — launch along stored surface normal ────────────
       for (var si = 0; si < self.objects.length; si++) {
         var sobj = self.objects[si];
         if (sobj.type === BALL_TYPES.STICKY && sobj.stuckTo === '_wall_') {
           if (Math.hypot(pos.x - sobj.x, pos.y - sobj.y) < sobj.r + 14) {
-            var bs_s       = BallSettings.sticky;
-            var maxY       = bs_s.bounceHeightY   || 80;
-            var maxX       = bs_s.bounceDistanceX || 60;
-            var deadZone   = (bs_s.deadZonePercent || 30) / 100;
-            var deadRadius = maxX * deadZone;          // half the blocked center range
-            // Pick X with dead zone: random in [-maxX,-deadRadius] or [deadRadius,maxX]
+            var bs_s     = BallSettings.sticky;
+            var maxY     = bs_s.bounceHeightY   || 80;
+            var maxX     = bs_s.bounceDistanceX || 60;
+            var deadZone = (bs_s.deadZonePercent || 30) / 100;
+            var deadRadius = maxX * deadZone;
+
+            // Surface normal: stored when stuck, or infer from position
+            var nx = sobj._stickNx !== undefined ? sobj._stickNx : 0;
+            var ny = sobj._stickNy !== undefined ? sobj._stickNy : -1;
+
+            // Primary velocity = along the normal (away from surface) = Y axis of launch
+            // Secondary = perpendicular to normal = X axis of launch
+            // Perpendicular = (-ny, nx)
             var side   = Math.random() > 0.5 ? 1 : -1;
             var rawX   = deadRadius + Math.random() * (maxX - deadRadius);
-            var launchX = rawX * side;
-            // Convert pixel targets to per-frame velocities (approximate 30 frames to peak)
-            sobj.vx       = launchX / 22;
-            sobj.vy       = -maxY / 18;
+            var launchAlong = maxY / 18;         // speed along normal
+            var launchPerp  = rawX * side / 22;  // speed perpendicular
+
+            sobj.vx = nx * launchAlong + (-ny) * launchPerp;
+            sobj.vy = ny * launchAlong + nx    * launchPerp;
+
+            // Ensure we're actually moving away from surface
+            if (sobj.vx * nx + sobj.vy * ny < 0) { sobj.vx = -sobj.vx; sobj.vy = -sobj.vy; }
+
+            // Nudge position away from surface by a ball radius to prevent re-stick
+            sobj.x += nx * (sobj.r + 3);
+            sobj.y += ny * (sobj.r + 3);
+
             sobj.stuckTo  = null;
             sobj.inFlight = true;
-            // Nudge away from walls
-            if (sobj.x - sobj.r <= sobj.r + 4) { sobj.x += sobj.r + 6; sobj.vx = Math.abs(sobj.vx); }
-            else if (sobj.x + sobj.r >= self.W - sobj.r - 4) { sobj.x -= sobj.r + 6; sobj.vx = -Math.abs(sobj.vx); }
+            sobj._stickNx = undefined;
+            sobj._stickNy = undefined;
             if (window.Sound) Sound.thud(3);
             return;
           }
@@ -415,7 +451,15 @@ class Game {
     function onMove(e) {
       e.preventDefault();
       var pos = getPos(e);
-      if (self._editorMode) { self._editorOnMove(pos); return; }
+      if (self._editorMode) {
+        // Multi-touch: pinch/rotate
+        if (e.touches && e.touches.length >= 2) {
+          self._editorHandleTouch(e.touches);
+          return;
+        }
+        self._editorPinchStart = null; // clear pinch if back to 1 finger
+        self._editorOnMove(pos); return;
+      }
       if (self._draggingSlider && self._sliderRect) {
         var sr = self._sliderRect;
         var t  = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
@@ -433,6 +477,11 @@ class Game {
     function onUp(e) {
       e.preventDefault();
       self._draggingSlider = false;
+      if (self._editorMode) {
+        self._editorPinchStart = null;
+        self._editorOnUp();
+        return;
+      }
       if (!self.sling) return;
       var s = self.sling, obj = s.obj;
       var dx, dy, dist;
@@ -507,7 +556,31 @@ class Game {
     for (i = 0; i < this.ports.length;      i++) this.ports[i].update();
     for (i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].update(dt);
     for (i = 0; i < this.spawners.length;   i++) this.spawners[i].update(dt);
-    for (i = 0; i < this.bricks.length;     i++) this.bricks[i].updateRegen(dt);
+    for (i = 0; i < this.bricks.length; i++) {
+      this.bricks[i].updateRegen(dt);
+      // Step movable brick physics
+      var mbrick = this.bricks[i];
+      if (mbrick._movable && (mbrick._vx || mbrick._vy || mbrick._angularV)) {
+        var decel = mbrick._decel || 0.88;
+        mbrick.x += (mbrick._vx || 0);
+        mbrick.y += (mbrick._vy || 0);
+        mbrick._rotation = (mbrick._rotation || 0) + (mbrick._angularV || 0);
+        mbrick._vx = (mbrick._vx || 0) * decel;
+        mbrick._vy = (mbrick._vy || 0) * decel;
+        mbrick._angularV = (mbrick._angularV || 0) * decel;
+        // Clamp travel from spawn point
+        mbrick._startX = mbrick._startX !== undefined ? mbrick._startX : mbrick.x;
+        mbrick._startY = mbrick._startY !== undefined ? mbrick._startY : mbrick.y;
+        var travelMax = mbrick._maxTravel || 60;
+        var traveled  = Math.hypot(mbrick.x - mbrick._startX, mbrick.y - mbrick._startY);
+        if (traveled > travelMax) {
+          var tAngle = Math.atan2(mbrick.y - mbrick._startY, mbrick.x - mbrick._startX);
+          mbrick.x = mbrick._startX + Math.cos(tAngle) * travelMax;
+          mbrick.y = mbrick._startY + Math.sin(tAngle) * travelMax;
+          mbrick._vx = 0; mbrick._vy = 0;
+        }
+      }
+    }
 
     // Chute feed
     this._updateChute(dt);
@@ -678,7 +751,14 @@ class Game {
         if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
         if (window.Sound) Sound.brickShatter(dmg * 0.01);
 
-        if (ball.type === BALL_TYPES.STICKY) this._checkStickyWall(ball);
+        if (ball.type === BALL_TYPES.STICKY) {
+          this._checkStickyWall(ball);
+          // Store brick surface normal if it just stuck
+          if (ball.stuckTo === '_wall_') {
+            ball._stickNx = bnx;
+            ball._stickNy = bny;
+          }
+        }
 
         // Exploder: count brick hit
         if (ball.type === BALL_TYPES.EXPLODER && !ball.exploded) {
@@ -697,7 +777,7 @@ class Game {
 
         if (destroyed) {
           EventManager.dispatch(brick.id + '_triggered');
-          // §1.1: Detach any sticky balls near this brick
+          // Detach any sticky balls near this brick
           for (var di = 0; di < this.objects.length; di++) {
             var dball = this.objects[di];
             if (dball.type === BALL_TYPES.STICKY && dball.stuckTo === '_wall_') {
@@ -709,6 +789,20 @@ class Game {
               }
             }
           }
+        }
+
+        // Movable brick physics — translate + rotate based on impact
+        if (brick._movable) {
+          var brickDensity = brick._density || 1.0;
+          var impactForce  = Math.hypot(ball.vx, ball.vy) / (brickDensity * 3);
+          brick._vx = (brick._vx || 0) + bnx * impactForce * -1;
+          brick._vy = (brick._vy || 0) + bny * impactForce * -1;
+          // Angular velocity from off-center hit
+          var hitOffsetX = (ball.x - brick.x) / (brick.w / 2 + 1);
+          var hitOffsetY = (ball.y - brick.y) / (brick.h / 2 + 1);
+          var torque     = (hitOffsetX * bny - hitOffsetY * bnx) * impactForce * 0.08;
+          brick._angularV = (brick._angularV || 0) + torque;
+          brick.inFlight  = true;
         }
         this.collisions++;
         this.ui.setCollisions(this.collisions);
@@ -835,12 +929,18 @@ class Game {
     var speed = Math.hypot(obj.vx, obj.vy);
     if (speed < threshold) {
       var touchingFloor = obj.y + obj.r >= this.floorY() - 2;
-      // Never stick to floor — only walls/ceiling/bricks
       if (touchingFloor) return;
       obj.vx = 0; obj.vy = 0;
       obj.inFlight = false;
       obj.stuckTo  = '_wall_';
-      obj._stickOffX = 0; obj._stickOffY = 0;
+      // Store surface normal so tap-bounce launches perpendicular to surface
+      var nx = 0, ny = -1; // default: ceiling/top → launch downward... wait, launch AWAY
+      if (obj.x - obj.r <= 2)              { nx =  1; ny =  0; } // left wall → launch right
+      else if (obj.x + obj.r >= this.W - 2) { nx = -1; ny =  0; } // right wall → launch left
+      else if (obj.y - obj.r <= 2)           { nx =  0; ny =  1; } // ceiling → launch down
+      else                                   { nx =  0; ny = -1; } // default → launch up
+      obj._stickNx = nx;
+      obj._stickNy = ny;
       if (window.Sound) Sound.thud(4);
     }
   }
@@ -1222,18 +1322,28 @@ class Game {
     ctx.beginPath(); ctx.arc(gearRX, gearCY, gearR - 2, 0, Math.PI * 2); ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Pistons — horizontal cylinders poking out left and right
+    // Pistons — two pairs: top and bottom, alternating phase
     var pistonOff = Math.sin(cFrame * 0.12) * 4;
     ctx.strokeStyle = 'rgba(0,220,255,0.65)';
     ctx.lineWidth   = 3; ctx.lineCap = 'round';
     ctx.shadowColor = '#00ddff'; ctx.shadowBlur = 5;
-    // Left piston (top)
-    ctx.beginPath(); ctx.moveTo(capX, capY + capH * 0.28); ctx.lineTo(capX - 6 - pistonOff, capY + capH * 0.28); ctx.stroke();
+    // Left piston pair (top + bottom, same phase)
+    ctx.beginPath(); ctx.moveTo(capX, capY + capH * 0.25); ctx.lineTo(capX - 6 - pistonOff, capY + capH * 0.25); ctx.stroke();
     ctx.fillStyle = 'rgba(0,200,255,0.8)';
-    ctx.beginPath(); ctx.arc(capX - 7 - pistonOff, capY + capH * 0.28, 2.5, 0, Math.PI * 2); ctx.fill();
-    // Right piston (bottom, opposite phase)
-    ctx.beginPath(); ctx.moveTo(capX + capW, capY + capH * 0.72); ctx.lineTo(capX + capW + 6 - pistonOff, capY + capH * 0.72); ctx.stroke();
-    ctx.beginPath(); ctx.arc(capX + capW + 7 - pistonOff, capY + capH * 0.72, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(capX - 7 - pistonOff, capY + capH * 0.25, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
+    ctx.beginPath(); ctx.moveTo(capX, capY + capH * 0.65); ctx.lineTo(capX - 6 + pistonOff, capY + capH * 0.65); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,200,255,0.8)';
+    ctx.beginPath(); ctx.arc(capX - 7 + pistonOff, capY + capH * 0.65, 2.5, 0, Math.PI * 2); ctx.fill();
+    // Right piston pair (opposite phase)
+    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
+    ctx.beginPath(); ctx.moveTo(capX + capW, capY + capH * 0.35); ctx.lineTo(capX + capW + 6 - pistonOff, capY + capH * 0.35); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,200,255,0.8)';
+    ctx.beginPath(); ctx.arc(capX + capW + 7 - pistonOff, capY + capH * 0.35, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
+    ctx.beginPath(); ctx.moveTo(capX + capW, capY + capH * 0.75); ctx.lineTo(capX + capW + 6 + pistonOff, capY + capH * 0.75); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,200,255,0.8)';
+    ctx.beginPath(); ctx.arc(capX + capW + 7 + pistonOff, capY + capH * 0.75, 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
 
     // Center energy core
@@ -1392,7 +1502,19 @@ class Game {
 
     // Phase 2: Draw interactive objects (below balls so balls appear on top)
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
-    for (var i = 0; i < this.bricks.length;     i++) this.bricks[i].draw(ctx);  // draws regen ghost when dead
+    for (var i = 0; i < this.bricks.length; i++) {
+      var brick2 = this.bricks[i];
+      if (brick2._rotation) {
+        ctx.save();
+        ctx.translate(brick2.x, brick2.y);
+        ctx.rotate(brick2._rotation);
+        ctx.translate(-brick2.x, -brick2.y);
+        brick2.draw(ctx);
+        ctx.restore();
+      } else {
+        brick2.draw(ctx);
+      }
+    }
     for (var i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].draw(ctx);
     for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
     for (var i = 0; i < this.spawners.length;   i++) this.spawners[i].draw(ctx);
@@ -1419,31 +1541,83 @@ class Game {
     // Check if tapping an existing brick to select it
     for (var i = this.bricks.length - 1; i >= 0; i--) {
       var b = this.bricks[i];
-      var hw = (b.w || b.r * 2) / 2, hh = (b.h || b.r * 2) / 2;
-      if (Math.abs(pos.x - b.x) < hw + 8 && Math.abs(pos.y - b.y) < hh + 8) {
+      var hw = (b.r !== undefined && !(b.w) ? b.r : (b.w || 40)) / 2;
+      var hh = (b.r !== undefined && !(b.h) ? b.r : (b.h || 22)) / 2;
+      if (b instanceof CircularBrick) { hw = hh = b.r; }
+      if (Math.abs(pos.x - b.x) < hw + 10 && Math.abs(pos.y - b.y) < hh + 10) {
         this._editorSelected = b;
         this._editorDragOffX = pos.x - b.x;
         this._editorDragOffY = pos.y - b.y;
         this._editorDragging = b;
+        this._editorMovable  = b._movable || false;
         return;
       }
     }
     // Place new brick
     var id  = 'brick_' + Date.now();
     var obj = null;
-    if (this._editorBrickType === 'vertical_brick') {
-      obj = new VerticalBrick(pos.x, pos.y, 22, 60, 100, id, 5000);
-    } else if (this._editorBrickType === 'circular_brick') {
+    if (this._editorBrickType === 'circular_brick') {
       obj = new CircularBrick(pos.x, pos.y, 22, 100, id, 5000);
     } else {
-      obj = new BreakableBrick(pos.x, pos.y, 60, 22, 100, id, 5000);
+      obj = new BreakableBrick(pos.x, pos.y, 70, 22, 100, id, 5000);
     }
+    // Apply movable flag and physics properties
+    obj._movable  = this._editorMovable || false;
+    obj._rotation = 0;
+    obj._vx       = 0; obj._vy = 0; obj._angularV = 0;
+    obj._maxTravel= 60;   // pixels max movement
+    obj._decel    = 0.88; // deceleration factor
+    obj._density  = 1.0;  // affects how much balls move it
     this.bricks.push(obj);
     EventManager.registerTarget(id, obj);
     this._editorSelected = obj;
     this._editorDragging = obj;
     this._editorDragOffX = 0;
     this._editorDragOffY = 0;
+  }
+
+  // Multi-touch: pinch to scale, two-finger rotate
+  _editorHandleTouch(touches) {
+    if (!this._editorMode || !this._editorSelected || touches.length < 2) return;
+    var rect = this.canvas.getBoundingClientRect();
+    var t0   = touches[0], t1 = touches[1];
+    var p0   = { x: t0.clientX - rect.left, y: t0.clientY - rect.top };
+    var p1   = { x: t1.clientX - rect.left, y: t1.clientY - rect.top };
+    var midX = (p0.x + p1.x) / 2, midY = (p0.y + p1.y) / 2;
+    var dist = Math.hypot(p0.x - p1.x, p0.y - p1.y);
+    var angle= Math.atan2(p1.y - p0.y, p1.x - p0.x);
+
+    var sb = this._editorSelected;
+
+    if (this._editorPinchStart) {
+      var ds    = dist - this._editorPinchStart.dist;
+      var da    = angle - this._editorPinchStart.angle;
+
+      // Scale
+      if (sb instanceof CircularBrick) {
+        sb.r = Math.max(8, Math.min(80, (this._editorPinchStart.r || sb.r) + ds * 0.5));
+        sb.w = sb.h = sb.r * 2;
+      } else {
+        var newW = Math.max(20, Math.min(200, (this._editorPinchStart.w || sb.w) + ds));
+        sb.w = newW;
+      }
+
+      // Rotate with snap
+      var snapDeg = this._editorSnapDeg || 0;
+      var rawRot  = (this._editorPinchStart.rot || 0) + da;
+      if (snapDeg > 0) {
+        var snapRad = snapDeg * Math.PI / 180;
+        rawRot = Math.round(rawRot / snapRad) * snapRad;
+      }
+      sb._rotation = rawRot;
+    } else {
+      // First frame of pinch — store starting values
+      this._editorPinchStart = {
+        dist: dist, angle: angle,
+        w: sb.w, h: sb.h, r: sb instanceof CircularBrick ? sb.r : 0,
+        rot: sb._rotation || 0,
+      };
+    }
   }
 
   _editorOnMove(pos) {
@@ -1465,87 +1639,130 @@ class Game {
 
   _drawEditor() {
     var ctx = this.ctx, W = this.W;
-
-    // Semi-transparent editor overlay strip at bottom of play area (above floor)
-    var panelH  = 72;
-    var panelY  = this.floorY() - panelH - 4;
+    var panelH = 98;
+    var panelY = this.floorY() - panelH - 4;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(0,10,30,0.88)';
+    ctx.fillStyle = 'rgba(0,10,30,0.90)';
     ctx.beginPath(); ctx.roundRect(6, panelY, W - 12, panelH, 8); ctx.fill();
     ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.roundRect(6, panelY, W - 12, panelH, 8); ctx.stroke();
 
-    // Label
     ctx.fillStyle = '#00ffee'; ctx.font = "bold 9px 'Share Tech Mono',monospace";
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText('BRICK EDITOR', 14, panelY + 5);
 
-    // Brick type buttons
-    var types  = ['breakable_brick', 'vertical_brick', 'circular_brick'];
-    var labels = ['HORIZ', 'VERT', 'ROUND'];
-    var colors = ['#4488ff', '#ff8844', '#44ff88'];
-    var btnW   = 54, btnH = 24, startX = 14, btnY = panelY + 18;
+    var btnH = 24, btnY = panelY + 18, startX = 14;
+
+    // Row 1: Brick type + snap + movable + DEL + DONE
+    var types  = ['breakable_brick', 'circular_brick'];
+    var labels = ['BRICK', 'ROUND'];
+    var tColors = ['#4488ff', '#44ff88'];
+    var btnW = 52;
     this._editorTypeBtns = [];
     for (var ti = 0; ti < types.length; ti++) {
-      var bx = startX + ti * (btnW + 6);
+      var bx = startX + ti * (btnW + 5);
       var active = this._editorBrickType === types[ti];
-      ctx.fillStyle = active ? colors[ti] + '44' : 'rgba(0,15,40,0.8)';
+      ctx.fillStyle = active ? tColors[ti] + '44' : 'rgba(0,15,40,0.8)';
       ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.fill();
-      ctx.strokeStyle = active ? colors[ti] : colors[ti] + '66';
+      ctx.strokeStyle = active ? tColors[ti] : tColors[ti] + '66';
       ctx.lineWidth = active ? 2 : 1;
       ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.stroke();
-      ctx.fillStyle = active ? colors[ti] : colors[ti] + 'aa';
+      ctx.fillStyle = active ? tColors[ti] : tColors[ti] + 'aa';
       ctx.font = "bold 9px 'Share Tech Mono',monospace";
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(labels[ti], bx + btnW / 2, btnY + btnH / 2);
       this._editorTypeBtns.push({ x: bx, y: btnY, w: btnW, h: btnH, type: types[ti] });
     }
 
-    // Delete button
-    var delX = startX + types.length * (btnW + 6) + 10;
-    this._editorDelBtn = { x: delX, y: btnY, w: 40, h: btnH };
+    // Snap selector
+    var snapX = startX + types.length * (btnW + 5) + 8;
+    var snapW = 48;
+    var snaps = [0, 15, 30, 45];
+    var snapLabels = ['FREE', '15°', '30°', '45°'];
+    this._editorSnapBtn = { x: snapX, y: btnY, w: snapW, h: btnH };
+    var curSnap = this._editorSnapDeg || 0;
+    var snapIdx = snaps.indexOf(curSnap);
+    ctx.fillStyle = 'rgba(0,15,40,0.8)';
+    ctx.beginPath(); ctx.roundRect(snapX, btnY, snapW, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#aaccff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(snapX, btnY, snapW, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#aaccff';
+    ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('⚙ ' + snapLabels[snapIdx < 0 ? 0 : snapIdx], snapX + snapW / 2, btnY + btnH / 2);
+
+    // Movable toggle
+    var movX = snapX + snapW + 6;
+    var movW = 52;
+    this._editorMovBtn = { x: movX, y: btnY, w: movW, h: btnH };
+    var isMovable = this._editorMovable || false;
+    ctx.fillStyle = isMovable ? 'rgba(255,150,0,0.20)' : 'rgba(0,15,40,0.8)';
+    ctx.beginPath(); ctx.roundRect(movX, btnY, movW, btnH, 4); ctx.fill();
+    ctx.strokeStyle = isMovable ? '#ffaa00' : '#666688'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(movX, btnY, movW, btnH, 4); ctx.stroke();
+    ctx.fillStyle = isMovable ? '#ffaa00' : '#668899';
+    ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isMovable ? '● MOV' : '■ STAT', movX + movW / 2, btnY + btnH / 2);
+
+    // DEL button
+    var delX = movX + movW + 6;
+    var delW = 38;
+    this._editorDelBtn = { x: delX, y: btnY, w: delW, h: btnH };
     ctx.fillStyle = this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)';
-    ctx.beginPath(); ctx.roundRect(delX, btnY, 40, btnH, 4); ctx.fill();
-    ctx.strokeStyle = this._editorSelected ? '#ff4444' : '#882222';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(delX, btnY, 40, btnH, 4); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(delX, btnY, delW, btnH, 4); ctx.fill();
+    ctx.strokeStyle = this._editorSelected ? '#ff4444' : '#882222'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(delX, btnY, delW, btnH, 4); ctx.stroke();
     ctx.fillStyle = this._editorSelected ? '#ff6666' : '#884444';
     ctx.font = "bold 9px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DEL', delX + 20, btnY + btnH / 2);
+    ctx.fillText('DEL', delX + delW / 2, btnY + btnH / 2);
 
-    // Done button
-    var doneX = W - 60;
-    this._editorDoneBtn = { x: doneX, y: btnY, w: 50, h: btnH };
+    // DONE button
+    var doneX = W - 62;
+    this._editorDoneBtn = { x: doneX, y: btnY, w: 52, h: btnH };
     ctx.fillStyle = 'rgba(0,60,30,0.8)';
-    ctx.beginPath(); ctx.roundRect(doneX, btnY, 50, btnH, 4); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(doneX, btnY, 52, btnH, 4); ctx.fill();
     ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(doneX, btnY, 50, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#00ff88';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DONE', doneX + 25, btnY + btnH / 2);
+    ctx.beginPath(); ctx.roundRect(doneX, btnY, 52, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#00ff88'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('DONE', doneX + 26, btnY + btnH / 2);
 
-    // Instruction
-    ctx.fillStyle = 'rgba(150,200,255,0.55)';
-    ctx.font = "8px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText('Tap canvas to place • drag to move', 14, panelY + panelH - 13);
+    // Row 2: Selected brick settings (HP + max travel + decel)
+    var row2Y = btnY + btnH + 8;
+    if (this._editorSelected) {
+      var sb2 = this._editorSelected;
+      ctx.fillStyle = 'rgba(100,200,255,0.6)';
+      ctx.font = "8px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('HP:' + (sb2.maxHealth||100) + '  TRAVEL:' + (sb2._maxTravel||60) + 'px  DECEL:' + (sb2._decel||0.88).toFixed(2) + '  DENSITY:' + (sb2._density||1.0).toFixed(1), 14, row2Y + 8);
+      // Instruction
+      ctx.fillStyle = 'rgba(150,200,255,0.40)';
+      ctx.fillText('Pinch=scale  2-finger rotate=angle  tap to select', 14, row2Y + 20);
+    } else {
+      ctx.fillStyle = 'rgba(150,200,255,0.40)';
+      ctx.font = "8px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('Tap to place  •  Pinch to scale  •  2-finger twist to rotate', 14, row2Y + 12);
+    }
 
     // Highlight selected brick
     if (this._editorSelected) {
       var sb = this._editorSelected;
-      ctx.strokeStyle = 'rgba(255,255,100,0.8)';
+      ctx.strokeStyle = 'rgba(255,255,100,0.85)';
       ctx.lineWidth   = 2;
       ctx.setLineDash([4, 4]);
+      ctx.save();
+      if (sb._rotation) { ctx.translate(sb.x, sb.y); ctx.rotate(sb._rotation); ctx.translate(-sb.x, -sb.y); }
       if (sb instanceof CircularBrick) {
         ctx.beginPath(); ctx.arc(sb.x, sb.y, sb.r + 6, 0, Math.PI * 2); ctx.stroke();
       } else {
-        ctx.beginPath(); ctx.roundRect(sb.x - sb.w/2 - 4, sb.y - sb.h/2 - 4, sb.w + 8, sb.h + 8, 4); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(sb.x - sb.w/2 - 5, sb.y - sb.h/2 - 5, sb.w + 10, sb.h + 10, 4); ctx.stroke();
       }
+      ctx.restore();
       ctx.setLineDash([]);
     }
-
     ctx.restore();
   }
 
