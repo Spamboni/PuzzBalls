@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1316;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1317;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -346,14 +346,16 @@ class Game {
             }
           }
         }
-        // Slider drag start — check all 4 sliders
+        // Slider drag start — check all sliders
         if (self._editorSliders) {
           var sliderDefs = [
-            { id:'hp',    key:'maxHealth',  defKey:'rectHP',    step:5,    min:10,   max:400 },
-            { id:'regen', key:'regenAfter', defKey:'rectRegen', step:100,  min:200,  max:10000 },
-            { id:'dens',  key:'_density',   defKey:'density',   step:0.1,  min:0.5,  max:5.0 },
-            { id:'dist',  key:'_maxTravel', defKey:'maxTravel', step:10,   min:0,    max:900 },
-            { id:'decel', key:'_decel',     defKey:'decel',     step:0.01, min:0.50, max:0.99 },
+            { id:'hp',     key:'maxHealth',  defKey:'rectHP',    step:5,    min:10,   max:400,  invert:false },
+            { id:'regen',  key:'regenAfter', defKey:'rectRegen', step:100,  min:200,  max:10000,invert:false },
+            { id:'dens',   key:'_density',   defKey:'density',   step:0.1,  min:0.5,  max:5.0,  invert:false },
+            { id:'dist',   key:'_maxTravel', defKey:'maxTravel', step:10,   min:0,    max:900,  invert:false },
+            { id:'decel',  key:'_decel',     defKey:'decel',     step:0.01, min:0.50, max:0.99, invert:true  },
+            { id:'rotspd', key:'_rotSpeed',  defKey:'rotSpeed',  step:0.05, min:0.0,  max:1.0,  invert:false },
+            { id:'rotdec', key:'_rotDecel',  defKey:'rotDecel',  step:0.01, min:0.50, max:0.99, invert:true  },
           ];
           var movNow = self._editorSelected ? (self._editorSelected._movable||false) : (self._editorMovable||false);
           for (var sdi = 0; sdi < sliderDefs.length; sdi++) {
@@ -364,24 +366,23 @@ class Game {
             if ((sd.id === 'dens' || sd.id === 'dist') && !movNow) continue;
             if (pos.x >= sl2.trackX - 8 && pos.x <= sl2.trackX + sl2.trackW + (sl2.infRect ? sl2.infRect.w + 10 : 8) &&
                 pos.y >= sl2.y + 2 && pos.y <= sl2.y + sl2.h - 2) {
-              // Check ∞ button on HP
-              if (sd.id === 'hp' && sl2.infRect) {
+              // Check ∞ button on HP (invincible) and REGEN (no regen)
+              if (sl2.infRect) {
                 var ir = sl2.infRect;
                 if (pos.x >= ir.x && pos.x <= ir.x + ir.w && pos.y >= ir.y && pos.y <= ir.y + ir.h) {
-                  if (self._editorSelected) {
-                    self._editorSelected._invincible = !self._editorSelected._invincible;
-                    // Don't set maxHealth to Infinity — just use _invincible flag for immunity
-                    if (!self._editorSelected._invincible) {
-                      // Restore normal HP when turning off
-                      self._editorSelected.maxHealth = 100;
-                      self._editorSelected.health    = 100;
+                  if (sd.id === 'hp') {
+                    if (self._editorSelected) {
+                      self._editorSelected._invincible = !self._editorSelected._invincible;
+                      if (!self._editorSelected._invincible) { self._editorSelected.maxHealth = 100; self._editorSelected.health = 100; }
                     }
+                  } else if (sd.id === 'regen') {
+                    if (self._editorSelected) self._editorSelected._noRegen = !self._editorSelected._noRegen;
                   }
                   return;
                 }
               }
               // Start drag on track
-              self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step }, sl2);
+              self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step, invert: sd.invert }, sl2);
               return;
             }
           }
@@ -783,6 +784,7 @@ class Game {
     var i, j, floorY = this.floorY();
 
     window._gameSparks = this.sparks;
+    window._gameBrickSpeedMult = this.brickSpeedMult;
 
     // Gravity wells — only active when gravActive is set (manually slung)
     for (i = 0; i < this.objects.length; i++) {
@@ -834,7 +836,8 @@ class Game {
         }
         mbrick._vx = (mbrick._vx || 0) * decel;
         mbrick._vy = (mbrick._vy || 0) * decel;
-        mbrick._angularV = (mbrick._angularV || 0) * decel;
+        var rotDecel = mbrick._rotDecel !== undefined ? mbrick._rotDecel : decel;
+        mbrick._angularV = (mbrick._angularV || 0) * rotDecel;
 
         // Travel clamp
         if (mbrick._startX !== undefined) {
@@ -1197,7 +1200,8 @@ class Game {
           var hitPivX = hitOffXraw - pivotOff;
           var hitPivY = hitOffYraw;
           var torque  = (hitPivX * (-bny) - hitPivY * (-bnx)) * baseForce * 0.018 * rotateFrac;
-          brick._angularV = (brick._angularV || 0) + torque;
+          var rspd = brick._rotSpeed !== undefined ? brick._rotSpeed * 2 : 1.0;
+          brick._angularV = (brick._angularV || 0) + torque * rspd;
 
           if (brick._startX === undefined) { brick._startX = brick.x; brick._startY = brick.y; }
           if (window.Sound) Sound.brickShatter(baseForce * 0.2);
@@ -1983,7 +1987,7 @@ class Game {
     var defaults = window.BrickDefaults || {};
     var isCircle = this._editorBrickType === 'circular_brick';
     var defHP    = isCircle ? (defaults.circularHP || 100) : (defaults.rectHP || 100);
-    var defRegen = isCircle ? (defaults.circularRegen || 5000) : (defaults.rectRegen || 5000);
+    var defRegen = isCircle ? (defaults.circularRegen || 2000) : (defaults.rectRegen || 2000);
     var id  = 'brick_' + Date.now();
     var obj = isCircle
       ? new CircularBrick(pos.x, pos.y, defaults.circularR || 22, defHP, id, defRegen)
@@ -2057,8 +2061,11 @@ class Game {
     if (this._editorDragSlider) {
       var sl = this._editorDragSlider;
       var t  = Math.max(0, Math.min(1, (pos.x - sl.trackX) / sl.trackW));
-      var val = sl.min + t * (sl.max - sl.min);
-      val = Math.round(val / (sl.step || 1)) * (sl.step || 1);
+      var rawVal = sl.min + t * (sl.max - sl.min);
+      rawVal = Math.round(rawVal / (sl.step || 0.001)) * (sl.step || 0.001);
+      rawVal = Math.max(sl.min, Math.min(sl.max, rawVal));
+      // Inverted sliders: display shows "slowness", actual value = max - displayVal + min
+      var val = sl.invert ? (sl.max + sl.min - rawVal) : rawVal;
       val = Math.max(sl.min, Math.min(sl.max, val));
       this._setSliderVal(sl.key, sl.defKey, val);
       return;
@@ -2288,7 +2295,7 @@ class Game {
     };
 
     var HPval   = (sb2 && sb2.maxHealth  !== undefined) ? sb2.maxHealth  : (bd2.rectHP    || 100);
-    var REGval  = (sb2 && sb2.regenAfter !== undefined) ? sb2.regenAfter : (bd2.rectRegen || 5000);
+    var REGval  = (sb2 && sb2.regenAfter !== undefined) ? sb2.regenAfter : (bd2.rectRegen || 2000);
     var DENSval = (sb2 && sb2._density   !== undefined) ? sb2._density   : (bd2.density   || 1.0);
     var DISTval = (sb2 && sb2._maxTravel !== undefined) ? sb2._maxTravel : (bd2.maxTravel || 60);
     var HPinf   = (sb2 && sb2._invincible) || false;
@@ -2296,17 +2303,30 @@ class Game {
     this._editorSliders = {};
     // Row A: HP (left half) | REGEN (right half)
     this._editorSliders.hp    = drawSlider('HP',    HPval,   10, 400, true,  HPinf,       false,       padding,          row2Y, halfW);
-    this._editorSliders.regen = drawSlider('REGEN', REGval,  200, 10000, false, false,       false,       padding + halfW,  row2Y, halfW);
+    var noRegen = (sb2 && sb2._noRegen) || false;
+    this._editorSliders.regen = drawSlider('REGEN', noRegen ? 0 : Math.max(200,REGval), 200, 10000, true, noRegen, false, padding + halfW, row2Y, halfW);
     // Row B: DENS (left half) | DIST (right half) — grayed unless movable
-    var DECELval = (sb2 && sb2._decel !== undefined) ? sb2._decel : (bd2.decel || 0.88);
-    var thirdW   = Math.floor((W - 16) / 3);
+    var DECELval   = (sb2 && sb2._decel    !== undefined) ? sb2._decel    : (bd2.decel    || 0.88);
+    var ROTSPDval  = (sb2 && sb2._rotSpeed  !== undefined) ? sb2._rotSpeed  : (bd2.rotSpeed  || 0.5);
+    var ROTDECval  = (sb2 && sb2._rotDecel  !== undefined) ? sb2._rotDecel  : (bd2.rotDecel  || 0.88);
+    var row3b      = row3Y + sliderRowH + 5;
+    var thirdW     = Math.floor((W - 16) / 3);
+    var halfW2     = Math.floor((W - 16) / 2);
+    // Row B: DENS | DIST | DECEL (movement)  — grayed when STAT
     this._editorSliders.dens  = drawSlider('DENS',  DENSval,  0.5, 5.0,  false, false, !movActive2, padding,               row3Y, thirdW);
     this._editorSliders.dist  = drawSlider('DIST',  DISTval,  0,   900,  false, false, !movActive2, padding + thirdW,      row3Y, thirdW);
-    this._editorSliders.decel = drawSlider('DECEL', DECELval, 0.5, 0.99, false, false, !movActive2, padding + thirdW * 2,  row3Y, thirdW);
+    // Invert DECEL display: low value = slow stop (far travel), high = fast stop
+    this._editorSliders.decel = drawSlider('STOP',  1 - DECELval, 0.01, 0.5, false, false, !movActive2, padding + thirdW * 2, row3Y, thirdW);
+    // Row C: ROT SPEED | ROT STOP — grayed when STAT
+    this._editorSliders.rotspd = drawSlider('RSPIN', ROTSPDval, 0.0, 1.0, false, false, !movActive2, padding,          row3b, halfW2);
+    this._editorSliders.rotdec = drawSlider('RSTOP', 1 - ROTDECval, 0.01, 0.5, false, false, !movActive2, padding + halfW2, row3b, halfW2);
 
-    // MOV toggle — compact, after row3
-    var row4Y = row3Y + sliderRowH + 6;
-    var movInX = padding, movW3 = 48, pivX3 = movInX + movW3 + 6;
+    // Row 4: MOV | ↔ROT | PIVOT (L/C/R) | 🎵  — calculate transOn3 FIRST
+    var row4Y = row3b + sliderRowH + 6;
+    var transOn3 = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
+
+    // MOV toggle
+    var movInX = padding, movW3 = 48;
     var movActive3 = movActive2;
     this._editorMovInlineRect = { x: movInX, y: row4Y, w: movW3, h: 20 };
     ctx.fillStyle = movActive3 ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
@@ -2317,19 +2337,31 @@ class Game {
     ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(movActive3 ? '● MOV' : '■ STAT', movInX + movW3/2, row4Y + 10);
 
-    // PIVOT buttons — greyed out when ↔ROT (fixed pivot) is OFF
+    // ↔ROT toggle — BEFORE pivot so transOn3 is available
+    var transX3 = movInX + movW3 + 6;
+    this._editorTransRect = { x: transX3, y: row4Y, w: 40, h: 20 };
+    ctx.fillStyle = transOn3 ? 'rgba(0,200,100,0.20)' : 'rgba(0,10,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 40, 20, 3); ctx.fill();
+    ctx.strokeStyle = transOn3 ? '#00ff88' : '#334455'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 40, 20, 3); ctx.stroke();
+    ctx.fillStyle = transOn3 ? '#00ff88' : '#445566';
+    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(transOn3 ? '↔ROT' : '⊕ROT', transX3 + 20, row4Y + 10);
+
+    // PIVOT buttons — active when ↔ROT (fixed-pivot spin) is ON
+    var pivX3 = transX3 + 44;
     var pivots3 = ['L', 'C', 'R'], pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
     var curPivot3 = sb2 ? (sb2._pivot || 'C') : (this._editorPivot || 'C');
-    var pivEnabled = transOn3;  // only active when translateOnRotate is ON
+    var pivEnabled = transOn3;  // pivot only matters when fixed-pivot spinning
     this._editorPivotRects = [];
-    var pW3 = 22;
+    var pW3 = 24;
     for (var pi3 = 0; pi3 < pivots3.length; pi3++) {
       var px3 = pivX3 + pi3 * (pW3 + 2);
       var pAct = pivEnabled && curPivot3 === pivots3[pi3];
-      ctx.globalAlpha = pivEnabled ? 1.0 : 0.3;
-      ctx.fillStyle = pAct ? pivColors3[pi3] + '33' : 'rgba(0,10,30,0.6)';
+      ctx.globalAlpha = pivEnabled ? 1.0 : 0.28;
+      ctx.fillStyle = pAct ? pivColors3[pi3] + '44' : 'rgba(0,10,30,0.6)';
       ctx.beginPath(); ctx.roundRect(px3, row4Y, pW3, 20, 3); ctx.fill();
-      ctx.strokeStyle = pAct ? pivColors3[pi3] : '#334455'; ctx.lineWidth = pAct ? 1.5 : 0.8;
+      ctx.strokeStyle = pAct ? pivColors3[pi3] : '#334455'; ctx.lineWidth = pAct ? 1.8 : 0.8;
       ctx.beginPath(); ctx.roundRect(px3, row4Y, pW3, 20, 3); ctx.stroke();
       ctx.fillStyle = pAct ? pivColors3[pi3] : '#445566';
       ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2338,20 +2370,8 @@ class Game {
       this._editorPivotRects.push({ x: px3, y: row4Y, w: pW3, h: 20, val: pivots3[pi3], enabled: pivEnabled });
     }
 
-    // ↔ROT toggle
-    var transX3 = pivX3 + pivots3.length * (pW3 + 2) + 6;
-    var transOn3 = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
-    this._editorTransRect = { x: transX3, y: row4Y, w: 36, h: 20 };
-    ctx.fillStyle = transOn3 ? 'rgba(0,200,100,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 36, 20, 3); ctx.fill();
-    ctx.strokeStyle = transOn3 ? '#00ff88' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 36, 20, 3); ctx.stroke();
-    ctx.fillStyle = transOn3 ? '#00ff88' : '#445566';
-    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(transOn3 ? '↔ROT' : '⊕ROT', transX3 + 18, row4Y + 10);
-
     // 🎵 Note button — opens note picker popup
-    var noteX = transX3 + 40;
+    var noteX = pivX3 + pivots3.length * (pW3 + 2) + 8;
     var noteOn = sb2 && sb2._noteConfig;
     this._editorNoteBtn = { x: noteX, y: row4Y, w: 28, h: 20 };
     ctx.fillStyle = noteOn ? 'rgba(180,50,255,0.30)' : 'rgba(0,10,30,0.6)';

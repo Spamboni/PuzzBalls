@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1315;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1317;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -550,7 +550,9 @@ class BreakableBrick {
       var drawX = this.x, drawY = this.y, drawRot = this._rotation || 0;
       if (this._spawnX !== undefined) {
         var elapsed  = this.regenAfter - this.regenTimer;
-        var ease     = 1 - Math.pow(1 - Math.min(1, elapsed / 500), 3);
+        var bsm      = (window._gameBrickSpeedMult !== undefined) ? window._gameBrickSpeedMult : 0.5;
+        var snapMs   = 500 / Math.max(0.1, bsm * 2);  // faster brickSpeed = faster snap
+        var ease     = 1 - Math.pow(1 - Math.min(1, elapsed / snapMs), 3);
         drawX = this.x + (this._spawnX - this.x) * ease;
         drawY = this.y + (this._spawnY - this.y) * ease;
         // Interpolate rotation via shortest arc (<= 180°)
