@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1324;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1326;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -624,20 +624,35 @@ class BreakableBrick {
       ctx.beginPath(); ctx.moveTo(bx + 3, ry); ctx.lineTo(bx + this.w - 3, ry); ctx.stroke();
     }
 
-    // Corner dots (neon rivets)
-    var dotR = 2.5;
-    var corners = [
-      [bx + 5, by + 5], [bx + this.w - 5, by + 5],
-      [bx + 5, by + this.h - 5], [bx + this.w - 5, by + this.h - 5],
-    ];
-    ctx.fillStyle = glow;
-    ctx.shadowColor = glow; ctx.shadowBlur = 5;
-    for (var ci = 0; ci < corners.length; ci++) {
-      ctx.beginPath();
-      ctx.arc(corners[ci][0], corners[ci][1], dotR, 0, Math.PI * 2);
-      ctx.fill();
+    // Edge dots — adaptive based on brick height (h)
+    // h >= 20: 4 corner dots; 10 <= h < 20: 1 dot per edge (mid); h < 10: no dots
+    if (this.h >= 10) {
+      var dotR2 = Math.min(2.5, this.h * 0.15);
+      ctx.fillStyle = glow;
+      ctx.shadowColor = glow; ctx.shadowBlur = 4;
+      if (this.h >= 20) {
+        // 4 corner dots
+        var corners = [
+          [bx + 5, by + 5], [bx + this.w - 5, by + 5],
+          [bx + 5, by + this.h - 5], [bx + this.w - 5, by + this.h - 5],
+        ];
+        for (var ci = 0; ci < corners.length; ci++) {
+          ctx.beginPath(); ctx.arc(corners[ci][0], corners[ci][1], dotR2, 0, Math.PI * 2); ctx.fill();
+        }
+      } else {
+        // 1 dot per edge (midpoint of each edge)
+        var midEdges = [
+          [bx + this.w / 2, by + dotR2 + 1],                  // top edge mid
+          [bx + this.w / 2, by + this.h - dotR2 - 1],          // bottom edge mid
+          [bx + dotR2 + 1,  by + this.h / 2],                  // left edge mid
+          [bx + this.w - dotR2 - 1, by + this.h / 2],          // right edge mid
+        ];
+        for (var mi = 0; mi < midEdges.length; mi++) {
+          ctx.beginPath(); ctx.arc(midEdges[mi][0], midEdges[mi][1], dotR2, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      ctx.shadowBlur = 0;
     }
-    ctx.shadowBlur = 0;
 
     // Cracks — clipped to brick bounds so they never overflow edges
     if (frac < 1 && this._cracks) {

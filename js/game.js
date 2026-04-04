@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1325;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1326;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1796,45 +1796,51 @@ class Game {
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
-    // Trapdoor state — angle in radians, 0 = closed (vertical), positive = swung open
+    // ── TRAPDOOR — pivot at bottom of DEL button, door swings CCW when ball exits
+    // Compute pivot Y: DEL button is the 6th button (index 5) after btnStartY
+    var _tdBtnH      = 30;
+    var _tdBtnGap    = 4;
+    var _tdCurveTop  = floorY - turnR;
+    var _tdBtnBlockH = 5 * (_tdBtnH + _tdBtnGap) + _tdBtnH + 8;
+    var _tdBtnStartY = _tdCurveTop - _tdBtnBlockH - 10;
+    if (_tdBtnStartY < topY + 4) _tdBtnStartY = topY + 4;
+    // DEL button bottom
+    var _tdDelY  = _tdBtnStartY + 5 * (_tdBtnH + _tdBtnGap) + _tdBtnGap + _tdBtnH;
+    var pivotY   = _tdDelY + 4;  // 4px gap below DEL button
+
+    // Trapdoor state
     if (this._trapdoorAngle === undefined) this._trapdoorAngle = 0;
     if (this._trapdoorAngle > 0) {
-      this._trapdoorAngle = Math.max(0, this._trapdoorAngle - 0.06);  // snap back
+      this._trapdoorAngle = Math.max(0, this._trapdoorAngle - 0.055);
     }
     var tdA     = this._trapdoorAngle;
-    var doorLen = floorY - topY;  // full shaft height
-    // Pivot point is at (leftX, floorY) — bottom of the wall
-    // Door swings left (negative X direction) when open
-    var tdEndX  = leftX - Math.sin(tdA) * doorLen;
-    var tdEndY  = floorY - Math.cos(tdA) * doorLen;
+    var doorLen = floorY - pivotY;   // just the short door segment
 
-    // Left wall: diagonal → straight down to pivot, then trapdoor segment
+    // Door tip: closed = (leftX, floorY); open = swings CCW (left/outward)
+    // CCW from straight-down = leftward, so tip moves left and up
+    var tdTipX  = leftX  - Math.sin(tdA) * doorLen;
+    var tdTipY  = pivotY + Math.cos(tdA) * doorLen;
+
+    // Upper fixed wall: diagonal → straight down to pivot (always fixed)
     ctx.beginPath();
     ctx.moveTo(diagEndX, diagEndY);
     ctx.lineTo(leftX, topY);
-    ctx.lineTo(leftX, floorY);  // always draw full closed position as base
+    ctx.lineTo(leftX, pivotY);
     ctx.stroke();
 
-    // Trapdoor overlay — draws over the lower portion when open
-    if (tdA > 0.01) {
-      // Clear the old lower wall section with background color (mask it out)
-      ctx.save();
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = 'rgba(0,200,255,0.85)';
-      ctx.lineWidth   = 2.5;
-      ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 10;
-      ctx.beginPath();
-      ctx.moveTo(leftX, topY);
-      ctx.lineTo(tdEndX, tdEndY);  // door swung open
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      // Hinge dot at pivot
-      ctx.beginPath(); ctx.arc(leftX, floorY, 4, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,220,255,0.9)'; ctx.fill();
-      ctx.restore();
-    }
+    // Lower door segment (pivots from pivotY)
+    ctx.beginPath();
+    ctx.moveTo(leftX, pivotY);
+    ctx.lineTo(tdTipX, tdTipY);
+    ctx.stroke();
 
-    // Inner depth line (follows door)
+    // Permanent hinge dot at pivot
+    ctx.beginPath(); ctx.arc(leftX, pivotY, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,220,255,0.85)';
+    ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 6;
+    ctx.fill(); ctx.shadowBlur = 0;
+
+    // Inner depth line
     ctx.strokeStyle = 'rgba(0,140,200,0.30)';
     ctx.lineWidth   = 1.5;
     ctx.shadowBlur  = 2;
@@ -1842,11 +1848,9 @@ class Game {
     ctx.beginPath();
     ctx.moveTo(diagEndX - innerOff, diagEndY + innerOff);
     ctx.lineTo(leftX + innerOff, topY + innerOff);
-    if (tdA > 0.01) {
-      ctx.lineTo(tdEndX + Math.cos(tdA) * innerOff, tdEndY + Math.sin(tdA) * innerOff);
-    } else {
-      ctx.lineTo(leftX + innerOff, floorY);
-    }
+    ctx.lineTo(leftX + innerOff, pivotY);
+    // Door inner line follows angle
+    ctx.lineTo(tdTipX + Math.cos(tdA) * innerOff, tdTipY + Math.sin(tdA) * innerOff);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
@@ -2330,10 +2334,15 @@ class Game {
       var rawVal = sl.min + t * (sl.max - sl.min);
       rawVal = Math.round(rawVal / (sl.step || 0.001)) * (sl.step || 0.001);
       rawVal = Math.max(sl.min, Math.min(sl.max, rawVal));
-      // Inverted sliders: STOP/RSTOP are drawn as (1 - actual) with range [0.01, 0.5]
-      // actual stored value = 1 - rawVal (keeping it in [0.5, 0.99])
-      var val = sl.invert ? (1 - rawVal) : rawVal;
-      val = Math.max(sl.min, Math.min(sl.max, val));
+      // Inverted sliders: display range [0.01, 0.5] represents actual [0.99, 0.5]
+      // actual = 1 - displayRawVal; do NOT clamp actual to display range
+      var val;
+      if (sl.invert) {
+        val = 1 - rawVal;  // actual stored value in [0.5, 0.99]
+        // no clamping — value is already correct
+      } else {
+        val = Math.max(sl.min, Math.min(sl.max, rawVal));
+      }
       this._setSliderVal(sl.key, sl.defKey, val, sl);
       return;
     }
