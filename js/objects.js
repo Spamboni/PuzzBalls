@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1305;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1308;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -514,8 +514,19 @@ class BreakableBrick {
     this.regenTimer -= dt;
     if (this.regenTimer <= 0) {
       this.health = this.maxHealth;
-      this.hitFlash = 0.8; // flash on respawn
+      this.hitFlash = 0.8;
       this.regenTimer = 0;
+      // Movable bricks: snap back to spawn point, reset physics
+      if (this._spawnX !== undefined) {
+        this.x = this._spawnX;
+        this.y = this._spawnY;
+        this._startX    = this._spawnX;
+        this._startY    = this._spawnY;
+        this._vx        = 0;
+        this._vy        = 0;
+        this._angularV  = 0;
+        this._rotation  = this._spawnRot || 0;
+      }
     }
   }
 
@@ -743,7 +754,15 @@ class CircularBrick {
   updateRegen(dt) {
     if (this.health > 0 || !this.regenAfter) return;
     this.regenTimer -= dt;
-    if (this.regenTimer <= 0) { this.health = this.maxHealth; this.hitFlash = 0.8; this.regenTimer = 0; }
+    if (this.regenTimer <= 0) {
+      this.health = this.maxHealth; this.hitFlash = 0.8; this.regenTimer = 0;
+      if (this._spawnX !== undefined) {
+        this.x = this._spawnX; this.y = this._spawnY;
+        this._startX = this._spawnX; this._startY = this._spawnY;
+        this._vx = 0; this._vy = 0; this._angularV = 0;
+        this._rotation = this._spawnRot || 0;
+      }
+    }
   }
 
   draw(ctx) {

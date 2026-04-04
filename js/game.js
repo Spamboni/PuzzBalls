@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1307;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1308;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -307,6 +307,29 @@ class Game {
             if (pos.x >= tb.x && pos.x <= tb.x + tb.w && pos.y >= tb.y && pos.y <= tb.y + tb.h) {
               self._editorBrickType = tb.type; return;
             }
+          }
+        }
+        // Inline brick field taps (cycle value)
+        if (self._editorFieldRects && self._editorSelected) {
+          for (var fi2 = 0; fi2 < self._editorFieldRects.length; fi2++) {
+            var fr = self._editorFieldRects[fi2];
+            if (pos.x >= fr.x && pos.x <= fr.x + fr.w && pos.y >= fr.y && pos.y <= fr.y + fr.h) {
+              var cur2 = self._editorSelected[fr.key] !== undefined ? self._editorSelected[fr.key] : fr.min;
+              var next2 = cur2 + fr.step;
+              if (next2 > fr.max) next2 = fr.min;
+              self._editorSelected[fr.key] = next2;
+              if (fr.key === 'maxHealth') { self._editorSelected.health = next2; self._editorSelected.maxHealth = next2; }
+              return;
+            }
+          }
+        }
+        // Inline movable toggle
+        if (self._editorMovInlineRect && self._editorSelected) {
+          var mr2 = self._editorMovInlineRect;
+          if (pos.x >= mr2.x && pos.x <= mr2.x + mr2.w && pos.y >= mr2.y && pos.y <= mr2.y + mr2.h) {
+            self._editorSelected._movable = !self._editorSelected._movable;
+            self._editorMovable = self._editorSelected._movable;
+            return;
           }
         }
         // Snap selector cycle
@@ -728,7 +751,24 @@ class Game {
     }
     for (i = 0; i < toAdd.length; i++) this.objects.push(toAdd[i]);
 
-    // Phase 2: Collisions with interactive objects
+    // Brick overlap separation — bricks that overlap push each other apart
+    for (i = 0; i < this.bricks.length; i++) {
+      for (j = i + 1; j < this.bricks.length; j++) {
+        var ba = this.bricks[i], bb = this.bricks[j];
+        if (!ba.isAlive() || !bb.isAlive()) continue;
+        var dx2   = bb.x - ba.x, dy2 = bb.y - ba.y;
+        var dist2 = Math.hypot(dx2, dy2) || 1;
+        var wa = (ba instanceof CircularBrick) ? ba.r : Math.max(ba.w, ba.h) / 2;
+        var wb = (bb instanceof CircularBrick) ? bb.r : Math.max(bb.w, bb.h) / 2;
+        var minD = wa + wb;
+        if (dist2 < minD) {
+          var push = (minD - dist2) * 0.08;  // gentle push per frame
+          var nx2  = dx2 / dist2, ny2 = dy2 / dist2;
+          ba.x -= nx2 * push; ba.y -= ny2 * push;
+          bb.x += nx2 * push; bb.y += ny2 * push;
+        }
+      }
+    }
     // Button presses
     for (i = 0; i < this.buttons.length; i++) {
       var btn = this.buttons[i];
@@ -1629,42 +1669,53 @@ class Game {
   }
 
   _editorOnDown(pos) {
-    // Check if tapping an existing brick to select it
+    // Always try to select an existing brick first
     for (var i = this.bricks.length - 1; i >= 0; i--) {
       var b = this.bricks[i];
-      var hw = (b.r !== undefined && !(b.w) ? b.r : (b.w || 40)) / 2;
-      var hh = (b.r !== undefined && !(b.h) ? b.r : (b.h || 22)) / 2;
-      if (b instanceof CircularBrick) { hw = hh = b.r; }
-      if (Math.abs(pos.x - b.x) < hw + 10 && Math.abs(pos.y - b.y) < hh + 10) {
+      var hw = (b instanceof CircularBrick) ? b.r : (b.w || 40) / 2;
+      var hh = (b instanceof CircularBrick) ? b.r : (b.h || 22) / 2;
+      if (Math.abs(pos.x - b.x) < hw + 12 && Math.abs(pos.y - b.y) < hh + 12) {
         this._editorSelected = b;
         this._editorDragOffX = pos.x - b.x;
         this._editorDragOffY = pos.y - b.y;
         this._editorDragging = b;
         this._editorMovable  = b._movable || false;
+        this._showBrickSettings = true;  // show inline settings for this brick
         return;
       }
     }
-    // Place new brick
-    var id  = 'brick_' + Date.now();
-    var obj = null;
-    if (this._editorBrickType === 'circular_brick') {
-      obj = new CircularBrick(pos.x, pos.y, 22, 100, id, 5000);
-    } else {
-      obj = new BreakableBrick(pos.x, pos.y, 70, 22, 100, id, 5000);
+    // SELECT mode: tapping empty space just deselects — never place
+    if (this._editorSelectMode) {
+      this._editorSelected = null;
+      this._showBrickSettings = false;
+      return;
     }
-    // Apply movable flag and physics properties
-    obj._movable  = this._editorMovable || false;
-    obj._rotation = 0;
-    obj._vx       = 0; obj._vy = 0; obj._angularV = 0;
-    obj._maxTravel= 60;   // pixels max movement
-    obj._decel    = 0.88; // deceleration factor
-    obj._density  = 1.0;  // affects how much balls move it
+    // BUILD mode: place new brick with current defaults
+    var defaults = window.BrickDefaults || {};
+    var isCircle = this._editorBrickType === 'circular_brick';
+    var defHP    = isCircle ? (defaults.circularHP || 100) : (defaults.rectHP || 100);
+    var defRegen = isCircle ? (defaults.circularRegen || 5000) : (defaults.rectRegen || 5000);
+    var id  = 'brick_' + Date.now();
+    var obj = isCircle
+      ? new CircularBrick(pos.x, pos.y, defaults.circularR || 22, defHP, id, defRegen)
+      : new BreakableBrick(pos.x, pos.y, defaults.rectW || 70, defaults.rectH || 22, defHP, id, defRegen);
+    obj._movable   = this._editorMovable || false;
+    obj._rotation  = 0;
+    obj._vx        = 0; obj._vy = 0; obj._angularV = 0;
+    obj._maxTravel = defaults.maxTravel || 60;
+    obj._decel     = defaults.decel     || 0.88;
+    obj._density   = defaults.density   || 1.0;
+    obj._spawnX    = pos.x;  // remember spawn for regen
+    obj._spawnY    = pos.y;
+    obj._startX    = pos.x;
+    obj._startY    = pos.y;
     this.bricks.push(obj);
     EventManager.registerTarget(id, obj);
-    this._editorSelected = obj;
-    this._editorDragging = obj;
-    this._editorDragOffX = 0;
-    this._editorDragOffY = 0;
+    this._editorSelected    = obj;
+    this._editorDragging    = obj;
+    this._editorDragOffX    = 0;
+    this._editorDragOffY    = 0;
+    this._showBrickSettings = true;
   }
 
   // Multi-touch: pinch to scale, two-finger rotate
@@ -1848,22 +1899,66 @@ class Game {
     ctx.fillStyle = '#00ff88'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('DONE', doneX + 26, btnY + btnH / 2);
 
-    // Row 2: Selected brick settings (HP + max travel + decel)
+    // Row 2: Selected brick settings inline
     var row2Y = btnY + btnH + 8;
-    if (this._editorSelected) {
-      var sb2 = this._editorSelected;
-      ctx.fillStyle = 'rgba(100,200,255,0.6)';
-      ctx.font = "8px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText('HP:' + (sb2.maxHealth||100) + '  TRAVEL:' + (sb2._maxTravel||60) + 'px  DECEL:' + (sb2._decel||0.88).toFixed(2) + '  DENSITY:' + (sb2._density||1.0).toFixed(1), 14, row2Y + 8);
-      // Instruction
-      ctx.fillStyle = 'rgba(150,200,255,0.40)';
-      ctx.fillText('Pinch=scale  2-finger rotate=angle  tap to select', 14, row2Y + 20);
+    if (this._editorSelected && this._showBrickSettings) {
+      var sb2   = this._editorSelected;
+      var isCirc = sb2 instanceof CircularBrick;
+
+      // Settings row: HP | REGEN | MOV | DENSITY | TRAVEL | DECEL
+      var fields = [
+        { label:'HP',    val: sb2.maxHealth || 100,       step:10, min:10,  max:500, key:'maxHealth', fmt: function(v){ return v; } },
+        { label:'REGEN', val: sb2.regenAfter || 0,        step:1000, min:0, max:30000, key:'regenAfter', fmt: function(v){ return v ? (v/1000).toFixed(0)+'s' : 'OFF'; } },
+        { label:'DENS',  val: sb2._density || 1.0,        step:0.5, min:0.5, max:5, key:'_density', fmt: function(v){ return v.toFixed(1); } },
+        { label:'DIST',  val: sb2._maxTravel || 60,       step:10, min:0,  max:300, key:'_maxTravel', fmt: function(v){ return v+'px'; } },
+      ];
+
+      this._editorFieldRects = [];
+      var fW = 46, fH = 20, fGap = 5;
+      var fStartX = 14;
+      for (var fi = 0; fi < fields.length; fi++) {
+        var fld   = fields[fi];
+        var fBx   = fStartX + fi * (fW + fGap);
+
+        ctx.fillStyle = 'rgba(0,15,40,0.8)';
+        ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,160,255,0.45)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.stroke();
+
+        ctx.fillStyle = '#88ccff'; ctx.font = "7px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(fld.label, fBx + fW/2, row2Y + 1);
+        ctx.fillStyle = '#ffffff'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(fld.fmt(fld.val), fBx + fW/2, row2Y + fH - 1);
+
+        this._editorFieldRects.push({ x: fBx, y: row2Y, w: fW, h: fH, key: fld.key, step: fld.step, min: fld.min, max: fld.max });
+      }
+
+      // MOV toggle inline
+      var movInX = fStartX + fields.length * (fW + fGap);
+      ctx.fillStyle = sb2._movable ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
+      ctx.beginPath(); ctx.roundRect(movInX, row2Y, 46, fH, 3); ctx.fill();
+      ctx.strokeStyle = sb2._movable ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.roundRect(movInX, row2Y, 46, fH, 3); ctx.stroke();
+      ctx.fillStyle = sb2._movable ? '#ffcc44' : '#668899';
+      ctx.font = "bold 8px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(sb2._movable ? '● MOV' : '■ STAT', movInX + 23, row2Y + fH/2);
+      this._editorMovInlineRect = { x: movInX, y: row2Y, w: 46, h: fH };
+
+      ctx.fillStyle = 'rgba(150,200,255,0.35)';
+      ctx.font = "7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText('Tap value to cycle  |  Pinch=scale  Twist=rotate', 14, row2Y + fH + 3);
     } else {
       ctx.fillStyle = 'rgba(150,200,255,0.40)';
       ctx.font = "8px 'Share Tech Mono',monospace";
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText('Tap to place  •  Pinch to scale  •  2-finger twist to rotate', 14, row2Y + 12);
+      var hint = this._editorSelectMode
+        ? 'Tap a brick to select it  •  Drag to move'
+        : 'Tap to place  •  Pinch to scale  •  2-finger twist to rotate';
+      ctx.fillText(hint, 14, row2Y + 10);
     }
 
     // Highlight selected brick

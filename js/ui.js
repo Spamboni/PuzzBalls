@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1307;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1308;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -166,6 +166,7 @@ class UI {
       { id:'sticky',   label:'🟢 STICKY'  },
       { id:'splitter', label:'🟣 SPLIT'   },
       { id:'gravity',  label:'🔵 GRAVITY' },
+      { id:'bricks',   label:'🧱 BRICKS'  },
       { id:'audio',    label:'🔊 AUDIO'   },
     ];
 
@@ -197,7 +198,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.07</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.08</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -220,10 +221,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.07 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.08 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1307) {
-            verEl.textContent = 'v13.07 ✓';
+          } else if (loaded === 1308) {
+            verEl.textContent = 'v13.08 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -241,6 +242,68 @@ class UI {
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
           'Or open the URL then add <b>?v=1304</b> to the end and reload.';
         pane.appendChild(instrRow);
+
+      } else if (t.id === 'bricks') {
+        window.BrickDefaults = window.BrickDefaults || {
+          rectHP: 100, rectRegen: 5000, rectW: 70, rectH: 22,
+          circularHP: 100, circularRegen: 5000, circularR: 22,
+          density: 1.0, maxTravel: 60, decel: 0.88,
+        };
+        var bd = window.BrickDefaults;
+
+        var bHdr = _el('div',''); bHdr.textContent = '▬ RECTANGULAR BRICK';
+        bHdr.style.cssText = 'color:#4488ff;font-size:10px;font-weight:bold;padding:4px 0 2px;';
+        pane.appendChild(bHdr);
+        _addSlider(pane,'HP',       'BrickDefaults','rectHP',    10, 500, 10,  function(v){return v+' hp';});
+        _addSlider(pane,'Width',    'BrickDefaults','rectW',     20, 200, 5,   function(v){return v+'px';});
+        _addSlider(pane,'Height',   'BrickDefaults','rectH',     8,  60,  2,   function(v){return v+'px';});
+        _addSlider(pane,'Regen',    'BrickDefaults','rectRegen', 0, 30000, 1000, function(v){return v ? (v/1000).toFixed(0)+'s' : 'OFF';});
+
+        var bHdr2 = _el('div',''); bHdr2.textContent = '● CIRCULAR BRICK';
+        bHdr2.style.cssText = 'color:#44ff88;font-size:10px;font-weight:bold;padding:8px 0 2px;';
+        pane.appendChild(bHdr2);
+        _addSlider(pane,'HP',       'BrickDefaults','circularHP',    10, 500, 10,  function(v){return v+' hp';});
+        _addSlider(pane,'Radius',   'BrickDefaults','circularR',     8,  80,  2,   function(v){return v+'px';});
+        _addSlider(pane,'Regen',    'BrickDefaults','circularRegen', 0, 30000, 1000, function(v){return v ? (v/1000).toFixed(0)+'s' : 'OFF';});
+
+        var bHdr3 = _el('div',''); bHdr3.textContent = '⚙ MOVABLE BRICK DEFAULTS';
+        bHdr3.style.cssText = 'color:#ffaa44;font-size:10px;font-weight:bold;padding:8px 0 2px;';
+        pane.appendChild(bHdr3);
+        _addSlider(pane,'Density',   'BrickDefaults','density',   0.5, 5.0, 0.5, function(v){return v.toFixed(1)+'x';});
+        _addSlider(pane,'Max Travel','BrickDefaults','maxTravel',  0,  300,  10,  function(v){return v+'px';});
+        _addSlider(pane,'Decelerate','BrickDefaults','decel',     0.5, 0.99, 0.01,function(v){return Math.round(v*100)+'%';});
+
+        // Brick sound variant pickers
+        var bHdr4 = _el('div',''); bHdr4.textContent = 'BRICK SOUNDS';
+        bHdr4.style.cssText = 'color:#aaddff;font-size:10px;font-weight:bold;padding:8px 0 4px;';
+        pane.appendChild(bHdr4);
+
+        window.SoundVariants = window.SoundVariants || {};
+        var brickSounds = [
+          { key:'brick_hit',   label:'Brick hit (ball)' },
+          { key:'brick_brick', label:'Brick-on-brick' },
+          { key:'brick_break', label:'Brick destroyed' },
+        ];
+        var variantNames2 = [
+          'Default','Soft thud','Hard crack','Glass ping','Metallic clank',
+          'Deep boom','Hollow knock','Plastic pop','🎵 Boing!','💫 Zap!'
+        ];
+        brickSounds.forEach(function(item2) {
+          var row3 = _el('div','slider-row');
+          row3.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:3px 4px;';
+          var lbl3 = _el('span',''); lbl3.textContent = item2.label;
+          lbl3.style.cssText = 'font-size:9px;color:#aaddff;flex:1;';
+          row3.appendChild(lbl3);
+          var sel3 = document.createElement('select');
+          sel3.style.cssText = 'background:rgba(0,20,50,0.9);color:#aaddff;border:1px solid #336;border-radius:4px;font-size:9px;padding:2px 4px;max-width:110px;';
+          variantNames2.forEach(function(vn2, vi2) {
+            var opt3 = document.createElement('option');
+            opt3.value = vi2; opt3.textContent = vn2; sel3.appendChild(opt3);
+          });
+          sel3.value = window.SoundVariants[item2.key] || 0;
+          sel3.addEventListener('change', function() { window.SoundVariants[item2.key] = parseInt(sel3.value); });
+          row3.appendChild(sel3); pane.appendChild(row3);
+        });
 
       } else if (t.id === 'audio') {
         window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
