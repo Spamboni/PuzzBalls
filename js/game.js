@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1323;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1324;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -957,6 +957,27 @@ class Game {
             mbrick._vx = (mbrick._vx || 0) * -0.3;
             mbrick._vy = (mbrick._vy || 0) * -0.3;
           }
+        }
+
+        // Screen edge bounce — brick can never leave the play area
+        var bHWall = (mbrick.w || (mbrick.r || 10) * 2) / 2;
+        var bHHall = (mbrick.h || (mbrick.r || 10) * 2) / 2;
+        var bFloor = this.floorY();
+        if (mbrick.x - bHWall < 0) {
+          mbrick.x = bHWall;
+          mbrick._vx = Math.abs(mbrick._vx || 0) * 0.5;
+          mbrick._angularV = (mbrick._angularV || 0) * -0.6;
+        } else if (mbrick.x + bHWall > this.W) {
+          mbrick.x = this.W - bHWall;
+          mbrick._vx = -Math.abs(mbrick._vx || 0) * 0.5;
+          mbrick._angularV = (mbrick._angularV || 0) * -0.6;
+        }
+        if (mbrick.y - bHHall < 0) {
+          mbrick.y = bHHall;
+          mbrick._vy = Math.abs(mbrick._vy || 0) * 0.5;
+        } else if (mbrick.y + bHHall > bFloor) {
+          mbrick.y = bFloor - bHHall;
+          mbrick._vy = -Math.abs(mbrick._vy || 0) * 0.4;
         }
 
         // Brick-brick collision — check if this moving brick overlaps any other brick

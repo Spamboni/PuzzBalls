@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1305;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1324;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -58,7 +58,7 @@ var BallSettings = {
     size: Math.round(16 * _S),
     velocity: 1.0, bounciness: 0.7,
     density: 1.2, groundFriction: 0.86,
-    gravRange: 150, gravPull: 0.55,
+    gravRange: 150, gravPull: 2.0,
     baseDamage: 18,
     bounceDecay: 0.68,
   },

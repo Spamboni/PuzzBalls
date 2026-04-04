@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1321;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1324;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -273,12 +273,7 @@ class TargetZone {
       ctx.stroke();
     }
 
-    // Label
-    ctx.fillStyle     = `rgba(${color},0.7)`;
-    ctx.font          = "bold 9px 'Share Tech Mono', monospace";
-    ctx.textAlign     = 'center';
-    ctx.textBaseline  = 'bottom';
-    ctx.fillText('TARGET', this.x, this.y - r - 5);
+
   }
 
   /**

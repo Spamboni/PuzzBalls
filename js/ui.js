@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1321;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1324;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -199,7 +199,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.23</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.24</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -222,10 +222,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.23 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.24 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1323) {
-            verEl.textContent = 'v13.23 ✓';
+          } else if (loaded === 1324) {
+            verEl.textContent = 'v13.24 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -520,7 +520,7 @@ class UI {
         if (t.id==='exploder') { _addSlider(pane,'Blast Radius',null,null,40,250,5,function(v){return v+'px';},t.id,'blastRadius'); _addSlider(pane,'Blast Force',null,null,4,40,1,function(v){return v;},t.id,'blastForce'); _addSlider(pane,'Explode Damage',null,null,0,100,5,function(v){return v+' hp';},t.id,'explosionDamage'); }
         if (t.id==='sticky')   { _addSlider(pane,'Stick Threshold',null,null,2,25,0.5,function(v){return v+' px/f';},t.id,'stickThreshold'); _addSlider(pane,'Bounce Height Y',null,null,10,200,5,function(v){return v+'px';},t.id,'bounceHeightY'); _addSlider(pane,'Bounce Dist X',null,null,0,150,5,function(v){return v+'px';},t.id,'bounceDistanceX'); _addSlider(pane,'Dead Zone %',null,null,0,100,5,function(v){return v+'%';},t.id,'deadZonePercent'); }
         if (t.id==='splitter') { _addSlider(pane,'Split Count',null,null,1,5,1,function(v){return v+' balls';},t.id,'splitCount'); }
-        if (t.id==='gravity')  { _addSlider(pane,'Pull Range',null,null,50,280,5,function(v){return v+'px';},t.id,'gravRange'); _addSlider(pane,'Pull Strength',null,null,0.05,2.0,0.05,function(v){return v.toFixed(2);},t.id,'gravPull'); }
+        if (t.id==='gravity')  { _addSlider(pane,'Pull Range',null,null,50,280,5,function(v){return v+'px';},t.id,'gravRange'); _addSlider(pane,'Pull Strength',null,null,0.05,5.0,0.05,function(v){return v.toFixed(2);},t.id,'gravPull'); }
 
         // Per-ball reset button
         (function(ballId, thePane, self2) {
