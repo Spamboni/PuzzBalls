@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1314;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1315;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -693,6 +693,32 @@ class BreakableBrick {
     }
 
     ctx.restore();
+
+    // Note overlay labels (drawn outside the rotation save so they stay readable)
+    if (this._noteConfig) {
+      var nc = this._noteConfig;
+      if (window._showBrickNote !== false || window._showBrickOctave !== false || window._showBrickTimbre !== false) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        if (this._rotation) ctx.rotate(this._rotation);
+        ctx.textAlign = 'center';
+        if ((window._showBrickNote !== false || window._showBrickOctave !== false)) {
+          var noteStr = (window._showBrickNote !== false ? (nc.note || 'C') : '') +
+                        (window._showBrickOctave !== false ? String(nc.octave !== undefined ? nc.octave : 4) : '');
+          ctx.fillStyle = 'rgba(0,0,0,0.8)';
+          ctx.font = "bold 9px 'Share Tech Mono',monospace";
+          ctx.textBaseline = 'middle';
+          ctx.fillText(noteStr, 0, 0);
+        }
+        if (window._showBrickTimbre !== false && nc.timbre) {
+          ctx.fillStyle = 'rgba(200,100,255,0.60)';
+          ctx.font = "7px 'Share Tech Mono',monospace";
+          ctx.textBaseline = 'top';
+          ctx.fillText(nc.timbre, 0, this.h / 2 + 2);
+        }
+        ctx.restore();
+      }
+    }
   }
 }
 

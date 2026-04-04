@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1312;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1315;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -89,7 +89,7 @@ class UI {
     window.Settings      = window.Settings      || { gravityMult: 1.0 };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
-      rectHP: 100, rectRegen: 5000, rectW: 70, rectH: 22,
+      rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
       circularHP: 100, circularRegen: 5000, circularR: 22,
       density: 1.0, maxTravel: 60, decel: 0.88,
     };
@@ -198,7 +198,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.13</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.15</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -221,10 +221,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.13 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.15 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1313) {
-            verEl.textContent = 'v13.13 ✓';
+          } else if (loaded === 1315) {
+            verEl.textContent = 'v13.15 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -245,7 +245,7 @@ class UI {
 
       } else if (t.id === 'bricks') {
         window.BrickDefaults = window.BrickDefaults || {
-          rectHP: 100, rectRegen: 5000, rectW: 70, rectH: 22,
+          rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
           circularHP: 100, circularRegen: 5000, circularR: 22,
           density: 1.0, maxTravel: 60, decel: 0.88,
         };
@@ -257,7 +257,7 @@ class UI {
         _addSlider(pane,'HP',       'BrickDefaults','rectHP',    10, 500, 10,  function(v){return v+' hp';});
         _addSlider(pane,'Width',    'BrickDefaults','rectW',     20, 200, 5,   function(v){return v+'px';});
         _addSlider(pane,'Height',   'BrickDefaults','rectH',     8,  60,  2,   function(v){return v+'px';});
-        _addSlider(pane,'Regen',    'BrickDefaults','rectRegen', 0, 30000, 1000, function(v){return v ? (v/1000).toFixed(0)+'s' : 'OFF';});
+        _addSlider(pane,'Regen',    'BrickDefaults','rectRegen', 200, 10000, 200, function(v){ return (v/1000).toFixed(1)+'s'; });
 
         var bHdr2 = _el('div',''); bHdr2.textContent = '● CIRCULAR BRICK';
         bHdr2.style.cssText = 'color:#44ff88;font-size:10px;font-weight:bold;padding:8px 0 2px;';

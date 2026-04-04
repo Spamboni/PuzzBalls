@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1314;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1315;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -281,6 +281,14 @@ class Game {
       var pos = getPos(e);
 
       // ── Corner HUD buttons (bottom strip) ───────────────────────────────────
+      if (self._cornerBrickBtns) {
+        for (var cbi = 0; cbi < self._cornerBrickBtns.length; cbi++) {
+          var cbr = self._cornerBrickBtns[cbi];
+          if (pos.x >= cbr.x && pos.x <= cbr.x + cbr.w && pos.y >= cbr.y && pos.y <= cbr.y + cbr.h) {
+            window[cbr.key] = !window[cbr.key]; return;
+          }
+        }
+      }
       if (self._cornerLeftRects) {
         for (var cli = 0; cli < self._cornerLeftRects.length; cli++) {
           var cr = self._cornerLeftRects[cli];
@@ -341,7 +349,7 @@ class Game {
         if (self._editorSliders) {
           var sliderDefs = [
             { id:'hp',    key:'maxHealth',  defKey:'rectHP',    step:5,    min:10,   max:400 },
-            { id:'regen', key:'regenAfter', defKey:'rectRegen', step:500,  min:0,    max:30000 },
+            { id:'regen', key:'regenAfter', defKey:'rectRegen', step:100,  min:200,  max:10000 },
             { id:'dens',  key:'_density',   defKey:'density',   step:0.1,  min:0.5,  max:5.0 },
             { id:'dist',  key:'_maxTravel', defKey:'maxTravel', step:5,    min:0,    max:300 },
             { id:'decel', key:'_decel',     defKey:'decel',     step:0.01, min:0.50, max:0.99 },
@@ -431,7 +439,10 @@ class Game {
               var nnr = self._notePopupNoteRects[nni];
               if (pos.x >= nnr.x && pos.x <= nnr.x+nnr.w && pos.y >= nnr.y && pos.y <= nnr.y+nnr.h) {
                 sb3._noteConfig = sb3._noteConfig || {};
-                sb3._noteConfig.note = nnr.val; return;
+                sb3._noteConfig.note = nnr.val;
+                // Auto-preview
+                if (window.BrickNote) window.BrickNote.playNote(nnr.val, sb3._noteConfig.octave||4, sb3._noteConfig.timbre||'marimba', (sb3._noteConfig.vol||0.6));
+                return;
               }
             }
           }
@@ -441,7 +452,9 @@ class Game {
               var nor2 = self._notePopupOctaveRects[noi];
               if (pos.x >= nor2.x && pos.x <= nor2.x+nor2.w && pos.y >= nor2.y && pos.y <= nor2.y+nor2.h) {
                 sb3._noteConfig = sb3._noteConfig || {};
-                sb3._noteConfig.octave = nor2.val; return;
+                sb3._noteConfig.octave = nor2.val;
+                if (window.BrickNote) window.BrickNote.playNote(sb3._noteConfig.note||'C', nor2.val, sb3._noteConfig.timbre||'marimba', (sb3._noteConfig.vol||0.6));
+                return;
               }
             }
           }
@@ -472,6 +485,16 @@ class Game {
             var clb = self._notePopupClearBtn;
             if (pos.x >= clb.x && pos.x <= clb.x+clb.w && pos.y >= clb.y && pos.y <= clb.y+clb.h) {
               sb3._noteConfig = null; self._editorNotePopup = false; return;
+            }
+          }
+          // Volume slider drag
+          if (self._notePopupVolSlider) {
+            var vs = self._notePopupVolSlider;
+            if (pos.x >= vs.x && pos.x <= vs.x + vs.w && pos.y >= vs.y && pos.y <= vs.y + vs.h) {
+              var t2 = Math.max(0, Math.min(1, (pos.x - vs.trackX) / vs.trackW));
+              sb3._noteConfig = sb3._noteConfig || {};
+              sb3._noteConfig.vol = parseFloat((t2 * 1.2).toFixed(2));
+              return;
             }
           }
           return; // block other taps while popup is open
@@ -803,12 +826,12 @@ class Game {
 
         // Brick-brick collision — check if this moving brick overlaps any other brick
         var bSpeed = Math.hypot(mbrick._vx || 0, mbrick._vy || 0);
-        if (bSpeed > 0.4) {
+        if (bSpeed > 0.15) {
           for (var bi2 = 0; bi2 < this.bricks.length; bi2++) {
             if (bi2 === i) continue;
             var other = this.bricks[bi2];
             if (!other.isAlive()) continue;
-            // Simple AABB overlap check (approximate — ignores rotation)
+            // AABB overlap — use actual half-extents
             var ox = Math.abs(mbrick.x - other.x);
             var oy = Math.abs(mbrick.y - other.y);
             var hw1 = (mbrick.w || mbrick.r * 2) / 2 + 4;
@@ -1067,7 +1090,7 @@ class Game {
         // Play brick note if configured, otherwise normal impact sound
         if (brick._noteConfig && window.BrickNote) {
           var nc3 = brick._noteConfig;
-          window.BrickNote.playNote(nc3.note||'C', nc3.octave||4, nc3.timbre||'marimba', Math.min(0.8, dmg * 0.015));
+          window.BrickNote.playNote(nc3.note||'C', nc3.octave||4, nc3.timbre||'marimba', nc3.vol !== undefined ? nc3.vol : 0.6);
         } else if (window.Sound) {
           Sound.brickShatter(dmg * 0.01);
         }
@@ -1118,7 +1141,9 @@ class Game {
         if (brick._movable) {
           var brickDensity = brick._density || 1.0;
           var ballSpeed    = Math.hypot(ball.vx, ball.vy);
-          var impactForce  = ballSpeed / (brickDensity * 3);
+          // Scale force so a full-speed hit (speed~12) on density=1 gives ~4px/frame velocity
+          // That allows the brick to travel ~60px before stopping at default decel=0.88
+          var impactForce  = (ballSpeed * 0.35) / Math.max(0.2, brickDensity);
 
           brick._vx = (brick._vx || 0) - bnx * impactForce;
           brick._vy = (brick._vy || 0) - bny * impactForce;
@@ -1267,11 +1292,13 @@ class Game {
       obj.inFlight = false;
       obj.stuckTo  = '_wall_';
       // Store surface normal so tap-bounce launches perpendicular to surface
-      var nx = 0, ny = -1; // default: ceiling/top → launch downward... wait, launch AWAY
-      if (obj.x - obj.r <= 2)              { nx =  1; ny =  0; } // left wall → launch right
-      else if (obj.x + obj.r >= this.W - 2) { nx = -1; ny =  0; } // right wall → launch left
-      else if (obj.y - obj.r <= 2)           { nx =  0; ny =  1; } // ceiling → launch down
-      else                                   { nx =  0; ny = -1; } // default → launch up
+      var nx = 0, ny = -1;
+      var g3 = this._chuteGeom();
+      if (obj.x + obj.r >= g3.LEFT_X - 2)   { nx = -1; ny =  0; } // chute left wall → launch left
+      else if (obj.x - obj.r <= 2)           { nx =  1; ny =  0; } // left wall → launch right
+      else if (obj.x + obj.r >= this.W - 2)  { nx = -1; ny =  0; } // right wall → launch left
+      else if (obj.y - obj.r <= 2)            { nx =  0; ny =  1; } // ceiling → launch down
+      else                                    { nx =  0; ny = -1; } // default → launch up
       obj._stickNx = nx;
       obj._stickNy = ny;
       if (window.Sound) Sound.thud(4);
@@ -2229,7 +2256,7 @@ class Game {
     this._editorSliders = {};
     // Row A: HP (left half) | REGEN (right half)
     this._editorSliders.hp    = drawSlider('HP',    HPval,   10, 400, true,  HPinf,       false,       padding,          row2Y, halfW);
-    this._editorSliders.regen = drawSlider('REGEN', REGval,  0, 30000, false, false,       false,       padding + halfW,  row2Y, halfW);
+    this._editorSliders.regen = drawSlider('REGEN', REGval,  200, 10000, false, false,       false,       padding + halfW,  row2Y, halfW);
     // Row B: DENS (left half) | DIST (right half) — grayed unless movable
     var DECELval = (sb2 && sb2._decel !== undefined) ? sb2._decel : (bd2.decel || 0.88);
     var thirdW   = Math.floor((W - 16) / 3);
@@ -2424,7 +2451,7 @@ class Game {
     }
     inY += 58;
 
-    // Preview + Clear row
+    // Preview + Clear + Volume row
     var prevX = popX + 10, clearBtnX = popX + popW/2 + 5;
     this._notePopupPreviewBtn = { x: prevX, y: inY, w: popW/2 - 15, h: 22 };
     ctx.fillStyle = 'rgba(0,40,80,0.8)';
@@ -2443,6 +2470,29 @@ class Game {
     ctx.fillStyle = '#ff8888'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('✕ CLEAR NOTE', clearBtnX + (popW/2 - 15)/2, inY + 11);
+
+    // Volume slider
+    inY += 28;
+    var curVol = cfg.vol !== undefined ? cfg.vol : 0.6;
+    var volLblW = 28, volX = popX + 10 + volLblW, volW = popW - 20 - volLblW;
+    ctx.fillStyle = '#8899bb'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('VOL', popX + 10, inY + 10);
+    ctx.fillStyle = 'rgba(0,20,50,0.8)';
+    ctx.beginPath(); ctx.roundRect(volX, inY + 5, volW, 8, 4); ctx.fill();
+    ctx.strokeStyle = 'rgba(180,80,255,0.4)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.roundRect(volX, inY + 5, volW, 8, 4); ctx.stroke();
+    var volT   = Math.max(0, Math.min(1, curVol / 1.2));
+    var volThX = volX + volW * volT;
+    ctx.fillStyle = 'rgba(180,80,255,0.8)';
+    ctx.beginPath(); ctx.roundRect(volX, inY + 5, volW * volT, 8, 4); ctx.fill();
+    ctx.beginPath(); ctx.arc(volThX, inY + 9, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#cc44ff'; ctx.shadowColor = '#cc44ff'; ctx.shadowBlur = 5;
+    ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ddaaff'; ctx.font = "7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(Math.round(curVol * 100) + '%', volThX + 9, inY + 9);
+    this._notePopupVolSlider = { x: volX, y: inY + 2, w: volW, h: 16, trackX: volX, trackW: volW };
   }
 
   _drawBall(obj) {
@@ -2687,32 +2737,53 @@ class Game {
     var btnW = 28, btnH = 28, gap = 4, margin = 6;
     var btmY = H - margin - btnH;
 
-    // Bottom-left: arrows toggle, label toggle, abbr toggle
-    var leftBtns = [
-      { key: '_showVelocityArrows', label: '↗', title: 'arrows',   default: true },
-      { key: '_showBallLabel',      label: 'Aa', title: 'name',    default: true },
-      { key: '_showBallAbbr',       label: 'BNC', title: 'abbr',   default: true },
+    // Bottom-left — two rows of toggle buttons
+    // Row A (top): brick note display buttons
+    var brickBtns = [
+      { key: '_showBrickNote',      label: '♪',   default: true },
+      { key: '_showBrickOctave',    label: '8va', default: true },
+      { key: '_showBrickTimbre',    label: 'TIM', default: true },
     ];
+    // Row B (bottom): ball display buttons
+    var leftBtns = [
+      { key: '_showVelocityArrows', label: '↗',   default: true },
+      { key: '_showBallLabel',      label: 'Aa',  default: true },
+      { key: '_showBallAbbr',       label: 'BNC', default: true },
+    ];
+    var rowAY = btmY - btnH - gap;
+    this._cornerBrickBtns = [];
     this._cornerLeftRects = [];
+
+    // Helper to draw a toggle button
+    var drawToggleBtn = function(lx, ly, label, on, color) {
+      ctx.fillStyle = on ? 'rgba(0,30,60,0.75)' : 'rgba(30,0,0,0.75)';
+      ctx.beginPath(); ctx.roundRect(lx, ly, btnW, btnH, 5); ctx.fill();
+      ctx.strokeStyle = on ? (color || 'rgba(0,160,255,0.55)') : 'rgba(180,50,50,0.55)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(lx, ly, btnW, btnH, 5); ctx.stroke();
+      ctx.fillStyle = on ? (color ? color : '#aaddff') : '#aa6666';
+      ctx.font = "bold 7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, lx + btnW/2, ly + btnH/2);
+      if (!on) {
+        ctx.strokeStyle = 'rgba(200,80,80,0.7)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(lx+4, ly+4); ctx.lineTo(lx+btnW-4, ly+btnH-4); ctx.stroke();
+      }
+    };
+
+    for (var bi3 = 0; bi3 < brickBtns.length; bi3++) {
+      var bb = brickBtns[bi3];
+      if (window[bb.key] === undefined) window[bb.key] = bb.default;
+      var lx = margin + bi3 * (btnW + gap);
+      drawToggleBtn(lx, rowAY, bb.label, window[bb.key], 'rgba(180,80,255,0.7)');
+      this._cornerBrickBtns.push({ x: lx, y: rowAY, w: btnW, h: btnH, key: bb.key });
+    }
+
     for (var li = 0; li < leftBtns.length; li++) {
       var lb = leftBtns[li];
       if (window[lb.key] === undefined) window[lb.key] = lb.default;
-      var lx = margin + li * (btnW + gap);
-      var on = window[lb.key];
-      ctx.fillStyle = on ? 'rgba(0,30,60,0.75)' : 'rgba(30,0,0,0.75)';
-      ctx.beginPath(); ctx.roundRect(lx, btmY, btnW, btnH, 5); ctx.fill();
-      ctx.strokeStyle = on ? 'rgba(0,160,255,0.55)' : 'rgba(180,50,50,0.55)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(lx, btmY, btnW, btnH, 5); ctx.stroke();
-      ctx.fillStyle = on ? '#aaddff' : '#aa6666';
-      ctx.font = "bold 7px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(lb.label, lx + btnW/2, btmY + btnH/2);
-      if (!on) {
-        // Strikethrough line
-        ctx.strokeStyle = 'rgba(200,80,80,0.7)'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(lx + 4, btmY + 4); ctx.lineTo(lx + btnW - 4, btmY + btnH - 4); ctx.stroke();
-      }
-      this._cornerLeftRects.push({ x: lx, y: btmY, w: btnW, h: btnH, key: lb.key });
+      var lx2 = margin + li * (btnW + gap);
+      drawToggleBtn(lx2, btmY, lb.label, window[lb.key], null);
+      this._cornerLeftRects.push({ x: lx2, y: btmY, w: btnW, h: btnH, key: lb.key });
     }
 
     // Bottom-right: PULL/PUSH toggle + brick editor button
