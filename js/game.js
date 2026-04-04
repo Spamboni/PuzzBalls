@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1320;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1321;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -329,6 +329,26 @@ class Game {
           }
         }
         // Clear all bricks
+        if (self._editorResetDefBtn) {
+          var rdb = self._editorResetDefBtn;
+          if (pos.x >= rdb.x && pos.x <= rdb.x+rdb.w && pos.y >= rdb.y && pos.y <= rdb.y+rdb.h) {
+            self._editorLastSettings = null;  // clear last-used template
+            if (self._editorSelected) {
+              // Reset selected brick to factory defaults
+              var bd3 = window.BrickDefaults || {};
+              var sb_r = self._editorSelected;
+              sb_r.maxHealth = bd3.rectHP || 100; sb_r.health = sb_r.maxHealth;
+              sb_r.regenAfter = bd3.rectRegen || 2000;
+              sb_r._density = bd3.density || 1.0;
+              sb_r._maxTravel = bd3.maxTravel || 60;
+              sb_r._decel = bd3.decel || 0.88;
+              sb_r._rotSpeed = 0.5; sb_r._rotDecel = 0.88;
+              sb_r._invincible = false; sb_r._noRegen = false;
+              sb_r._noteConfig = null; sb_r._movable = false;
+            }
+            return;
+          }
+        }
         if (self._editorClearBtn) {
           var cb = self._editorClearBtn;
           if (pos.x >= cb.x && pos.x <= cb.x + cb.w && pos.y >= cb.y && pos.y <= cb.y + cb.h) {
@@ -375,8 +395,14 @@ class Game {
                 if (pos.x >= ir.x && pos.x <= ir.x + ir.w && pos.y >= ir.y && pos.y <= ir.y + ir.h) {
                   if (sd.id === 'hp') {
                     if (self._editorSelected) {
-                      self._editorSelected._invincible = !self._editorSelected._invincible;
-                      if (!self._editorSelected._invincible) { self._editorSelected.maxHealth = 100; self._editorSelected.health = 100; }
+                      var sb_inv = self._editorSelected;
+                      sb_inv._invincible = !sb_inv._invincible;
+                      if (!sb_inv._invincible) {
+                        sb_inv.maxHealth = sb_inv.maxHealth || 100;
+                        sb_inv.health    = sb_inv.maxHealth;
+                      } else {
+                        sb_inv.health = sb_inv.maxHealth;  // full health when made invincible
+                      }
                     }
                   } else if (sd.id === 'regen') {
                     if (self._editorSelected) self._editorSelected._noRegen = !self._editorSelected._noRegen;
@@ -385,7 +411,7 @@ class Game {
                 }
               }
               // Start drag on track
-              self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step, invert: sd.invert }, sl2);
+              self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step, invert: sd.invert, isDim: sd.isDim, isRot: sd.isRot, id: sd.id }, sl2);
               return;
             }
           }
@@ -829,30 +855,41 @@ class Game {
         var da2 = mbrick._angularV || 0;
         mbrick._rotation = prevRot + da2;
 
-        // Pivot rotation: brick center orbits around the chosen pivot point
-        // translateOnRotate=false means free rotation + translation separately
-        // translateOnRotate=true (default) means pivot is STATIONARY, center orbits it
-        var pivStr2 = mbrick._pivot || 'C';
-        if (da2 !== 0 && mbrick._translateOnRotate !== false) {
-          // World-space pivot offset along brick's current orientation
-          var pivLen  = pivStr2 === 'L' ? -(mbrick.w || 60) / 2
-                      : pivStr2 === 'R' ?  (mbrick.w || 60) / 2 : 0;
-          if (pivLen !== 0) {
-            // Pivot point in world space (along brick's rotated axis)
-            var curAngle = prevRot;
-            var pivWX = mbrick.x + Math.cos(curAngle) * pivLen;
-            var pivWY = mbrick.y + Math.sin(curAngle) * pivLen;
-            // Rotate center around that pivot by da2
+        // Pivot rotation physics
+        // translateOnRotate=true  → fixed pivot: brick ONLY rotates, pivot point never moves
+        // translateOnRotate=false → free: brick translates AND rotates (pivot drifts with brick)
+        var pivStr2 = mbrick._pivot || 'CM';
+        if (mbrick._translateOnRotate !== false) {
+          // ── FIXED PIVOT MODE ─────────────────────────────────────────────
+          // Determine pivot offset in brick-local space
+          var pivCol = pivStr2.charAt(0) || 'C';
+          var pivRow = pivStr2.charAt(1) || 'M';
+          var pivOffX = pivCol === 'L' ? -(mbrick.w || 60) / 2
+                      : pivCol === 'R' ?  (mbrick.w || 60) / 2 : 0;
+          var pivOffY = pivRow === 'T' ? -(mbrick.h || 22) / 2
+                      : pivRow === 'B' ?  (mbrick.h || 22) / 2 : 0;
+          // Transform pivot offset by current rotation to get world-space pivot
+          var cA = Math.cos(prevRot), sA = Math.sin(prevRot);
+          var pivWX = mbrick.x + cA * pivOffX - sA * pivOffY;
+          var pivWY = mbrick.y + sA * pivOffX + cA * pivOffY;
+          // Rotate brick center around world-space pivot
+          if (da2 !== 0) {
             var cos2 = Math.cos(da2), sin2 = Math.sin(da2);
             var relX = mbrick.x - pivWX, relY = mbrick.y - pivWY;
             mbrick.x = pivWX + relX * cos2 - relY * sin2;
             mbrick.y = pivWY + relX * sin2 + relY * cos2;
-            // No linear velocity when pivot-constrained
-            mbrick._vx = 0; mbrick._vy = 0;
+          } else {
+            // No rotation this frame — keep pivot anchored by cancelling any drift
+            mbrick.x = pivWX + (cA * (-pivOffX) - sA * (-pivOffY));
+            mbrick.y = pivWY + (sA * (-pivOffX) + cA * (-pivOffY));
           }
+          // In fixed-pivot mode, zero all linear velocity — position is fully controlled by pivot math
+          mbrick._vx = 0; mbrick._vy = 0;
+        } else {
+          // ── FREE ROTATION + TRANSLATION MODE ─────────────────────────────
+          mbrick._vx = (mbrick._vx || 0) * decel;
+          mbrick._vy = (mbrick._vy || 0) * decel;
         }
-        mbrick._vx = (mbrick._vx || 0) * decel;
-        mbrick._vy = (mbrick._vy || 0) * decel;
         var rotDecel = mbrick._rotDecel !== undefined ? mbrick._rotDecel : decel;
         mbrick._angularV = (mbrick._angularV || 0) * rotDecel;
 
@@ -1049,11 +1086,13 @@ class Game {
         var ball = this.objects[j];
         if (ball.dead || ball.stuckTo === '_wall_') continue;  // stuck ball = no more damage
 
-        // Per-ball-per-brick contact cooldown — prevents going through on overlap
+        // Per-ball-per-brick contact cooldown — suppresses damage re-trigger
         var coolKey = '_brickCool_' + brick.id;
-        if (ball[coolKey] > 0) { ball[coolKey]--; continue; }
+        var onCooldown = ball[coolKey] > 0;
+        if (onCooldown) { ball[coolKey]--; }  // keep counting down but still eject below
 
         // Swept collision: if ball moved far this frame, check the path too
+        if (onCooldown && !brick.overlaps(ball)) continue;  // already separated, skip
         var prevBX = ball.x - ball.vx, prevBY = ball.y - ball.vy;
         var ballMoved = Math.hypot(ball.vx, ball.vy);
         if (ballMoved > ball.r * 0.8 && !brick.overlaps(ball)) {
@@ -1084,8 +1123,9 @@ class Game {
           continue;
         }
 
-        // Set cooldown so this ball won't re-trigger same brick for 20 frames
-        ball[coolKey] = 20;
+        // Short cooldown (6 frames) prevents double-damage; ejection still happens above
+        if (!onCooldown) ball[coolKey] = 6;
+        if (onCooldown) continue;  // already processed this collision; eject already done above
 
         // Push ball out of brick (handles both rect and circular bricks)
         var bEdgeX, bEdgeY, bndx, bndy, bndist, bnx, bny;
@@ -1095,16 +1135,30 @@ class Game {
           bndy   = ball.y - brick.y;
           bndist = Math.hypot(bndx, bndy) || 1;
           bnx = bndx / bndist; bny = bndy / bndist;
-          var overlap2 = (brick.r + ball.r * 0.9) - bndist;
-          if (overlap2 > 0) { ball.x += bnx * (overlap2 + 1); ball.y += bny * (overlap2 + 1); }
+          var overlap2 = (brick.r + ball.r) - bndist;
+          if (overlap2 > 0) { ball.x += bnx * (overlap2 + 0.5); ball.y += bny * (overlap2 + 0.5); }
         } else {
-          bEdgeX = Math.max(brick.x - brick.w/2, Math.min(ball.x, brick.x + brick.w/2));
-          bEdgeY = Math.max(brick.y - brick.h/2, Math.min(ball.y, brick.y + brick.h/2));
-          bndx   = ball.x - bEdgeX; bndy = ball.y - bEdgeY;
-          bndist = Math.hypot(bndx, bndy) || 1;
-          bnx = bndx / bndist; bny = bndy / bndist;
-          var overlap3 = (ball.r * 0.9) - bndist;
-          if (overlap3 > 0) { ball.x += bnx * (overlap3 + 1); ball.y += bny * (overlap3 + 1); }
+          // Rotated rect: transform ball into brick-local space, find closest point, transform normal back
+          var bRot  = brick._rotation || 0;
+          var cosR  = Math.cos(-bRot), sinR = Math.sin(-bRot);
+          var relBX = ball.x - brick.x, relBY = ball.y - brick.y;
+          // Ball centre in brick-local space
+          var localX = cosR * relBX - sinR * relBY;
+          var localY = sinR * relBX + cosR * relBY;
+          var hw = brick.w / 2, hh = brick.h / 2;
+          // Closest point on unrotated rect to ball centre
+          var clamX = Math.max(-hw, Math.min(localX, hw));
+          var clamY = Math.max(-hh, Math.min(localY, hh));
+          var dLX = localX - clamX, dLY = localY - clamY;
+          bndist = Math.hypot(dLX, dLY) || 0.001;
+          // Local-space normal
+          var lnx = dLX / bndist, lny = dLY / bndist;
+          // Transform normal back to world space
+          var cosF = Math.cos(bRot), sinF = Math.sin(bRot);
+          bnx = cosF * lnx - sinF * lny;
+          bny = sinF * lnx + cosF * lny;
+          var overlap3 = ball.r - bndist;
+          if (overlap3 > 0) { ball.x += bnx * (overlap3 + 0.5); ball.y += bny * (overlap3 + 0.5); }
         }
         // Reflect velocity — ONLY if this hit doesn't destroy the brick
         // Pre-check: will this hit destroy?
@@ -2092,30 +2146,41 @@ class Game {
     }
     // SELECT mode: tapping empty space just deselects — never place
     if (this._editorSelectMode) {
+      if (this._editorSelected) this._saveLastSettings(this._editorSelected);
       this._editorSelected = null;
       this._showBrickSettings = false;
       return;
     }
-    // BUILD mode: place new brick with current defaults
+    // BUILD mode: place new brick — use last-used settings or factory defaults
     var defaults = window.BrickDefaults || {};
+    var last     = this._editorLastSettings || {};
     var isCircle = this._editorBrickType === 'circular_brick';
-    var defHP    = isCircle ? (defaults.circularHP || 100) : (defaults.rectHP || 100);
-    var defRegen = isCircle ? (defaults.circularRegen || 2000) : (defaults.rectRegen || 2000);
+    var defHP    = last.maxHealth  || (isCircle ? (defaults.circularHP  || 100)  : (defaults.rectHP    || 100));
+    var defRegen = last.regenAfter || (isCircle ? (defaults.circularRegen||2000) : (defaults.rectRegen || 2000));
+    var defW     = last.w          || (isCircle ? (defaults.circularR||22)*2      : (defaults.rectW    || 70));
+    var defH     = last.h          || (isCircle ? (defaults.circularR||22)*2      : (defaults.rectH    || 22));
     var id  = 'brick_' + Date.now();
     var obj = isCircle
-      ? new CircularBrick(pos.x, pos.y, defaults.circularR || 22, defHP, id, defRegen)
-      : new BreakableBrick(pos.x, pos.y, defaults.rectW || 70, defaults.rectH || 22, defHP, id, defRegen);
-    obj._movable   = this._editorMovable || false;
-    obj._rotation  = 0;
-    obj._vx        = 0; obj._vy = 0; obj._angularV = 0;
-    obj._maxTravel = defaults.maxTravel || 60;
-    obj._decel     = defaults.decel     || 0.88;
-    obj._density   = defaults.density   || 1.0;
-    obj._spawnX   = pos.x;  // remember spawn for regen
-    obj._spawnY   = pos.y;
-    obj._spawnRot = 0;       // initial rotation (updated when done editing)
-    obj._startX   = pos.x;
-    obj._startY   = pos.y;
+      ? new CircularBrick(pos.x, pos.y, (last.r || defaults.circularR || 22), defHP, id, defRegen)
+      : new BreakableBrick(pos.x, pos.y, defW, defH, defHP, id, defRegen);
+    obj._movable          = last._movable  !== undefined ? last._movable  : (this._editorMovable || false);
+    obj._rotation         = last._rotation !== undefined ? last._rotation : 0;
+    obj._vx = 0; obj._vy = 0; obj._angularV = 0;
+    obj._maxTravel        = last._maxTravel  !== undefined ? last._maxTravel  : (defaults.maxTravel || 60);
+    obj._decel            = last._decel      !== undefined ? last._decel      : (defaults.decel     || 0.88);
+    obj._density          = last._density    !== undefined ? last._density    : (defaults.density   || 1.0);
+    obj._rotSpeed         = last._rotSpeed   !== undefined ? last._rotSpeed   : (defaults.rotSpeed  || 0.5);
+    obj._rotDecel         = last._rotDecel   !== undefined ? last._rotDecel   : (defaults.rotDecel  || 0.88);
+    obj._noteConfig       = last._noteConfig ? JSON.parse(JSON.stringify(last._noteConfig)) : null;
+    obj._invincible       = last._invincible || false;
+    obj._noRegen          = last._noRegen    || false;
+    obj._translateOnRotate= last._translateOnRotate !== undefined ? last._translateOnRotate : true;
+    obj._pivot            = last._pivot || 'CM';
+    obj._spawnX  = pos.x;
+    obj._spawnY  = pos.y;
+    obj._spawnRot= obj._rotation;
+    obj._startX  = pos.x;
+    obj._startY  = pos.y;
     this.bricks.push(obj);
     EventManager.registerTarget(id, obj);
     this._editorSelected    = obj;
@@ -2245,6 +2310,20 @@ class Game {
     }
   }
 
+  _saveLastSettings(brick) {
+    if (!brick) return;
+    this._editorLastSettings = {
+      maxHealth: brick.maxHealth, regenAfter: brick.regenAfter,
+      w: brick.w, h: brick.h, r: brick.r,
+      _movable: brick._movable, _rotation: brick._rotation,
+      _maxTravel: brick._maxTravel, _decel: brick._decel, _density: brick._density,
+      _rotSpeed: brick._rotSpeed, _rotDecel: brick._rotDecel,
+      _noteConfig: brick._noteConfig ? JSON.parse(JSON.stringify(brick._noteConfig)) : null,
+      _invincible: brick._invincible, _noRegen: brick._noRegen,
+      _translateOnRotate: brick._translateOnRotate, _pivot: brick._pivot,
+    };
+  }
+
   _editorOnUp() {
     this._editorDragging    = null;
     this._editorDragSlider  = null;
@@ -2315,6 +2394,14 @@ class Game {
     ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(clearX, btnY, 52, btnH, 4); ctx.stroke();
     ctx.fillStyle = '#ff8844'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('CLR ALL', clearX + 26, btnY + btnH/2);
+
+    // RESET DEF button — clears _editorLastSettings and resets selected brick to defaults
+    var rstX = clearX - 54;
+    this._editorResetDefBtn = { x: rstX, y: btnY, w: 50, h: btnH };
+    ctx.fillStyle = 'rgba(0,20,60,0.8)'; ctx.beginPath(); ctx.roundRect(rstX, btnY, 50, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#4488cc'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.roundRect(rstX, btnY, 50, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#88bbff'; ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('RST DEF', rstX + 25, btnY + btnH/2);
 
     // Left side: SELECT/BUILD + type-specific
     var modeW = 52;
@@ -2449,19 +2536,24 @@ class Game {
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillText(valText, thumbX + 8, slY);
 
-      // ∞ button — larger and separated from slider track
+      // ∞/✕ button — ∞ for HP (invincible), red ✕ for REGEN (no-regen)
       var infRect = null;
       if (isInf) {
-        var ix = slX + slW + 6;  // more gap from slider
+        var ix = slX + slW + 6;
         var iH = sliderRowH - 2;
-        ctx.fillStyle = infActive ? 'rgba(255,140,0,0.45)' : 'rgba(0,15,40,0.85)';
+        var isNoRegen = (label === 'REGEN');
+        if (isNoRegen) {
+          ctx.fillStyle = infActive ? 'rgba(200,20,20,0.50)' : 'rgba(0,15,40,0.85)';
+        } else {
+          ctx.fillStyle = infActive ? 'rgba(255,140,0,0.45)' : 'rgba(0,15,40,0.85)';
+        }
         ctx.beginPath(); ctx.roundRect(ix, sy + 1, infW, iH, 4); ctx.fill();
-        ctx.strokeStyle = infActive ? '#ffaa00' : '#4477aa'; ctx.lineWidth = 1.2;
+        ctx.strokeStyle = isNoRegen ? (infActive ? '#ff4444' : '#884444') : (infActive ? '#ffaa00' : '#4477aa'); ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.roundRect(ix, sy + 1, infW, iH, 4); ctx.stroke();
-        ctx.fillStyle = infActive ? '#ffdd44' : '#7799bb';
-        ctx.font = "bold 12px 'Share Tech Mono',monospace";
+        ctx.fillStyle = isNoRegen ? (infActive ? '#ff8888' : '#aa5555') : (infActive ? '#ffdd44' : '#7799bb');
+        ctx.font = "bold " + (isNoRegen ? "11" : "12") + "px 'Share Tech Mono',monospace";
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('∞', ix + infW/2, sy + sliderRowH/2);
+        ctx.fillText(isNoRegen ? '✕' : '∞', ix + infW/2, sy + sliderRowH/2);
         infRect = { x: ix, y: sy, w: infW, h: sliderRowH };
       }
 

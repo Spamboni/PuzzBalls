@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1320;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1321;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -93,7 +93,7 @@ class UI {
       circularHP: 100, circularRegen: 2000, circularR: 22,
       density: 1.0, maxTravel: 60, decel: 0.88,
     };
-    window._gridSize = window._gridSize || 20;
+    window._gridSize = window._gridSize || 10;
     window.SoundVariants = window.SoundVariants || {};
     window.SoundVolumes  = window.SoundVolumes  || {};
 
@@ -199,7 +199,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.20</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.21</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -222,10 +222,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.20 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.21 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1320) {
-            verEl.textContent = 'v13.20 ✓';
+          } else if (loaded === 1321) {
+            verEl.textContent = 'v13.21 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -283,15 +283,71 @@ class UI {
           var lbl = _el('div','setting-label');
           var nm = _el('span'); nm.textContent = 'GRID SIZE';
           var vs = _el('span','setting-val');
-          vs.textContent = (window._gridSize || 20) + 'px';
+          vs.textContent = (window._gridSize || 10) + 'px';
           lbl.appendChild(nm); lbl.appendChild(vs);
           var slider = document.createElement('input');
-          slider.type='range'; slider.min=10; slider.max=80; slider.step=5; slider.value=window._gridSize||20;
+          slider.type='range'; slider.min=2; slider.max=20; slider.step=1; slider.value=window._gridSize||10;
           slider.addEventListener('input', function() {
             window._gridSize = parseInt(slider.value);
             vs.textContent = slider.value + 'px';
           });
           row.appendChild(lbl); row.appendChild(slider); thePane.appendChild(row);
+        })(pane);
+
+        // Brick presets
+        var bHdr6 = _el('div',''); bHdr6.textContent = '🧱 BRICK PRESETS';
+        bHdr6.style.cssText = 'color:#ffaa44;font-size:10px;font-weight:bold;padding:8px 0 4px;';
+        pane.appendChild(bHdr6);
+        (function(thePane) {
+          var PRESET_KEY = 'puzzballs_brick_presets';
+          function loadPresets() { try { return JSON.parse(localStorage.getItem(PRESET_KEY)||'{}'); } catch(e){return {};} }
+          function savePresets(o) { try { localStorage.setItem(PRESET_KEY, JSON.stringify(o)); } catch(e){} }
+          function renderPresets() {
+            list.innerHTML = '';
+            var ps = loadPresets(), names = Object.keys(ps);
+            if (!names.length) {
+              var empty = document.createElement('div');
+              empty.textContent = 'No saved presets yet';
+              empty.style.cssText = 'color:#446688;font-size:10px;padding:4px 0;';
+              list.appendChild(empty); return;
+            }
+            names.forEach(function(name) {
+              var r2 = document.createElement('div');
+              r2.style.cssText = 'display:flex;gap:4px;align-items:center;margin-bottom:4px;';
+              var lbl2 = document.createElement('span');
+              lbl2.textContent = name;
+              lbl2.style.cssText = 'flex:1;color:#aaccff;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+              var loadBtn = document.createElement('button');
+              loadBtn.textContent = 'LOAD';
+              loadBtn.style.cssText = 'background:rgba(0,80,160,0.7);border:1px solid #0088ff;color:#44aaff;font-size:9px;padding:2px 6px;border-radius:3px;cursor:pointer;';
+              loadBtn.addEventListener('click', function() {
+                if (window._gameRef) window._gameRef._editorLastSettings = JSON.parse(JSON.stringify(ps[name]));
+              });
+              var delBtn = document.createElement('button');
+              delBtn.textContent = '✕';
+              delBtn.style.cssText = 'background:rgba(120,0,0,0.7);border:1px solid #cc2222;color:#ff8888;font-size:9px;padding:2px 5px;border-radius:3px;cursor:pointer;';
+              delBtn.addEventListener('click', function() { var p2=loadPresets(); delete p2[name]; savePresets(p2); renderPresets(); });
+              r2.appendChild(lbl2); r2.appendChild(loadBtn); r2.appendChild(delBtn); list.appendChild(r2);
+            });
+          }
+          var saveRow = document.createElement('div');
+          saveRow.style.cssText = 'display:flex;gap:4px;margin-bottom:6px;';
+          var inp = document.createElement('input');
+          inp.type='text'; inp.placeholder='Preset name...';
+          inp.style.cssText = 'flex:1;background:rgba(0,15,40,0.9);border:1px solid #336688;color:#aaddff;font-size:10px;padding:3px 6px;border-radius:3px;';
+          var saveBtn = document.createElement('button');
+          saveBtn.textContent = 'SAVE';
+          saveBtn.style.cssText = 'background:rgba(0,60,30,0.8);border:1px solid #00aa44;color:#00ff88;font-size:9px;padding:2px 8px;border-radius:3px;cursor:pointer;';
+          saveBtn.addEventListener('click', function() {
+            var n = inp.value.trim(); if (!n) return;
+            var snap = (window._gameRef && window._gameRef._editorLastSettings)
+              ? JSON.parse(JSON.stringify(window._gameRef._editorLastSettings))
+              : JSON.parse(JSON.stringify(window.BrickDefaults||{}));
+            var p3 = loadPresets(); p3[n] = snap; savePresets(p3); inp.value = ''; renderPresets();
+          });
+          saveRow.appendChild(inp); saveRow.appendChild(saveBtn); thePane.appendChild(saveRow);
+          var list = document.createElement('div'); thePane.appendChild(list);
+          renderPresets();
         })(pane);
 
         // Brick sound variant pickers

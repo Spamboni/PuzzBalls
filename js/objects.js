@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1317;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1321;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -491,9 +491,21 @@ class BreakableBrick {
   }
 
   overlaps(ball) {
-    var nearX = Math.max(this.x - this.w / 2, Math.min(ball.x, this.x + this.w / 2));
-    var nearY = Math.max(this.y - this.h / 2, Math.min(ball.y, this.y + this.h / 2));
-    return Math.hypot(ball.x - nearX, ball.y - nearY) < ball.r * 0.8;
+    var rot = this._rotation || 0;
+    if (rot === 0) {
+      // Fast path: no rotation
+      var nearX = Math.max(this.x - this.w/2, Math.min(ball.x, this.x + this.w/2));
+      var nearY = Math.max(this.y - this.h/2, Math.min(ball.y, this.y + this.h/2));
+      return Math.hypot(ball.x - nearX, ball.y - nearY) < ball.r;
+    }
+    // Transform ball into brick-local space
+    var cosR  = Math.cos(-rot), sinR = Math.sin(-rot);
+    var relX  = ball.x - this.x, relY = ball.y - this.y;
+    var localX = cosR * relX - sinR * relY;
+    var localY = sinR * relX + cosR * relY;
+    var nearX2 = Math.max(-this.w/2, Math.min(localX, this.w/2));
+    var nearY2 = Math.max(-this.h/2, Math.min(localY, this.h/2));
+    return Math.hypot(localX - nearX2, localY - nearY2) < ball.r;
   }
 
   takeDamage(amount) {
