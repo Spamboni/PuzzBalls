@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1312;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1314;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -546,21 +546,26 @@ class BreakableBrick {
       if (!this.regenAfter) return;
       var t2 = performance.now();
 
-      // Snap-to-spawn animation: over first 500ms, lerp toward spawn point
-      var drawX = this.x, drawY = this.y;
+      // Snap-to-spawn animation: over first 500ms ease-out to spawn pos+rot
+      var drawX = this.x, drawY = this.y, drawRot = this._rotation || 0;
       if (this._spawnX !== undefined) {
-        var elapsed   = this.regenAfter - this.regenTimer;  // ms since destruction
-        var snapDur   = 500;  // ms to snap back
-        var snapFrac  = Math.min(1, elapsed / snapDur);
-        // Ease out cubic
-        var ease = 1 - Math.pow(1 - snapFrac, 3);
+        var elapsed  = this.regenAfter - this.regenTimer;
+        var ease     = 1 - Math.pow(1 - Math.min(1, elapsed / 500), 3);
         drawX = this.x + (this._spawnX - this.x) * ease;
         drawY = this.y + (this._spawnY - this.y) * ease;
+        // Interpolate rotation via shortest arc (<= 180°)
+        var targetRot = this._spawnRot || 0;
+        var curRot    = this._rotation || 0;
+        var diff      = targetRot - curRot;
+        // Wrap diff into [-π, π]
+        while (diff >  Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        drawRot = curRot + diff * ease;
       }
 
       ctx.save();
       ctx.translate(drawX, drawY);
-      if (this._rotation) ctx.rotate(this._rotation);
+      ctx.rotate(drawRot);
       ctx.globalAlpha = 0.28 + 0.10 * Math.sin(t2 * 0.005);
       ctx.strokeStyle = glow;
       ctx.lineWidth   = 1.5;
@@ -569,7 +574,7 @@ class BreakableBrick {
       ctx.roundRect(-this.w/2, -this.h/2, this.w, this.h, 4);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Progress bar for regen
+      // Progress bar
       var prog = 1 - (this.regenTimer / this.regenAfter);
       ctx.fillStyle = glow + '55';
       ctx.fillRect(-this.w/2, -this.h/2, this.w * prog, this.h);
@@ -578,8 +583,10 @@ class BreakableBrick {
       return;
     }
 
+    // Alive: draw with own rotation
     ctx.save();
     ctx.translate(this.x, this.y);
+    if (this._rotation) ctx.rotate(this._rotation);
 
     var bx = -this.w / 2, by = -this.h / 2;
 

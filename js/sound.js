@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1309;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1314;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -484,4 +484,181 @@ window.Sound = Sound;
     var g2  = c.createGain(); g2.gain.setValueAtTime(vol*0.55, now); g2.gain.exponentialRampToValueAtTime(0.0001, now+0.09);
     src.connect(flt); flt.connect(g2); g2.connect(c.destination); src.start(now); src.stop(now+0.09);
   };
+})();
+
+// ── Brick musical note system ─────────────────────────────────────────────────
+window.BrickNote = (function() {
+
+  // MIDI note → Hz
+  function noteHz(note, octave) {
+    var notes = { 'C':0,'C#':1,'Db':1,'D':2,'D#':3,'Eb':3,'E':4,'F':5,'F#':6,'Gb':6,'G':7,'G#':8,'Ab':8,'A':9,'A#':10,'Bb':10,'B':11 };
+    var semitone = (octave + 1) * 12 + (notes[note] || 0);
+    return 440 * Math.pow(2, (semitone - 69) / 12);
+  }
+
+  // 10 rich timbres
+  var timbres = {
+    // 1. Marimba — short sine with wooden thump
+    marimba: function(c, hz, vol) {
+      var now = c.currentTime;
+      var osc = c.createOscillator(), g = c.createGain();
+      osc.type = 'sine'; osc.frequency.value = hz;
+      g.gain.setValueAtTime(vol * 1.2, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+      osc.connect(g); g.connect(c.destination); osc.start(now); osc.stop(now + 0.5);
+      // Wooden thump
+      var o2 = c.createOscillator(), g2 = c.createGain();
+      o2.type = 'triangle'; o2.frequency.setValueAtTime(hz * 0.5, now); o2.frequency.exponentialRampToValueAtTime(hz * 0.25, now + 0.06);
+      g2.gain.setValueAtTime(vol * 0.5, now); g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+      o2.connect(g2); g2.connect(c.destination); o2.start(now); o2.stop(now + 0.08);
+    },
+    // 2. Bell — long ringing with harmonics
+    bell: function(c, hz, vol) {
+      var now = c.currentTime;
+      [[1.0, 1.2], [2.76, 0.7], [5.4, 0.4], [7.8, 0.2]].forEach(function(p) {
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine'; o.frequency.value = hz * p[0];
+        g.gain.setValueAtTime(vol * p[1], now); g.gain.exponentialRampToValueAtTime(0.0001, now + 2.5 * p[1]);
+        o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 3);
+      });
+    },
+    // 3. Plucked string — Karplus-Strong style
+    pluck: function(c, hz, vol) {
+      var now = c.currentTime;
+      var bufLen = Math.ceil(c.sampleRate / hz);
+      var buf = c.createBuffer(1, bufLen * 8, c.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < bufLen; i++) d[i] = (Math.random() * 2 - 1);
+      for (var i2 = bufLen; i2 < bufLen * 8; i2++) d[i2] = 0.5 * (d[i2 - bufLen] + d[i2 - bufLen + 1]);
+      var src = c.createBufferSource(); src.buffer = buf;
+      var g = c.createGain(); g.gain.setValueAtTime(vol * 1.5, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+      src.connect(g); g.connect(c.destination); src.start(now); src.stop(now + 1.2);
+    },
+    // 4. Vibraphone — sine with tremolo
+    vibraphone: function(c, hz, vol) {
+      var now = c.currentTime;
+      var osc = c.createOscillator(), lfo = c.createOscillator(), lfoG = c.createGain(), g = c.createGain();
+      osc.type = 'sine'; osc.frequency.value = hz;
+      lfo.type = 'sine'; lfo.frequency.value = 6;
+      lfoG.gain.value = vol * 0.3;
+      lfo.connect(lfoG); lfoG.connect(g.gain);
+      g.gain.setValueAtTime(vol * 0.9, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+      osc.connect(g); g.connect(c.destination);
+      osc.start(now); lfo.start(now); osc.stop(now + 2); lfo.stop(now + 2);
+      // Second harmonic
+      var o2 = c.createOscillator(), g2 = c.createGain();
+      o2.type = 'sine'; o2.frequency.value = hz * 2;
+      g2.gain.setValueAtTime(vol * 0.25, now); g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+      o2.connect(g2); g2.connect(c.destination); o2.start(now); o2.stop(now + 1);
+    },
+    // 5. Flute — breathy sine with high harmonics
+    flute: function(c, hz, vol) {
+      var now = c.currentTime;
+      // Noise breath
+      var bLen = Math.ceil(c.sampleRate * 0.05);
+      var bBuf = c.createBuffer(1, bLen, c.sampleRate);
+      var bd = bBuf.getChannelData(0);
+      for (var i = 0; i < bLen; i++) bd[i] = (Math.random() * 2 - 1);
+      var bSrc = c.createBufferSource(); bSrc.buffer = bBuf;
+      var bFlt = c.createBiquadFilter(); bFlt.type = 'bandpass'; bFlt.frequency.value = hz * 2; bFlt.Q.value = 15;
+      var bG = c.createGain(); bG.gain.setValueAtTime(vol * 0.4, now); bG.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+      bSrc.connect(bFlt); bFlt.connect(bG); bG.connect(c.destination); bSrc.start(now); bSrc.stop(now + 0.08);
+      // Tone
+      var osc = c.createOscillator(), g = c.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(hz * 0.99, now); osc.frequency.linearRampToValueAtTime(hz, now + 0.05);
+      g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(vol * 0.8, now + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+      osc.connect(g); g.connect(c.destination); osc.start(now); osc.stop(now + 1.3);
+    },
+    // 6. Bird chirp — fast freq sweep
+    bird: function(c, hz, vol) {
+      var now = c.currentTime;
+      [0, 0.07, 0.14].forEach(function(delay) {
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(hz * 1.5, now + delay);
+        o.frequency.exponentialRampToValueAtTime(hz * 2.5, now + delay + 0.04);
+        o.frequency.exponentialRampToValueAtTime(hz * 1.8, now + delay + 0.07);
+        g.gain.setValueAtTime(vol * 0.7, now + delay);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.09);
+        o.connect(g); g.connect(c.destination); o.start(now + delay); o.stop(now + delay + 0.1);
+      });
+    },
+    // 7. Organ — multiple detuned sawtooths
+    organ: function(c, hz, vol) {
+      var now = c.currentTime;
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(vol * 0.6, now + 0.02);
+      g.gain.setValueAtTime(vol * 0.6, now + 0.3); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+      g.connect(c.destination);
+      [1, 2, 3, 4].forEach(function(harm) {
+        var o = c.createOscillator();
+        o.type = harm === 1 ? 'sawtooth' : 'sine';
+        o.frequency.value = hz * harm;
+        o.detune.value = (Math.random() - 0.5) * 4;
+        o.connect(g); o.start(now); o.stop(now + 0.8);
+      });
+    },
+    // 8. Celesta — bright sparkly bell
+    celesta: function(c, hz, vol) {
+      var now = c.currentTime;
+      [[1, 0.8, 0.6], [4.07, 0.5, 0.3], [6.1, 0.3, 0.2]].forEach(function(p) {
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine'; o.frequency.value = hz * p[0];
+        g.gain.setValueAtTime(vol * p[1], now); g.gain.exponentialRampToValueAtTime(0.0001, now + p[2] * 3);
+        o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + p[2] * 3 + 0.1);
+      });
+      // Bright transient
+      var noise = c.createBuffer(1, Math.ceil(c.sampleRate * 0.02), c.sampleRate);
+      var nd = noise.getChannelData(0); for (var i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+      var ns = c.createBufferSource(); ns.buffer = noise;
+      var nf = c.createBiquadFilter(); nf.type = 'highpass'; nf.frequency.value = 4000;
+      var ng = c.createGain(); ng.gain.setValueAtTime(vol * 0.3, now); ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+      ns.connect(nf); nf.connect(ng); ng.connect(c.destination); ns.start(now);
+    },
+    // 9. Sub bass synth — deep sine with slight detune chorus
+    bass: function(c, hz, vol) {
+      var now = c.currentTime;
+      [1, 1.002, 0.998].forEach(function(dt) {
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine'; o.frequency.value = hz * dt;
+        g.gain.setValueAtTime(vol * 0.7, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+        o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 1);
+      });
+      // Sub octave
+      var sub = c.createOscillator(), sg = c.createGain();
+      sub.type = 'triangle'; sub.frequency.value = hz * 0.5;
+      sg.gain.setValueAtTime(vol * 0.5, now); sg.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+      sub.connect(sg); sg.connect(c.destination); sub.start(now); sub.stop(now + 1.3);
+    },
+    // 10. Crystal glass — very pure long tone with high partial
+    crystal: function(c, hz, vol) {
+      var now = c.currentTime;
+      [[1, 1.0], [2.756, 0.35], [9.0, 0.12]].forEach(function(p) {
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine'; o.frequency.value = hz * p[0];
+        g.gain.setValueAtTime(vol * p[1] * 0.5, now);
+        g.gain.linearRampToValueAtTime(vol * p[1], now + 0.08);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 3.5 * p[1]);
+        o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 4);
+      });
+    },
+  };
+
+  var timbreList = ['marimba','bell','pluck','vibraphone','flute','bird','organ','celesta','bass','crystal'];
+  var timbreLabels = ['Marimba','Bell','Pluck','Vibraphone','Flute','Bird','Organ','Celesta','Sub Bass','Crystal'];
+
+  function playNote(note, octave, timbre, vol) {
+    var c = window.Sound && window.Sound.getCtx ? window.Sound.getCtx() : null;
+    if (!c) return;
+    var hz = noteHz(note || 'C', octave !== undefined ? octave : 4);
+    var fn = timbres[timbre] || timbres.marimba;
+    var v  = (vol !== undefined ? vol : 1.0) *
+             ((window.AudioSettings && window.AudioSettings.masterVol !== undefined) ? window.AudioSettings.masterVol : 1.0);
+    fn(c, hz, Math.min(v, 1.4));
+  }
+
+  var noteNames   = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  var noteDisplay = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+
+  return { playNote, timbreList, timbreLabels, noteNames, noteDisplay };
 })();
