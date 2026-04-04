@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1312;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1313;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -296,6 +296,13 @@ class Game {
           self.toggleEditor(); return;
         }
       }
+      if (self._cornerAimBtn) {
+        var cab = self._cornerAimBtn;
+        if (pos.x >= cab.x && pos.x <= cab.x + cab.w && pos.y >= cab.y && pos.y <= cab.y + cab.h) {
+          self._aimMode = self._aimMode === 'pull' ? 'push' : 'pull';
+          return;
+        }
+      }
 
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
@@ -345,8 +352,8 @@ class Game {
             if (!sl2) continue;
             // Skip DENS/DIST if not movable
             if ((sd.id === 'dens' || sd.id === 'dist') && !movNow) continue;
-            if (pos.x >= sl2.trackX - 10 && pos.x <= sl2.trackX + sl2.trackW + 10 &&
-                pos.y >= sl2.y && pos.y <= sl2.y + sl2.h) {
+            if (pos.x >= sl2.trackX - 8 && pos.x <= sl2.trackX + sl2.trackW + (sl2.infRect ? sl2.infRect.w + 10 : 8) &&
+                pos.y >= sl2.y + 2 && pos.y <= sl2.y + sl2.h - 2) {
               // Check ∞ button on HP
               if (sd.id === 'hp' && sl2.infRect) {
                 var ir = sl2.infRect;
@@ -1254,7 +1261,7 @@ class Game {
     var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 160;   // where buttons start (below HUD)
+    var TOP_Y    = 200;   // lowered — PULL/PUSH moved to corner
     // The left wall goes straight down from TOP_Y to DIAG_Y,
     // then angles 45° right up to screen top-right corner.
     var DIAG_Y   = TOP_Y;  // diagonal starts right at the top of the button area
@@ -1642,22 +1649,7 @@ class Game {
                 + (this._chuteQueue  ? this._chuteQueue.length  : 0);
     var atMax = onField >= 15;
 
-    // ── Aim mode toggle button — sits just above the ball buttons ─────────────
-    var aimBtnH = 26;
-    var aimBtnY = btnStartY - aimBtnH - 6;
-    this._chuteAimRect = { x: btnX, y: aimBtnY, w: btnW, h: aimBtnH };
-    var isPush    = this._aimMode === 'push';
-    var aimColor  = isPush ? '#ffcc30' : '#00ccff';
-    ctx.fillStyle = isPush ? 'rgba(60,45,0,0.80)' : 'rgba(0,20,45,0.80)';
-    ctx.beginPath(); ctx.roundRect(btnX, aimBtnY, btnW, aimBtnH, 6); ctx.fill();
-    ctx.strokeStyle = aimColor;
-    ctx.lineWidth   = 1.8; ctx.shadowColor = aimColor; ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.roundRect(btnX, aimBtnY, btnW, aimBtnH, 6); ctx.stroke();
-    ctx.shadowBlur  = 0;
-    ctx.fillStyle   = aimColor;
-    ctx.font        = "bold 8px 'Share Tech Mono', monospace";
-    ctx.textAlign   = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(isPush ? '↑ PUSH' : '← PULL', btnX + btnW / 2, aimBtnY + aimBtnH / 2);
+    this._chuteAimRect = null;  // aim button moved to corner
 
     for (var bi = 0; bi < btnTypes.length; bi++) {
       var by    = btnStartY + bi * (btnH + 4);
@@ -2376,10 +2368,13 @@ class Game {
     var ctx    = this.ctx;
     var W      = this.W;
     var H      = this.H;
-    var sliderW = Math.min(W * 0.55, 220);
+    // Leave room: left side = 3 buttons × 32px + gap, right side = 2 buttons × 32px + gap
+    var leftReserve  = 3 * 32 + 16;
+    var rightReserve = 2 * 32 + 16;
+    var sliderW = W - leftReserve - rightReserve;
     var sliderH = 28;
-    var sx     = (W - sliderW) / 2;
-    var sy     = H - 36;  // sits below the floor line, above bottom of screen
+    var sx     = leftReserve;
+    var sy     = H - 36;
     var trackY = sy + sliderH / 2;
 
     // Store rect for touch handling
@@ -2462,7 +2457,7 @@ class Game {
       this._cornerLeftRects.push({ x: lx, y: btmY, w: btnW, h: btnH, key: lb.key });
     }
 
-    // Bottom-right: brick editor button
+    // Bottom-right: PULL/PUSH toggle + brick editor button
     var ex = W - margin - btnW;
     this._cornerEditorBtn = { x: ex, y: btmY, w: btnW, h: btnH };
     var edOn = this._editorMode;
@@ -2474,6 +2469,19 @@ class Game {
     ctx.font = "bold 10px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('🧱', ex + btnW/2, btmY + btnH/2);
+
+    // PULL/PUSH aim toggle
+    var aimX = ex - btnW - gap;
+    this._cornerAimBtn = { x: aimX, y: btmY, w: btnW, h: btnH };
+    var isPushCorner = this._aimMode === 'push';
+    ctx.fillStyle = isPushCorner ? 'rgba(60,45,0,0.85)' : 'rgba(0,20,45,0.75)';
+    ctx.beginPath(); ctx.roundRect(aimX, btmY, btnW, btnH, 5); ctx.fill();
+    ctx.strokeStyle = isPushCorner ? '#ffcc30' : '#00ccff'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect(aimX, btmY, btnW, btnH, 5); ctx.stroke();
+    ctx.fillStyle = isPushCorner ? '#ffcc30' : '#00ccff';
+    ctx.font = "bold 7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isPushCorner ? '↑PSH' : '←PUL', aimX + btnW/2, btmY + btnH/2);
   }
 
   _drawGrid() {
