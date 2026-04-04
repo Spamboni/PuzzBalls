@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1305;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1307;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -282,6 +282,24 @@ class Game {
 
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
+        // Mode toggle (SELECT/BUILD)
+        if (self._editorModeBtn) {
+          var mb2 = self._editorModeBtn;
+          if (pos.x >= mb2.x && pos.x <= mb2.x + mb2.w && pos.y >= mb2.y && pos.y <= mb2.y + mb2.h) {
+            self._editorSelectMode = !self._editorSelectMode;
+            self._editorSelected   = null;
+            return;
+          }
+        }
+        // Clear all bricks
+        if (self._editorClearBtn) {
+          var cb = self._editorClearBtn;
+          if (pos.x >= cb.x && pos.x <= cb.x + cb.w && pos.y >= cb.y && pos.y <= cb.y + cb.h) {
+            self.bricks = [];
+            self._editorSelected = null;
+            return;
+          }
+        }
         // Check editor panel buttons first
         if (self._editorTypeBtns) {
           for (var ti = 0; ti < self._editorTypeBtns.length; ti++) {
@@ -558,9 +576,8 @@ class Game {
     for (i = 0; i < this.spawners.length;   i++) this.spawners[i].update(dt);
     for (i = 0; i < this.bricks.length; i++) {
       this.bricks[i].updateRegen(dt);
-      // Step movable brick physics
       var mbrick = this.bricks[i];
-      if (mbrick._movable && (mbrick._vx || mbrick._vy || mbrick._angularV)) {
+      if (mbrick._movable && (Math.abs(mbrick._vx||0) > 0.05 || Math.abs(mbrick._vy||0) > 0.05 || Math.abs(mbrick._angularV||0) > 0.001)) {
         var decel = mbrick._decel || 0.88;
         mbrick.x += (mbrick._vx || 0);
         mbrick.y += (mbrick._vy || 0);
@@ -568,16 +585,47 @@ class Game {
         mbrick._vx = (mbrick._vx || 0) * decel;
         mbrick._vy = (mbrick._vy || 0) * decel;
         mbrick._angularV = (mbrick._angularV || 0) * decel;
-        // Clamp travel from spawn point
-        mbrick._startX = mbrick._startX !== undefined ? mbrick._startX : mbrick.x;
-        mbrick._startY = mbrick._startY !== undefined ? mbrick._startY : mbrick.y;
-        var travelMax = mbrick._maxTravel || 60;
-        var traveled  = Math.hypot(mbrick.x - mbrick._startX, mbrick.y - mbrick._startY);
-        if (traveled > travelMax) {
-          var tAngle = Math.atan2(mbrick.y - mbrick._startY, mbrick.x - mbrick._startX);
-          mbrick.x = mbrick._startX + Math.cos(tAngle) * travelMax;
-          mbrick.y = mbrick._startY + Math.sin(tAngle) * travelMax;
-          mbrick._vx = 0; mbrick._vy = 0;
+
+        // Travel clamp
+        if (mbrick._startX !== undefined) {
+          var travelMax = mbrick._maxTravel || 60;
+          var traveled  = Math.hypot(mbrick.x - mbrick._startX, mbrick.y - mbrick._startY);
+          if (traveled > travelMax) {
+            var tAngle = Math.atan2(mbrick.y - mbrick._startY, mbrick.x - mbrick._startX);
+            mbrick.x = mbrick._startX + Math.cos(tAngle) * travelMax;
+            mbrick.y = mbrick._startY + Math.sin(tAngle) * travelMax;
+            mbrick._vx = (mbrick._vx || 0) * -0.3;
+            mbrick._vy = (mbrick._vy || 0) * -0.3;
+          }
+        }
+
+        // Brick-brick collision — check if this moving brick overlaps any other brick
+        var bSpeed = Math.hypot(mbrick._vx || 0, mbrick._vy || 0);
+        if (bSpeed > 0.4) {
+          for (var bi2 = 0; bi2 < this.bricks.length; bi2++) {
+            if (bi2 === i) continue;
+            var other = this.bricks[bi2];
+            if (!other.isAlive()) continue;
+            // Simple AABB overlap check (approximate — ignores rotation)
+            var ox = Math.abs(mbrick.x - other.x);
+            var oy = Math.abs(mbrick.y - other.y);
+            var hw1 = (mbrick.w || mbrick.r * 2) / 2 + 4;
+            var hh1 = (mbrick.h || mbrick.r * 2) / 2 + 4;
+            var hw2 = (other.w  || other.r  * 2) / 2;
+            var hh2 = (other.h  || other.r  * 2) / 2;
+            if (ox < hw1 + hw2 && oy < hh1 + hh2) {
+              var coolK = '_bb_' + other.id;
+              if (!mbrick[coolK] || mbrick[coolK] <= 0) {
+                // Brick-on-brick damage — much less than ball damage
+                var bbDmg = Math.round(bSpeed * 3);
+                other.takeDamage(bbDmg);
+                if (mbrick.isAlive()) mbrick.takeDamage(Math.round(bbDmg * 0.5));
+                mbrick[coolK] = 30;
+                if (window.Sound) Sound.brickOnBrick(bSpeed);
+              }
+            }
+            if (mbrick[coolK] > 0) mbrick[coolK]--;
+          }
         }
       }
     }
@@ -791,18 +839,28 @@ class Game {
           }
         }
 
-        // Movable brick physics — translate + rotate based on impact
+        // Movable brick physics — translate + rotate around brick CENTER
         if (brick._movable) {
           var brickDensity = brick._density || 1.0;
-          var impactForce  = Math.hypot(ball.vx, ball.vy) / (brickDensity * 3);
-          brick._vx = (brick._vx || 0) + bnx * impactForce * -1;
-          brick._vy = (brick._vy || 0) + bny * impactForce * -1;
-          // Angular velocity from off-center hit
-          var hitOffsetX = (ball.x - brick.x) / (brick.w / 2 + 1);
-          var hitOffsetY = (ball.y - brick.y) / (brick.h / 2 + 1);
-          var torque     = (hitOffsetX * bny - hitOffsetY * bnx) * impactForce * 0.08;
+          var ballSpeed    = Math.hypot(ball.vx, ball.vy);
+          var impactForce  = ballSpeed / (brickDensity * 3);
+
+          // Linear impulse — push brick in direction ball was travelling
+          brick._vx = (brick._vx || 0) - bnx * impactForce;
+          brick._vy = (brick._vy || 0) - bny * impactForce;
+
+          // Angular impulse — cross product of (hit point relative to CENTER) × impact normal
+          // Positive = clockwise, negative = counter-clockwise
+          // hitOff = vector from brick center to contact point (in pixels)
+          var hitOffX = ball.x - brick.x;   // pixels from center
+          var hitOffY = ball.y - brick.y;
+          // 2D cross product: r × F = rx*Fy - ry*Fx
+          var torque  = (hitOffX * (-bny) - hitOffY * (-bnx)) * impactForce * 0.012;
           brick._angularV = (brick._angularV || 0) + torque;
-          brick.inFlight  = true;
+
+          // Record start position for travel clamping
+          if (brick._startX === undefined) { brick._startX = brick.x; brick._startY = brick.y; }
+          if (window.Sound) Sound.brickShatter(impactForce * 0.3);
         }
         this.collisions++;
         this.ui.setCollisions(this.collisions);
@@ -1234,9 +1292,18 @@ class Game {
     }
 
     // ── LEFT WALL — diagonal top, straight shaft, J curve at bottom ─────────
+    // LIFT: the visual J is raised above where balls actually travel, so balls
+    // pass underneath the drawn arc rather than clipping through it.
+    // The arc is purely visual — the physics wall is at leftX (straight line).
+    var LIFT     = 28;   // how high above the physics exit the drawn J sits
     var diagEndX = W;
     var diagEndY = topY - (W - leftX);
     if (diagEndY < 0) diagEndY = 0;
+    // J bottom point: raised by LIFT above floor
+    var jBottomY = floorY - LIFT;
+    // J exit point: leftX - turnR, at same height as bottom
+    var jExitX   = leftX - turnR;
+    var jExitY   = jBottomY;
 
     ctx.strokeStyle = 'rgba(0,200,255,0.85)';
     ctx.lineWidth   = 2.5;
@@ -1245,23 +1312,44 @@ class Game {
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
+    // Main left wall: diagonal → straight down → raised J curve
     ctx.beginPath();
     ctx.moveTo(diagEndX, diagEndY);
     ctx.lineTo(leftX, topY);
-    ctx.lineTo(leftX, floorY - turnR);
-    ctx.quadraticCurveTo(leftX, floorY, leftX - turnR, floorY);
+    ctx.lineTo(leftX, jBottomY - turnR + LIFT);
+    ctx.quadraticCurveTo(leftX, jBottomY, jExitX, jExitY);
     ctx.stroke();
 
-    // Inner tube rim line
-    ctx.strokeStyle = 'rgba(0,140,200,0.35)';
+    // ── TUBE MOUTH — vertical line from J exit down to floor ─────────────────
+    // Purely visual: represents the open end of the 3D cylindrical tube.
+    // Balls pass through this line freely (no physics).
+    ctx.strokeStyle = 'rgba(0,180,255,0.50)';
+    ctx.lineWidth   = 2;
+    ctx.shadowBlur  = 5;
+    ctx.beginPath();
+    ctx.moveTo(jExitX, jExitY);
+    ctx.lineTo(jExitX, floorY);
+    ctx.stroke();
+
+    // Small horizontal cap at top of mouth opening (the tube rim)
+    ctx.strokeStyle = 'rgba(0,200,255,0.45)';
     ctx.lineWidth   = 1.5;
-    ctx.shadowBlur  = 3;
+    ctx.beginPath();
+    ctx.moveTo(jExitX - 4, jExitY);
+    ctx.lineTo(jExitX + 8, jExitY);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Inner tube rim line (depth effect)
+    ctx.strokeStyle = 'rgba(0,140,200,0.30)';
+    ctx.lineWidth   = 1.5;
+    ctx.shadowBlur  = 2;
     var innerOff = 4;
     ctx.beginPath();
     ctx.moveTo(diagEndX - innerOff, diagEndY + innerOff);
     ctx.lineTo(leftX + innerOff, topY + innerOff);
-    ctx.lineTo(leftX + innerOff, floorY - turnR - innerOff);
-    ctx.quadraticCurveTo(leftX + innerOff, floorY - innerOff, leftX - turnR + innerOff, floorY - innerOff);
+    ctx.lineTo(leftX + innerOff, jBottomY - turnR + LIFT - innerOff);
+    ctx.quadraticCurveTo(leftX + innerOff, jBottomY - innerOff, jExitX + innerOff, jExitY - innerOff);
     ctx.stroke();
     ctx.shadowBlur = 0;
 
@@ -1363,7 +1451,10 @@ class Game {
       ctx.beginPath(); ctx.moveTo(capX + 3, sl); ctx.lineTo(capX + capW - 3, sl); ctx.stroke();
     }
 
-    // ── LEFT RAMP — quarter-circle, bottom sits exactly at floorY ─────────────
+    // ── LEFT RAMP — quarter-circle, base exactly at floor level ─────────────
+    // Arc center at (rampR, floorY): leftmost point (0, floorY) is at floor,
+    // top point (rampR, floorY-rampR) is rampR above floor.
+    // Ball rolls in along floor, hits ramp, curves upward.
     var rampR  = 48;
     ctx.strokeStyle = 'rgba(0,190,255,0.60)';
     ctx.lineWidth   = 2.5;
@@ -1654,30 +1745,47 @@ class Game {
 
     var btnH = 24, btnY = panelY + 18, startX = 14;
 
-    // Row 1: Brick type + snap + movable + DEL + DONE
-    var types  = ['breakable_brick', 'circular_brick'];
-    var labels = ['BRICK', 'ROUND'];
-    var tColors = ['#4488ff', '#44ff88'];
-    var btnW = 52;
+    // SELECT / BUILD mode toggle
+    var modeW = 52;
+    var isSelect = this._editorSelectMode || false;
+    this._editorModeBtn = { x: startX, y: btnY, w: modeW, h: btnH };
+    ctx.fillStyle = isSelect ? 'rgba(255,180,0,0.20)' : 'rgba(0,50,100,0.40)';
+    ctx.beginPath(); ctx.roundRect(startX, btnY, modeW, btnH, 4); ctx.fill();
+    ctx.strokeStyle = isSelect ? '#ffcc00' : '#00aaff'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.roundRect(startX, btnY, modeW, btnH, 4); ctx.stroke();
+    ctx.fillStyle = isSelect ? '#ffcc00' : '#00ccff';
+    ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isSelect ? '✦ SELECT' : '+ BUILD', startX + modeW/2, btnY + btnH/2);
+
+    // Row 1: Brick type + snap + movable + DEL + CLEAR + DONE
+    var btnStartX2 = startX + modeW + 6;
+    var brickTypes2 = ['breakable_brick', 'circular_brick'];
+    var labels2 = ['BRICK', 'ROUND'];
+    var tColors2 = ['#4488ff', '#44ff88'];
+    var btnW = 46;
     this._editorTypeBtns = [];
-    for (var ti = 0; ti < types.length; ti++) {
-      var bx = startX + ti * (btnW + 5);
-      var active = this._editorBrickType === types[ti];
-      ctx.fillStyle = active ? tColors[ti] + '44' : 'rgba(0,15,40,0.8)';
-      ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.fill();
-      ctx.strokeStyle = active ? tColors[ti] : tColors[ti] + '66';
-      ctx.lineWidth = active ? 2 : 1;
-      ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.stroke();
-      ctx.fillStyle = active ? tColors[ti] : tColors[ti] + 'aa';
-      ctx.font = "bold 9px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(labels[ti], bx + btnW / 2, btnY + btnH / 2);
-      this._editorTypeBtns.push({ x: bx, y: btnY, w: btnW, h: btnH, type: types[ti] });
+    if (!isSelect) {
+      for (var ti = 0; ti < brickTypes2.length; ti++) {
+        var bx = btnStartX2 + ti * (btnW + 4);
+        var active = this._editorBrickType === brickTypes2[ti];
+        ctx.fillStyle = active ? tColors2[ti] + '44' : 'rgba(0,15,40,0.8)';
+        ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.fill();
+        ctx.strokeStyle = active ? tColors2[ti] : tColors2[ti] + '66';
+        ctx.lineWidth = active ? 2 : 1;
+        ctx.beginPath(); ctx.roundRect(bx, btnY, btnW, btnH, 4); ctx.stroke();
+        ctx.fillStyle = active ? tColors2[ti] : tColors2[ti] + 'aa';
+        ctx.font = "bold 8px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(labels2[ti], bx + btnW / 2, btnY + btnH / 2);
+        this._editorTypeBtns.push({ x: bx, y: btnY, w: btnW, h: btnH, type: brickTypes2[ti] });
+      }
     }
 
     // Snap selector
-    var snapX = startX + types.length * (btnW + 5) + 8;
-    var snapW = 48;
+    var snapX = btnStartX2 + (isSelect ? 0 : brickTypes2.length * (btnW + 4) + 6);
+    var snapW_new = 44;
+    var snapW = snapW_new;
     var snaps = [0, 15, 30, 45];
     var snapLabels = ['FREE', '15°', '30°', '45°'];
     this._editorSnapBtn = { x: snapX, y: btnY, w: snapW, h: btnH };
@@ -1718,6 +1826,17 @@ class Game {
     ctx.font = "bold 9px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('DEL', delX + delW / 2, btnY + btnH / 2);
+
+    // CLEAR ALL button
+    var clearX = W - 116;
+    this._editorClearBtn = { x: clearX, y: btnY, w: 48, h: btnH };
+    ctx.fillStyle = 'rgba(80,20,0,0.7)';
+    ctx.beginPath(); ctx.roundRect(clearX, btnY, 48, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(clearX, btnY, 48, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#ff8844'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('CLR ALL', clearX + 24, btnY + btnH / 2);
 
     // DONE button
     var doneX = W - 62;

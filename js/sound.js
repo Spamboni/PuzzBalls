@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1304;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1307;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -256,32 +256,47 @@ var Sound = (function() {
     var detune = (as.pitchScaling !== false) ? (1.0 - density) * 220 : 0;
 
     // Ball-specific sounds (§3.2)
+    var variant = (window.SoundVariants && window.SoundVariants[ballType]) || 0;
+
     switch (ballType) {
       case 'exploder':
-        playTone({ type: 'sine', freq: 90, freq2: 35, gain: vol * 2.0,
-                   attack: 0.001, decay: 0.18, duration: 0.22, detune: detune });
-        playNoise({ filterType: 'lowpass', filterFreq: 400, filterQ: 1.5,
-                    gain: vol * 0.8, duration: 0.08 });
+        if (variant === 4) { playTone({ type:'square', freq:200, freq2:80, gain:vol*1.6, attack:0.001, decay:0.12, duration:0.14, detune:detune }); break; }
+        if (variant === 5) { playTone({ type:'sine', freq:55, freq2:20, gain:vol*2.5, attack:0.001, decay:0.25, duration:0.28, detune:detune }); break; }
+        if (variant === 8) { playTone({ type:'sine', freq:300, freq2:600, gain:vol, attack:0.01, decay:0.3, duration:0.35 }); break; }
+        if (variant === 9) { playTone({ type:'sawtooth', freq:440, freq2:880, gain:vol*0.5, attack:0.001, decay:0.06, duration:0.08 }); break; }
+        playTone({ type: 'sine', freq: 90, freq2: 35, gain: vol * 2.0, attack: 0.001, decay: 0.18, duration: 0.22, detune: detune });
+        playNoise({ filterType: 'lowpass', filterFreq: 400, filterQ: 1.5, gain: vol * 0.8, duration: 0.08 });
         break;
       case 'sticky':
-        playTone({ type: 'sine', freq: 130, freq2: 55, gain: vol * 1.5,
-                   attack: 0.003, decay: 0.16, duration: 0.18, detune: detune });
+        if (variant === 1) { playTone({ type:'sine', freq:100, freq2:50, gain:vol*0.8, attack:0.005, decay:0.10, duration:0.12 }); break; }
+        if (variant === 8) { playTone({ type:'triangle', freq:180, freq2:360, gain:vol, attack:0.01, decay:0.2, duration:0.25 }); break; }
+        if (variant === 9) { playNoise({ filterType:'bandpass', filterFreq:200, filterQ:1, gain:vol*1.5, duration:0.12 }); break; }
+        playTone({ type: 'sine', freq: 130, freq2: 55, gain: vol * 1.5, attack: 0.003, decay: 0.16, duration: 0.18, detune: detune });
         break;
       case 'splitter':
-        playTone({ type: 'triangle', freq: 340, freq2: 200, gain: vol * 1.2,
-                   attack: 0.001, decay: 0.10, duration: 0.12, detune: detune });
-        playNoise({ filterType: 'highpass', filterFreq: 2800, filterQ: 1,
-                    gain: vol * 0.9, duration: 0.05 });
+        if (variant === 3) { playTone({ type:'sine', freq:800, freq2:1200, gain:vol*0.6, attack:0.001, decay:0.15, duration:0.18 }); break; }
+        if (variant === 8) { playTone({ type:'sine', freq:440, freq2:880, gain:vol, attack:0.005, decay:0.5, duration:0.55 }); break; }
+        if (variant === 9) { playNoise({ filterType:'highpass', filterFreq:5000, filterQ:2, gain:vol*0.8, duration:0.03 }); break; }
+        playTone({ type: 'triangle', freq: 340, freq2: 200, gain: vol * 1.2, attack: 0.001, decay: 0.10, duration: 0.12, detune: detune });
+        playNoise({ filterType: 'highpass', filterFreq: 2800, filterQ: 1, gain: vol * 0.9, duration: 0.05 });
         break;
       case 'gravity':
-        playTone({ type: 'sine', freq: 110, freq2: 65, gain: vol * 1.8,
-                   attack: 0.002, decay: 0.22, duration: 0.25, detune: detune });
+        if (variant === 4) { playTone({ type:'sine', freq:60, freq2:40, gain:vol*2, attack:0.01, decay:0.35, duration:0.4, detune:detune }); break; }
+        if (variant === 8) { playTone({ type:'sine', freq:55, freq2:110, gain:vol*1.5, attack:0.02, decay:0.8, duration:0.85 }); break; }
+        if (variant === 9) { playTone({ type:'sawtooth', freq:80, freq2:40, gain:vol*0.8, attack:0.001, decay:0.15, duration:0.18 }); break; }
+        playTone({ type: 'sine', freq: 110, freq2: 65, gain: vol * 1.8, attack: 0.002, decay: 0.22, duration: 0.25, detune: detune });
         break;
       default: // bouncer
-        playTone({ type: 'sine', freq: 200, freq2: 90, gain: vol * 1.4,
-                   attack: 0.001, decay: 0.12, duration: 0.14, detune: detune });
-        playNoise({ filterType: 'bandpass', filterFreq: 600 + speed * 25,
-                    filterQ: 2.5, gain: vol * 0.7, duration: 0.06 });
+        if (variant === 1) { playTone({ type:'sine', freq:120, freq2:60, gain:vol*0.7, attack:0.001, decay:0.08, duration:0.10 }); break; }
+        if (variant === 2) { playNoise({ filterType:'bandpass', filterFreq:1200, filterQ:3, gain:vol*1.2, duration:0.07 }); break; }
+        if (variant === 3) { playTone({ type:'sine', freq:700, freq2:500, gain:vol*0.5, attack:0.001, decay:0.2, duration:0.22 }); break; }
+        if (variant === 4) { playTone({ type:'square', freq:150, freq2:80, gain:vol*0.9, attack:0.001, decay:0.08, duration:0.10 }); break; }
+        if (variant === 6) { playTone({ type:'sine', freq:180, freq2:90, gain:vol*1.2, attack:0.001, decay:0.18, duration:0.22 }); break; }
+        if (variant === 7) { playNoise({ filterType:'bandpass', filterFreq:400, filterQ:1, gain:vol*0.8, duration:0.06 }); break; }
+        if (variant === 8) { playTone({ type:'sine', freq:440, freq2:880, gain:vol*0.4, attack:0.001, decay:0.5, duration:0.55 }); break; }
+        if (variant === 9) { playTone({ type:'sawtooth', freq:300, freq2:600, gain:vol*0.3, attack:0.001, decay:0.04, duration:0.05 }); break; }
+        playTone({ type: 'sine', freq: 200, freq2: 90, gain: vol * 1.4, attack: 0.001, decay: 0.12, duration: 0.14, detune: detune });
+        playNoise({ filterType: 'bandpass', filterFreq: 600 + speed * 25, filterQ: 2.5, gain: vol * 0.7, duration: 0.06 });
     }
   }
 
@@ -435,5 +450,32 @@ window.Sound = Sound;
     g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
     osc.connect(g2); g2.connect(c.destination);
     osc.start(now); osc.stop(now + 0.14);
+  };
+})();
+
+// ── Brick-on-brick collision sound ────────────────────────────────────────────
+(function() {
+  var S = window.Sound;
+  S.brickOnBrick = function(speed) {
+    if (!S.getCtx()) return;
+    var c   = S.getCtx();
+    var now = c.currentTime;
+    var vol = Math.min(0.08 + speed * 0.04, 0.28);
+    // Low stony thud
+    var osc = c.createOscillator(); var g = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(75, now);
+    osc.frequency.exponentialRampToValueAtTime(28, now + 0.13);
+    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+    osc.connect(g); g.connect(c.destination); osc.start(now); osc.stop(now + 0.15);
+    // Gritty crunch layer
+    var bufSize = Math.ceil(c.sampleRate * 0.08);
+    var buf = c.createBuffer(1, bufSize, c.sampleRate);
+    var d   = buf.getChannelData(0);
+    for (var i2 = 0; i2 < bufSize; i2++) d[i2] = (Math.random()*2-1) * Math.exp(-i2/(bufSize*0.18));
+    var src = c.createBufferSource(); src.buffer = buf;
+    var flt = c.createBiquadFilter(); flt.type = 'bandpass'; flt.frequency.value = 550; flt.Q.value = 2.5;
+    var g2  = c.createGain(); g2.gain.setValueAtTime(vol*0.55, now); g2.gain.exponentialRampToValueAtTime(0.0001, now+0.09);
+    src.connect(flt); flt.connect(g2); g2.connect(c.destination); src.start(now); src.stop(now+0.09);
   };
 })();

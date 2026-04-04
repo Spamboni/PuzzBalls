@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1305;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1307;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -197,7 +197,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.05</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.07</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -220,10 +220,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.05 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.07 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1305) {
-            verEl.textContent = 'v13.05 ✓';
+          } else if (loaded === 1307) {
+            verEl.textContent = 'v13.07 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -243,12 +243,13 @@ class UI {
         pane.appendChild(instrRow);
 
       } else if (t.id === 'audio') {
-        // Audio settings (§3.3)
         window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
+        window.SoundVariants  = window.SoundVariants  || {};
+
         _addSlider(pane,'Master Volume','AudioSettings','masterVol',0,1.0,0.05,function(v){return Math.round(v*100)+'%';});
         _addSlider(pane,'Ball Hit Volume','AudioSettings','impactVol',0,2.0,0.1,function(v){return Math.round(v*100)+'%';});
         _addSlider(pane,'Explosion Vol','AudioSettings','explosionVol',0,2.0,0.1,function(v){return Math.round(v*100)+'%';});
-        // Toggle rows
+
         ['impactScaling','pitchScaling'].forEach(function(key) {
           var labels = { impactScaling: 'Impact Vol Scaling', pitchScaling: 'Pitch by Density' };
           var row = _el('div','slider-row');
@@ -262,6 +263,55 @@ class UI {
           }
           makeToggle(key, btn);
           row.appendChild(btn); pane.appendChild(row);
+        });
+
+        // ── Sound variant picker ─────────────────────────────────────────────
+        var divider = _el('div','settings-divider'); divider.style.margin = '8px 0 4px'; pane.appendChild(divider);
+
+        var soundHdr = _el('div','');
+        soundHdr.textContent = 'SOUND VARIANTS';
+        soundHdr.style.cssText = 'color:#00ffee;font-size:10px;font-weight:bold;padding:2px 0 6px;';
+        pane.appendChild(soundHdr);
+
+        var soundItems = [
+          { key:'bouncer',  label:'⚪ Bouncer hit',   color:'#4488ff' },
+          { key:'exploder', label:'💥 Exploder hit',  color:'#ff6600' },
+          { key:'sticky',   label:'🟢 Sticky hit',   color:'#44ff88' },
+          { key:'splitter', label:'🟣 Splitter hit',  color:'#ff44ff' },
+          { key:'gravity',  label:'🔵 Gravity hit',  color:'#00ffee' },
+          { key:'explosion',label:'💣 Explosion',    color:'#ff4400' },
+          { key:'brick_hit',label:'🧱 Brick hit',    color:'#ffaa44' },
+          { key:'brick_brick',label:'🧱🧱 Brick-on-brick', color:'#cc8833' },
+        ];
+
+        var variantNames = [
+          'Default', 'Soft thud', 'Hard crack', 'Glass ping',
+          'Metallic clank', 'Deep boom', 'Hollow knock', 'Plastic pop',
+          '🎵 Boing!', '💫 Zap!'
+        ];
+
+        soundItems.forEach(function(item) {
+          var row2 = _el('div','slider-row');
+          row2.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:3px 4px;';
+          var lbl2 = _el('span','');
+          lbl2.textContent = item.label;
+          lbl2.style.cssText = 'font-size:9px;color:' + item.color + ';flex:1;';
+          row2.appendChild(lbl2);
+
+          var sel2 = document.createElement('select');
+          sel2.style.cssText = 'background:rgba(0,20,50,0.9);color:#aaddff;border:1px solid #336;border-radius:4px;font-size:9px;padding:2px 4px;max-width:110px;';
+          variantNames.forEach(function(vn, vi) {
+            var opt2 = document.createElement('option');
+            opt2.value = vi; opt2.textContent = vn;
+            sel2.appendChild(opt2);
+          });
+          var cur = window.SoundVariants[item.key] || 0;
+          sel2.value = cur;
+          sel2.addEventListener('change', function() {
+            window.SoundVariants[item.key] = parseInt(sel2.value);
+          });
+          row2.appendChild(sel2);
+          pane.appendChild(row2);
         });
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
