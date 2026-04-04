@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1317;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1320;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -356,6 +356,9 @@ class Game {
             { id:'decel',  key:'_decel',     defKey:'decel',     step:0.01, min:0.50, max:0.99, invert:true  },
             { id:'rotspd', key:'_rotSpeed',  defKey:'rotSpeed',  step:0.05, min:0.0,  max:1.0,  invert:false },
             { id:'rotdec', key:'_rotDecel',  defKey:'rotDecel',  step:0.01, min:0.50, max:0.99, invert:true  },
+            { id:'blen',   key:'_blen',      defKey:'rectW',     step:5,    min:5,    max:900,  invert:false, isDim:true },
+            { id:'bwid',   key:'_bwid',      defKey:'rectH',     step:1,    min:2,    max:200,  invert:false, isDim:true },
+            { id:'rot',    key:'_rotDeg',    defKey:null,        step:1,    min:-180, max:180,  invert:false, isRot:true },
           ];
           var movNow = self._editorSelected ? (self._editorSelected._movable||false) : (self._editorMovable||false);
           for (var sdi = 0; sdi < sliderDefs.length; sdi++) {
@@ -508,6 +511,20 @@ class Game {
             self._editorNotePopup = !self._editorNotePopup;
             if (!self._editorSelected._noteConfig) self._editorSelected._noteConfig = { note:'C', octave:4, timbre:'marimba' };
             return;
+          }
+        }
+        // GRID toggle
+        if (self._editorGridBtn) {
+          var gb = self._editorGridBtn;
+          if (pos.x >= gb.x && pos.x <= gb.x+gb.w && pos.y >= gb.y && pos.y <= gb.y+gb.h) {
+            window._showEditorGrid = !window._showEditorGrid; return;
+          }
+        }
+        // SNAP-GRID toggle
+        if (self._editorSnapGridBtn) {
+          var sgb = self._editorSnapGridBtn;
+          if (pos.x >= sgb.x && pos.x <= sgb.x+sgb.w && pos.y >= sgb.y && pos.y <= sgb.y+sgb.h) {
+            window._snapToGrid = !window._snapToGrid; return;
           }
         }
         // Snap selector cycle
@@ -1833,52 +1850,146 @@ class Game {
       var by    = btnStartY + bi * (btnH + 4);
       var btype = btnTypes[bi];
       var bcol  = btnColors[bi];
-      var alpha = atMax ? 0.3 : 0.9;
+      var alpha = atMax ? 0.28 : 1.0;
+      var pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.055 + bi * 1.3);
 
       this._chuteButtonRects.push({ x: btnX, y: by, w: btnW, h: btnH, type: btype });
 
-      // Pill background
-      ctx.fillStyle = 'rgba(0,10,28,0.80)';
-      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 7); ctx.fill();
+      // Parse hex color to rgb for gradients
+      var r = parseInt(bcol.slice(1,3),16);
+      var g = parseInt(bcol.slice(3,5),16);
+      var b = parseInt(bcol.slice(5,7),16);
 
-      // Glowing border
-      var hexAlpha = Math.round(alpha * 255).toString(16).padStart(2,'0');
-      ctx.strokeStyle = bcol + hexAlpha;
+      // ── Deep background with colour tint ──────────────────────────────────
+      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 8);
+      var bgGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnH);
+      bgGrad.addColorStop(0,   'rgba(' + r*0.18 + ',' + g*0.18 + ',' + b*0.18 + ',' + (alpha * 0.95) + ')');
+      bgGrad.addColorStop(0.5, 'rgba(0,8,22,' + (alpha * 0.92) + ')');
+      bgGrad.addColorStop(1,   'rgba(' + r*0.12 + ',' + g*0.12 + ',' + b*0.12 + ',' + (alpha * 0.90) + ')');
+      ctx.fillStyle = bgGrad; ctx.fill();
+
+      // ── Outer glow halo (behind border) ───────────────────────────────────
+      if (!atMax) {
+        ctx.shadowColor = 'rgba(' + r + ',' + g + ',' + b + ',' + (0.5 + pulse * 0.3) + ')';
+        ctx.shadowBlur  = 10 + pulse * 6;
+      }
+
+      // ── Neon border ────────────────────────────────────────────────────────
+      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 8);
+      var borderGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnH);
+      borderGrad.addColorStop(0,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.9) + ')');
+      borderGrad.addColorStop(0.5, 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.55) + ')');
+      borderGrad.addColorStop(1,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.9) + ')');
+      ctx.strokeStyle = borderGrad;
       ctx.lineWidth   = 1.8;
-      ctx.shadowColor = bcol;
-      ctx.shadowBlur  = atMax ? 2 : 10;
-      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 7); ctx.stroke();
+      ctx.stroke();
       ctx.shadowBlur  = 0;
 
-      // Dot
-      var dotR = 7, dotX = btnX + dotR + 3, dotY = by + btnH / 2;
-      ctx.beginPath(); ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = bcol + hexAlpha; ctx.fill();
+      // ── Top highlight bevel (makes it look raised) ─────────────────────────
+      ctx.beginPath(); ctx.roundRect(btnX + 1.5, by + 1.5, btnW - 3, btnH * 0.45, [7,7,0,0]);
+      var hiliteGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnH * 0.45);
+      hiliteGrad.addColorStop(0,   'rgba(255,255,255,' + (alpha * 0.12) + ')');
+      hiliteGrad.addColorStop(1,   'rgba(255,255,255,0)');
+      ctx.fillStyle = hiliteGrad; ctx.fill();
 
-      // Label (abbreviated)
+      // ── Inner colour fill (gives body of the button colour depth) ──────────
+      ctx.beginPath(); ctx.roundRect(btnX + 2, by + 2, btnW - 4, btnH - 4, 6);
+      var fillGrad = ctx.createLinearGradient(btnX, by, btnX + btnW, by + btnH);
+      fillGrad.addColorStop(0,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.08) + ')');
+      fillGrad.addColorStop(0.5, 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.14) + ')');
+      fillGrad.addColorStop(1,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.05) + ')');
+      ctx.fillStyle = fillGrad; ctx.fill();
+
+      // ── Ball orb ──────────────────────────────────────────────────────────
+      var dotR = 8, dotX = btnX + dotR + 5, dotY = by + btnH / 2;
+
+      // Orb glow
+      if (!atMax) {
+        ctx.shadowColor = bcol;
+        ctx.shadowBlur  = 10 + pulse * 8;
+      }
+      // Orb fill — radial gradient for 3D sphere look
+      var orbGrad = ctx.createRadialGradient(
+        dotX - dotR * 0.3, dotY - dotR * 0.3, dotR * 0.05,
+        dotX, dotY, dotR
+      );
+      orbGrad.addColorStop(0,   'rgba(255,255,255,' + (alpha * 0.85) + ')');
+      orbGrad.addColorStop(0.25,'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.95) + ')');
+      orbGrad.addColorStop(0.7, 'rgba(' + Math.round(r*0.5) + ',' + Math.round(g*0.5) + ',' + Math.round(b*0.5) + ',' + (alpha * 0.90) + ')');
+      orbGrad.addColorStop(1,   'rgba(0,0,0,' + (alpha * 0.55) + ')');
+      ctx.beginPath(); ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = orbGrad; ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Orb rim
+      ctx.beginPath(); ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.7) + ')';
+      ctx.lineWidth = 0.8; ctx.stroke();
+
+      // ── Label ──────────────────────────────────────────────────────────────
       var labels = {bouncer:'BNC',exploder:'EXP',sticky:'STK',splitter:'SPL',gravity:'GRV'};
-      ctx.fillStyle    = 'rgba(210,235,255,' + alpha + ')';
-      ctx.font         = "bold 9px 'Share Tech Mono', monospace";
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(labels[btype] || btype.slice(0,3).toUpperCase(), dotX + dotR + 4, dotY);
+      var lblText = labels[btype] || btype.slice(0,3).toUpperCase();
+
+      // Label shadow for depth
+      ctx.fillStyle = 'rgba(0,0,0,' + (alpha * 0.5) + ')';
+      ctx.font = "bold 10px 'Share Tech Mono', monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(lblText, dotX + dotR + 5 + 1, dotY + 1);
+
+      // Label main
+      var lblGrad = ctx.createLinearGradient(0, by, 0, by + btnH);
+      lblGrad.addColorStop(0, 'rgba(220,240,255,' + alpha + ')');
+      lblGrad.addColorStop(1, 'rgba(' + Math.round(r*0.8+100) + ',' + Math.round(g*0.8+100) + ',' + Math.round(b*0.8+100) + ',' + alpha + ')');
+      ctx.fillStyle = lblGrad;
+      ctx.fillText(lblText, dotX + dotR + 5, dotY);
     }
 
-    // Delete button
+    // Delete button — rich style matching the ball buttons
     var delY      = btnStartY + 5 * (btnH + 4) + 4;
     var delActive = this._deleteMode;
+    var delPulse  = 0.5 + 0.5 * Math.sin(this.frame * 0.08);
     this._chuteDeleteRect = { x: btnX, y: delY, w: btnW, h: btnH };
-    ctx.fillStyle = delActive ? 'rgba(200,20,20,0.40)' : 'rgba(0,10,28,0.80)';
-    ctx.beginPath(); ctx.roundRect(btnX, delY, btnW, btnH, 7); ctx.fill();
-    ctx.strokeStyle = delActive ? '#ff3333' : 'rgba(255,60,60,0.55)';
-    ctx.lineWidth = 1.8; ctx.shadowColor = '#ff2222';
-    ctx.shadowBlur = delActive ? 12 : 3;
-    ctx.beginPath(); ctx.roundRect(btnX, delY, btnW, btnH, 7); ctx.stroke();
+
+    // Background
+    ctx.beginPath(); ctx.roundRect(btnX, delY, btnW, btnH, 8);
+    var delBg = ctx.createLinearGradient(btnX, delY, btnX, delY + btnH);
+    delBg.addColorStop(0, delActive ? 'rgba(80,5,5,0.95)'  : 'rgba(35,4,4,0.90)');
+    delBg.addColorStop(1, delActive ? 'rgba(40,2,2,0.95)'  : 'rgba(10,2,2,0.88)');
+    ctx.fillStyle = delBg; ctx.fill();
+
+    // Glow + border
+    ctx.shadowColor = delActive ? '#ff2200' : '#cc2200';
+    ctx.shadowBlur  = delActive ? 14 + delPulse * 8 : 5;
+    ctx.beginPath(); ctx.roundRect(btnX, delY, btnW, btnH, 8);
+    var delBdr = ctx.createLinearGradient(btnX, delY, btnX, delY + btnH);
+    delBdr.addColorStop(0, delActive ? 'rgba(255,80,80,0.95)'  : 'rgba(220,50,50,0.60)');
+    delBdr.addColorStop(1, delActive ? 'rgba(255,30,30,0.95)'  : 'rgba(180,30,30,0.60)');
+    ctx.strokeStyle = delBdr; ctx.lineWidth = 1.8; ctx.stroke();
     ctx.shadowBlur = 0;
-    ctx.fillStyle    = delActive ? '#ff8888' : 'rgba(255,100,100,0.8)';
-    ctx.font         = "bold 9px 'Share Tech Mono', monospace";
-    ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(delActive ? '✕ TAP BALL' : '✕ DEL', btnX + btnW / 2, delY + btnH / 2);
+
+    // Top bevel
+    ctx.beginPath(); ctx.roundRect(btnX + 1.5, delY + 1.5, btnW - 3, btnH * 0.45, [7,7,0,0]);
+    var delHilite = ctx.createLinearGradient(btnX, delY, btnX, delY + btnH * 0.45);
+    delHilite.addColorStop(0, 'rgba(255,255,255,0.08)');
+    delHilite.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = delHilite; ctx.fill();
+
+    // ✕ icon as glowing orb
+    var delOrbX = btnX + 11, delOrbY = delY + btnH / 2;
+    var delOrb  = ctx.createRadialGradient(delOrbX - 2, delOrbY - 2, 1, delOrbX, delOrbY, 7);
+    delOrb.addColorStop(0, delActive ? 'rgba(255,200,200,0.95)' : 'rgba(255,120,120,0.8)');
+    delOrb.addColorStop(0.5, delActive ? 'rgba(255,60,60,0.90)' : 'rgba(200,40,40,0.7)');
+    delOrb.addColorStop(1,   'rgba(80,0,0,0.5)');
+    if (!atMax) { ctx.shadowColor = '#ff2200'; ctx.shadowBlur = delActive ? 12 : 6; }
+    ctx.beginPath(); ctx.arc(delOrbX, delOrbY, 7, 0, Math.PI * 2);
+    ctx.fillStyle = delOrb; ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Label
+    ctx.fillStyle = delActive ? 'rgba(255,160,160,0.95)' : 'rgba(220,100,100,0.85)';
+    ctx.font = "bold 9px 'Share Tech Mono', monospace";
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(delActive ? 'TAP BALL' : 'DEL', delOrbX + 10, delOrbY);
 
     // ── Balls in chute ───────────────────────────────────────────────────────
     if (this._chuteActive) {
@@ -1917,6 +2028,8 @@ class Game {
     }
 
     this._drawFloor(floorY);
+    // Draw grid overlay when editor is open and grid is enabled
+    if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     this._drawChute();   // chute rendered above floor, below balls
     this.barrier.draw(ctx);
     this.target.draw(ctx);
@@ -2010,6 +2123,21 @@ class Game {
     this._editorDragOffX    = 0;
     this._editorDragOffY    = 0;
     this._showBrickSettings = true;
+    // Placement sound — soft thud
+    if (window.Sound && Sound.getCtx) {
+      var c = Sound.getCtx();
+      if (c) {
+        var now = c.currentTime;
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine'; o.frequency.setValueAtTime(180, now); o.frequency.exponentialRampToValueAtTime(80, now + 0.12);
+        g.gain.setValueAtTime(0.18, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+        o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.15);
+        var o2 = c.createOscillator(), g2 = c.createGain();
+        o2.type = 'triangle'; o2.frequency.value = 320;
+        g2.gain.setValueAtTime(0.08, now); g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+        o2.connect(g2); g2.connect(c.destination); o2.start(now); o2.stop(now + 0.07);
+      }
+    }
   }
 
   // Multi-touch: pinch to scale, two-finger rotate
@@ -2031,10 +2159,10 @@ class Game {
 
       // Scale
       if (sb instanceof CircularBrick) {
-        sb.r = Math.max(8, Math.min(80, (this._editorPinchStart.r || sb.r) + ds * 0.5));
+        sb.r = Math.max(8, Math.min(200, (this._editorPinchStart.r || sb.r) + ds * 0.5));
         sb.w = sb.h = sb.r * 2;
       } else {
-        var newW = Math.max(20, Math.min(200, (this._editorPinchStart.w || sb.w) + ds));
+        var newW = Math.max(10, Math.min(900, (this._editorPinchStart.w || sb.w) + ds));
         sb.w = newW;
       }
 
@@ -2067,18 +2195,47 @@ class Game {
       // Inverted sliders: display shows "slowness", actual value = max - displayVal + min
       var val = sl.invert ? (sl.max + sl.min - rawVal) : rawVal;
       val = Math.max(sl.min, Math.min(sl.max, val));
-      this._setSliderVal(sl.key, sl.defKey, val);
+      this._setSliderVal(sl.key, sl.defKey, val, sl);
       return;
     }
     if (!this._editorDragging) return;
-    this._editorDragging.x = pos.x - (this._editorDragOffX || 0);
-    // Clamp brick above floor
+    var nx = pos.x - (this._editorDragOffX || 0);
+    var ny = pos.y - (this._editorDragOffY || 0);
+    // Snap to grid if enabled
+    if (window._snapToGrid) {
+      var gs = window._gridSize || 20;
+      nx = Math.round(nx / gs) * gs;
+      ny = Math.round(ny / gs) * gs;
+    }
+    this._editorDragging.x = nx;
     var maxBrickY = this.floorY() - (this._editorDragging.h || this._editorDragging.r || 15) / 2 - 4;
-    this._editorDragging.y = Math.min(pos.y - (this._editorDragOffY || 0), maxBrickY);
+    this._editorDragging.y = Math.min(ny, maxBrickY);
   }
 
-  _setSliderVal(key, defKey, val) {
+  _setSliderVal(key, defKey, val, extra) {
     var sb = this._editorSelected;
+    if (extra && extra.isDim) {
+      // Dimension slider — apply directly to brick w/h
+      if (sb) {
+        if (extra.id === 'blen') { sb.w = val; }
+        else if (extra.id === 'bwid') { sb.h = val; }
+      } else {
+        window.BrickDefaults = window.BrickDefaults || {};
+        if (defKey) window.BrickDefaults[defKey] = val;
+      }
+      return;
+    }
+    if (extra && extra.isRot) {
+      // Rotation slider — apply snap if enabled
+      var snapDeg = this._editorSnapDeg || 0;
+      var radVal  = val * Math.PI / 180;
+      if (snapDeg > 0) {
+        var snapRad = snapDeg * Math.PI / 180;
+        radVal = Math.round(radVal / snapRad) * snapRad;
+      }
+      if (sb) sb._rotation = radVal;
+      return;
+    }
     if (sb) {
       sb[key] = val;
       if (key === 'maxHealth') { sb.health = val; sb.maxHealth = val; }
@@ -2096,7 +2253,29 @@ class Game {
   _editorDeleteSelected() {
     if (!this._editorSelected) return;
     var idx = this.bricks.indexOf(this._editorSelected);
-    if (idx >= 0) this.bricks.splice(idx, 1);
+    if (idx >= 0) {
+      this.bricks.splice(idx, 1);
+      // Deletion sound — descending crack
+      if (window.Sound && Sound.getCtx) {
+        var c = Sound.getCtx();
+        if (c) {
+          var now = c.currentTime;
+          var o = c.createOscillator(), g = c.createGain();
+          o.type = 'sawtooth'; o.frequency.setValueAtTime(400, now); o.frequency.exponentialRampToValueAtTime(60, now + 0.18);
+          g.gain.setValueAtTime(0.15, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+          o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.20);
+          // Short noise burst
+          var bufLen = Math.ceil(c.sampleRate * 0.06);
+          var buf = c.createBuffer(1, bufLen, c.sampleRate);
+          var d = buf.getChannelData(0);
+          for (var ii = 0; ii < bufLen; ii++) d[ii] = (Math.random()*2-1) * Math.exp(-ii/(bufLen*0.15));
+          var src = c.createBufferSource(); src.buffer = buf;
+          var flt = c.createBiquadFilter(); flt.type = 'bandpass'; flt.frequency.value = 800; flt.Q.value = 1.5;
+          var g3 = c.createGain(); g3.gain.setValueAtTime(0.12, now); g3.gain.exponentialRampToValueAtTime(0.0001, now+0.07);
+          src.connect(flt); flt.connect(g3); g3.connect(c.destination); src.start(now); src.stop(now+0.07);
+        }
+      }
+    }
     this._editorSelected = null;
   }
 
@@ -2294,105 +2473,158 @@ class Game {
       };
     };
 
-    var HPval   = (sb2 && sb2.maxHealth  !== undefined) ? sb2.maxHealth  : (bd2.rectHP    || 100);
-    var REGval  = (sb2 && sb2.regenAfter !== undefined) ? sb2.regenAfter : (bd2.rectRegen || 2000);
-    var DENSval = (sb2 && sb2._density   !== undefined) ? sb2._density   : (bd2.density   || 1.0);
-    var DISTval = (sb2 && sb2._maxTravel !== undefined) ? sb2._maxTravel : (bd2.maxTravel || 60);
-    var HPinf   = (sb2 && sb2._invincible) || false;
+    // ── Values from selected brick or defaults ────────────────────────────────
+    var HPval    = (sb2 && sb2.maxHealth   !== undefined) ? sb2.maxHealth   : (bd2.rectHP    || 100);
+    var REGval   = (sb2 && sb2.regenAfter  !== undefined) ? sb2.regenAfter  : (bd2.rectRegen || 2000);
+    var DENSval  = (sb2 && sb2._density    !== undefined) ? sb2._density    : (bd2.density   || 1.0);
+    var DISTval  = (sb2 && sb2._maxTravel  !== undefined) ? sb2._maxTravel  : (bd2.maxTravel || 60);
+    var DECELval = (sb2 && sb2._decel      !== undefined) ? sb2._decel      : (bd2.decel     || 0.88);
+    var ROTSPDval= (sb2 && sb2._rotSpeed   !== undefined) ? sb2._rotSpeed   : (bd2.rotSpeed  || 0.5);
+    var ROTDECval= (sb2 && sb2._rotDecel   !== undefined) ? sb2._rotDecel   : (bd2.rotDecel  || 0.88);
+    var HPinf    = (sb2 && sb2._invincible) || false;
+    var noRegen  = (sb2 && sb2._noRegen)    || false;
+    var LENval   = sb2 ? (sb2.w || sb2.r * 2 || 70) : (bd2.rectW || 70);
+    var WIDval   = sb2 ? (sb2.h || sb2.r * 2 || 22) : (bd2.rectH || 22);
+    var ROTval   = sb2 ? ((sb2._rotation || 0) * 180 / Math.PI) : 0;
+    // Normalise rotation to [-180, 180]
+    while (ROTval >  180) ROTval -= 360;
+    while (ROTval < -180) ROTval += 360;
 
-    this._editorSliders = {};
-    // Row A: HP (left half) | REGEN (right half)
-    this._editorSliders.hp    = drawSlider('HP',    HPval,   10, 400, true,  HPinf,       false,       padding,          row2Y, halfW);
-    var noRegen = (sb2 && sb2._noRegen) || false;
-    this._editorSliders.regen = drawSlider('REGEN', noRegen ? 0 : Math.max(200,REGval), 200, 10000, true, noRegen, false, padding + halfW, row2Y, halfW);
-    // Row B: DENS (left half) | DIST (right half) — grayed unless movable
-    var DECELval   = (sb2 && sb2._decel    !== undefined) ? sb2._decel    : (bd2.decel    || 0.88);
-    var ROTSPDval  = (sb2 && sb2._rotSpeed  !== undefined) ? sb2._rotSpeed  : (bd2.rotSpeed  || 0.5);
-    var ROTDECval  = (sb2 && sb2._rotDecel  !== undefined) ? sb2._rotDecel  : (bd2.rotDecel  || 0.88);
-    var row3b      = row3Y + sliderRowH + 5;
-    var thirdW     = Math.floor((W - 16) / 3);
-    var halfW2     = Math.floor((W - 16) / 2);
-    // Row B: DENS | DIST | DECEL (movement)  — grayed when STAT
-    this._editorSliders.dens  = drawSlider('DENS',  DENSval,  0.5, 5.0,  false, false, !movActive2, padding,               row3Y, thirdW);
-    this._editorSliders.dist  = drawSlider('DIST',  DISTval,  0,   900,  false, false, !movActive2, padding + thirdW,      row3Y, thirdW);
-    // Invert DECEL display: low value = slow stop (far travel), high = fast stop
-    this._editorSliders.decel = drawSlider('STOP',  1 - DECELval, 0.01, 0.5, false, false, !movActive2, padding + thirdW * 2, row3Y, thirdW);
-    // Row C: ROT SPEED | ROT STOP — grayed when STAT
-    this._editorSliders.rotspd = drawSlider('RSPIN', ROTSPDval, 0.0, 1.0, false, false, !movActive2, padding,          row3b, halfW2);
-    this._editorSliders.rotdec = drawSlider('RSTOP', 1 - ROTDECval, 0.01, 0.5, false, false, !movActive2, padding + halfW2, row3b, halfW2);
-
-    // Row 4: MOV | ↔ROT | PIVOT (L/C/R) | 🎵  — calculate transOn3 FIRST
-    var row4Y = row3b + sliderRowH + 6;
     var transOn3 = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
 
-    // MOV toggle
-    var movInX = padding, movW3 = 48;
-    var movActive3 = movActive2;
-    this._editorMovInlineRect = { x: movInX, y: row4Y, w: movW3, h: 20 };
-    ctx.fillStyle = movActive3 ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
-    ctx.beginPath(); ctx.roundRect(movInX, row4Y, movW3, 20, 3); ctx.fill();
-    ctx.strokeStyle = movActive3 ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.roundRect(movInX, row4Y, movW3, 20, 3); ctx.stroke();
-    ctx.fillStyle = movActive3 ? '#ffcc44' : '#668899';
-    ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(movActive3 ? '● MOV' : '■ STAT', movInX + movW3/2, row4Y + 10);
+    // ── ROW 2: MOV | ↔ROT | PIVOT 3×3 | 🎵 | GRID | SNAP-GRID ─────────────
+    var row2Y = btnY + btnH + 8;
+    var rH2   = 22;
 
-    // ↔ROT toggle — BEFORE pivot so transOn3 is available
-    var transX3 = movInX + movW3 + 6;
-    this._editorTransRect = { x: transX3, y: row4Y, w: 40, h: 20 };
+    // MOV
+    var movInX = padding, movW3 = 46;
+    this._editorMovInlineRect = { x: movInX, y: row2Y, w: movW3, h: rH2 };
+    ctx.fillStyle = movActive2 ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
+    ctx.beginPath(); ctx.roundRect(movInX, row2Y, movW3, rH2, 3); ctx.fill();
+    ctx.strokeStyle = movActive2 ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect(movInX, row2Y, movW3, rH2, 3); ctx.stroke();
+    ctx.fillStyle = movActive2 ? '#ffcc44' : '#668899';
+    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(movActive2 ? '● MOV' : '■ STAT', movInX + movW3/2, row2Y + rH2/2);
+
+    // ↔ROT
+    var transX3 = movInX + movW3 + 4;
+    this._editorTransRect = { x: transX3, y: row2Y, w: 40, h: rH2 };
     ctx.fillStyle = transOn3 ? 'rgba(0,200,100,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 40, 20, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(transX3, row2Y, 40, rH2, 3); ctx.fill();
     ctx.strokeStyle = transOn3 ? '#00ff88' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 40, 20, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(transX3, row2Y, 40, rH2, 3); ctx.stroke();
     ctx.fillStyle = transOn3 ? '#00ff88' : '#445566';
     ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(transOn3 ? '↔ROT' : '⊕ROT', transX3 + 20, row4Y + 10);
+    ctx.fillText(transOn3 ? '↔ROT' : '⊕ROT', transX3 + 20, row2Y + rH2/2);
 
-    // PIVOT buttons — active when ↔ROT (fixed-pivot spin) is ON
+    // PIVOT 3×3 grid (col=L/C/R, row=TOP/MID/BOT)
     var pivX3 = transX3 + 44;
-    var pivots3 = ['L', 'C', 'R'], pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
-    var curPivot3 = sb2 ? (sb2._pivot || 'C') : (this._editorPivot || 'C');
-    var pivEnabled = transOn3;  // pivot only matters when fixed-pivot spinning
+    var pivCols = ['L','C','R'], pivRows = ['T','M','B'];
+    var pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
+    var curPiv3 = sb2 ? (sb2._pivot || 'CM') : (this._editorPivot || 'CM');
+    var pivEnabled = transOn3;
     this._editorPivotRects = [];
-    var pW3 = 24;
-    for (var pi3 = 0; pi3 < pivots3.length; pi3++) {
-      var px3 = pivX3 + pi3 * (pW3 + 2);
-      var pAct = pivEnabled && curPivot3 === pivots3[pi3];
-      ctx.globalAlpha = pivEnabled ? 1.0 : 0.28;
-      ctx.fillStyle = pAct ? pivColors3[pi3] + '44' : 'rgba(0,10,30,0.6)';
-      ctx.beginPath(); ctx.roundRect(px3, row4Y, pW3, 20, 3); ctx.fill();
-      ctx.strokeStyle = pAct ? pivColors3[pi3] : '#334455'; ctx.lineWidth = pAct ? 1.8 : 0.8;
-      ctx.beginPath(); ctx.roundRect(px3, row4Y, pW3, 20, 3); ctx.stroke();
-      ctx.fillStyle = pAct ? pivColors3[pi3] : '#445566';
-      ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(pivots3[pi3], px3 + pW3/2, row4Y + 10);
-      ctx.globalAlpha = 1.0;
-      this._editorPivotRects.push({ x: px3, y: row4Y, w: pW3, h: 20, val: pivots3[pi3], enabled: pivEnabled });
+    var pW9 = 18, pG9 = 2;
+    for (var pc = 0; pc < 3; pc++) {
+      for (var pr = 0; pr < 3; pr++) {
+        var pivKey = pivCols[pc] + pivRows[pr];
+        var px9 = pivX3 + pc * (pW9 + pG9);
+        var py9 = row2Y + pr * (pW9 * 0.55 + pG9);
+        var pAct9 = pivEnabled && curPiv3 === pivKey;
+        ctx.globalAlpha = pivEnabled ? 1.0 : 0.28;
+        ctx.fillStyle = pAct9 ? pivColors3[pc] + '44' : 'rgba(0,10,30,0.6)';
+        ctx.beginPath(); ctx.roundRect(px9, py9, pW9, pW9 * 0.55, 2); ctx.fill();
+        ctx.strokeStyle = pAct9 ? pivColors3[pc] : '#334455'; ctx.lineWidth = pAct9 ? 1.5 : 0.6;
+        ctx.beginPath(); ctx.roundRect(px9, py9, pW9, pW9 * 0.55, 2); ctx.stroke();
+        // Center dot if active
+        if (pAct9) {
+          ctx.fillStyle = pivColors3[pc];
+          ctx.beginPath(); ctx.arc(px9 + pW9/2, py9 + pW9*0.275, 2, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+        this._editorPivotRects.push({ x: px9, y: py9, w: pW9, h: pW9*0.55, val: pivKey, enabled: pivEnabled });
+      }
     }
 
-    // 🎵 Note button — opens note picker popup
-    var noteX = pivX3 + pivots3.length * (pW3 + 2) + 8;
+    // 🎵 Note button
+    var noteX = pivX3 + 3 * (pW9 + pG9) + 6;
     var noteOn = sb2 && sb2._noteConfig;
-    this._editorNoteBtn = { x: noteX, y: row4Y, w: 28, h: 20 };
+    this._editorNoteBtn = { x: noteX, y: row2Y, w: 26, h: rH2 };
     ctx.fillStyle = noteOn ? 'rgba(180,50,255,0.30)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(noteX, row4Y, 28, 20, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(noteX, row2Y, 26, rH2, 3); ctx.fill();
     ctx.strokeStyle = noteOn ? '#cc44ff' : '#334466'; ctx.lineWidth = noteOn ? 1.5 : 0.8;
-    ctx.beginPath(); ctx.roundRect(noteX, row4Y, 28, 20, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(noteX, row2Y, 26, rH2, 3); ctx.stroke();
     ctx.fillStyle = noteOn ? '#dd88ff' : '#557788';
     ctx.font = "10px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🎵', noteX + 14, row4Y + 10);
-    // Show current note if set
+    ctx.fillText('🎵', noteX + 13, row2Y + rH2/2);
     if (noteOn) {
       var nc = sb2._noteConfig;
-      ctx.fillStyle = '#dd88ff'; ctx.font = "6px 'Share Tech Mono',monospace";
+      ctx.fillStyle = '#dd88ff'; ctx.font = "5px 'Share Tech Mono',monospace";
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText((nc.note || 'C') + (nc.octave || 4), noteX + 1, row4Y + 1);
+      ctx.fillText((nc.note||'C')+(nc.octave||4), noteX+1, row2Y+1);
     }
+
+    // GRID toggle
+    var gridX = noteX + 30;
+    var gridOn = window._showEditorGrid || false;
+    this._editorGridBtn = { x: gridX, y: row2Y, w: 32, h: rH2 };
+    ctx.fillStyle = gridOn ? 'rgba(0,180,100,0.20)' : 'rgba(0,10,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(gridX, row2Y, 32, rH2, 3); ctx.fill();
+    ctx.strokeStyle = gridOn ? '#00cc66' : '#334455'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(gridX, row2Y, 32, rH2, 3); ctx.stroke();
+    ctx.fillStyle = gridOn ? '#00ff88' : '#446655';
+    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('GRID', gridX + 16, row2Y + rH2/2);
+
+    // SNAP-GRID toggle
+    var snapGX = gridX + 36;
+    var snapGOn = window._snapToGrid || false;
+    this._editorSnapGridBtn = { x: snapGX, y: row2Y, w: 34, h: rH2 };
+    ctx.fillStyle = snapGOn ? 'rgba(0,150,255,0.20)' : 'rgba(0,10,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(snapGX, row2Y, 34, rH2, 3); ctx.fill();
+    ctx.strokeStyle = snapGOn ? '#00aaff' : '#334455'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(snapGX, row2Y, 34, rH2, 3); ctx.stroke();
+    ctx.fillStyle = snapGOn ? '#44ccff' : '#445566';
+    ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('SNAP', snapGX + 17, row2Y + rH2/2 - 3);
+    ctx.fillText('GRID', snapGX + 17, row2Y + rH2/2 + 4);
+
+    // ── ROWS 3–7: sliders ────────────────────────────────────────────────────
+    var sliderRowH = 22;
+    var padding    = 8;
+    var halfW      = Math.floor((W - 16) / 2);
+    var thirdW     = Math.floor((W - 16) / 3);
+    var halfW2     = Math.floor((W - 16) / 2);
+
+    var row3Y = row2Y + rH2 + 7;
+    var row4Y = row3Y + sliderRowH + 5;
+    var row5Y = row4Y + sliderRowH + 5;
+    var row6Y = row5Y + sliderRowH + 5;
+    var row7Y = row6Y + sliderRowH + 5;
+
+    this._editorSliders = {};
+    // Row 3: HP | REGEN
+    this._editorSliders.hp    = drawSlider('HP',    HPval,   10, 400, true,  HPinf,  false, padding,         row3Y, halfW);
+    this._editorSliders.regen = drawSlider('REGEN', noRegen ? 0 : Math.max(200,REGval), 200, 10000, true, noRegen, false, padding + halfW, row3Y, halfW);
+    // Row 4: DENS | DIST | STOP — grayed when STAT
+    this._editorSliders.dens  = drawSlider('DENS',  DENSval,      0.5, 5.0,  false, false, !movActive2, padding,              row4Y, thirdW);
+    this._editorSliders.dist  = drawSlider('DIST',  DISTval,      0,   900,  false, false, !movActive2, padding + thirdW,     row4Y, thirdW);
+    this._editorSliders.decel = drawSlider('STOP',  1-DECELval,   0.01,0.5,  false, false, !movActive2, padding + thirdW * 2, row4Y, thirdW);
+    // Row 5: RSPIN | RSTOP — grayed when STAT
+    this._editorSliders.rotspd = drawSlider('RSPIN', ROTSPDval,    0.0, 1.0, false, false, !movActive2, padding,              row5Y, halfW2);
+    this._editorSliders.rotdec = drawSlider('RSTOP', 1-ROTDECval,  0.01,0.5, false, false, !movActive2, padding + halfW2,     row5Y, halfW2);
+    // Row 6: LENGTH | WIDTH
+    this._editorSliders.blen  = drawSlider('LEN',   LENval,       5,   900,  false, false, false,       padding,              row6Y, halfW);
+    this._editorSliders.bwid  = drawSlider('WID',   WIDval,       2,   200,  false, false, false,       padding + halfW,      row6Y, halfW);
+    // Row 7: ROTATION — full width, -180 to +180
+    this._editorSliders.rot   = drawSlider('ROT',   ROTval,      -180, 180,  false, false, false,       padding,              row7Y, W - 16);
 
     // ── Note picker popup ────────────────────────────────────────────────────
     if (this._editorNotePopup && sb2) {
       this._drawNotePopup(ctx, sb2);
     }
+
 
     // Highlight selected brick
     if (this._editorSelected) {
@@ -2891,6 +3123,26 @@ class Game {
     ctx.font = "bold 7px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(isPushCorner ? '↑PSH' : '←PUL', aimX + btnW/2, btmY + btnH/2);
+  }
+
+  _drawEditorGrid(floorY) {
+    var ctx = this.ctx, W = this.W;
+    var gs  = window._gridSize || 20;
+    ctx.save();
+    ctx.lineWidth = 0.5;
+    for (var gx = 0; gx <= W; gx += gs) {
+      var major = (Math.round(gx / gs) % 5 === 0);
+      ctx.strokeStyle = major ? 'rgba(0,200,255,0.18)' : 'rgba(0,160,200,0.07)';
+      ctx.lineWidth   = major ? 0.8 : 0.4;
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, floorY); ctx.stroke();
+    }
+    for (var gy = 0; gy <= floorY; gy += gs) {
+      var majorY = (Math.round(gy / gs) % 5 === 0);
+      ctx.strokeStyle = majorY ? 'rgba(0,200,255,0.18)' : 'rgba(0,160,200,0.07)';
+      ctx.lineWidth   = majorY ? 0.8 : 0.4;
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   _drawGrid() {

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1317;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1320;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -17,8 +17,8 @@ class UI {
     this._btnReset    = document.getElementById('btn-reset');
     this._btnBack     = document.getElementById('btn-back');
     this._btnSettings = document.getElementById('btn-settings');
-    this._btnEditor   = document.getElementById('btn-editor');
-    this._btnArrows   = document.getElementById('btn-arrows');
+    this._btnEditor   = null;  // moved to canvas corner button
+    this._btnArrows   = null;  // moved to canvas corner button
     this._settingsPanel = document.getElementById('settings-panel');
 
     var self = this;
@@ -93,6 +93,7 @@ class UI {
       circularHP: 100, circularRegen: 2000, circularR: 22,
       density: 1.0, maxTravel: 60, decel: 0.88,
     };
+    window._gridSize = window._gridSize || 20;
     window.SoundVariants = window.SoundVariants || {};
     window.SoundVolumes  = window.SoundVolumes  || {};
 
@@ -198,7 +199,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.17</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.20</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -221,10 +222,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.17 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.20 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1317) {
-            verEl.textContent = 'v13.17 ✓';
+          } else if (loaded === 1320) {
+            verEl.textContent = 'v13.20 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -270,8 +271,28 @@ class UI {
         bHdr3.style.cssText = 'color:#ffaa44;font-size:10px;font-weight:bold;padding:8px 0 2px;';
         pane.appendChild(bHdr3);
         _addSlider(pane,'Density',   'BrickDefaults','density',   0.5, 5.0, 0.5, function(v){return v.toFixed(1)+'x';});
-        _addSlider(pane,'Max Travel','BrickDefaults','maxTravel',  0,  300,  10,  function(v){return v+'px';});
+        _addSlider(pane,'Max Travel','BrickDefaults','maxTravel',  0,  900,  10,  function(v){return v+'px';});
         _addSlider(pane,'Decelerate','BrickDefaults','decel',     0.5, 0.99, 0.01,function(v){return Math.round(v*100)+'%';});
+
+        var bHdr5 = _el('div',''); bHdr5.textContent = '⊞ EDITOR GRID';
+        bHdr5.style.cssText = 'color:#00ccff;font-size:10px;font-weight:bold;padding:8px 0 2px;';
+        pane.appendChild(bHdr5);
+        // Grid size slider — directly updates window._gridSize
+        (function(thePane) {
+          var row = _el('div','setting-row');
+          var lbl = _el('div','setting-label');
+          var nm = _el('span'); nm.textContent = 'GRID SIZE';
+          var vs = _el('span','setting-val');
+          vs.textContent = (window._gridSize || 20) + 'px';
+          lbl.appendChild(nm); lbl.appendChild(vs);
+          var slider = document.createElement('input');
+          slider.type='range'; slider.min=10; slider.max=80; slider.step=5; slider.value=window._gridSize||20;
+          slider.addEventListener('input', function() {
+            window._gridSize = parseInt(slider.value);
+            vs.textContent = slider.value + 'px';
+          });
+          row.appendChild(lbl); row.appendChild(slider); thePane.appendChild(row);
+        })(pane);
 
         // Brick sound variant pickers
         var bHdr4 = _el('div',''); bHdr4.textContent = 'BRICK SOUNDS';
