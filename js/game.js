@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1321;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1322;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -47,6 +47,7 @@ class Game {
     this.objectives = [];   // { description, met }
     this.speedMult  = 0.5;  // global simulation speed — 50% default
     this.brickSpeedMult = 0.5;  // brick movement speed multiplier
+    this._slingZoneH    = 100;  // px above floor that balls can be tapped
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
@@ -594,6 +595,16 @@ class Game {
       }
 
       // ── Speed slider ─────────────────────────────────────────────────────
+      if (self._zoneSliderRect) {
+        var zsr = self._zoneSliderRect;
+        if (pos.y >= zsr.y - 10 && pos.y <= zsr.y + zsr.h + 10 &&
+            pos.x >= zsr.x - 15  && pos.x <= zsr.x + zsr.w + 15) {
+          self._draggingZoneSlider = true;
+          var zt = Math.max(0, Math.min(1, (pos.x - zsr.x) / zsr.w));
+          self._slingZoneH = Math.round(40 + zt * 260);
+          return;
+        }
+      }
       if (self._brickSliderRect) {
         var bsr = self._brickSliderRect;
         if (pos.y >= bsr.y - 10 && pos.y <= bsr.y + bsr.h + 10 &&
@@ -689,32 +700,47 @@ class Game {
         }
       }
 
-      // ── Ball selection: floor-resting sticky can be re-slung ─────────────
+      // ── Ball selection: resting balls + balls within sling zone ────────────
+      var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
+      var zoneTop  = self.floorY() - zoneH2;
       var best = null, bestDist = 9999;
       for (var i = 0; i < self.objects.length; i++) {
         var obj = self.objects[i];
         if (obj.dead || obj.exploded) continue;
-        // Skip wall-stuck sticky (handled above) and ball-stuck
         if (obj.stuckTo && obj.stuckTo !== '_wall_') continue;
         if (obj.stuckTo === '_wall_') continue;
-        // Sticky on floor: allow re-sling
-        if (obj.inFlight) continue;
+        // Allow: resting balls OR in-flight balls that are within the sling zone
+        var inZone = obj.y >= zoneTop - obj.r;
+        if (obj.inFlight && !inZone) continue;
         var dx = pos.x - obj.x, dy = pos.y - obj.y;
+        var hit = false;
         if (self._aimMode === 'push') {
-          // Push mode: tap anywhere near a ball (wider pick radius, no direction constraint)
-          if (Math.hypot(dx, dy) < obj.r * 3.5) {
-            var d = Math.hypot(dx, dy);
-            if (d < bestDist) { bestDist = d; best = obj; }
-          }
+          hit = Math.hypot(dx, dy) < obj.r * 3.5;
         } else {
-          // Pull mode: classic — touch above or beside ball
-          if (Math.abs(dx) < obj.r * 2.8 && dy >= -obj.r) {
-            var d = Math.hypot(dx, dy);
-            if (d < bestDist) { bestDist = d; best = obj; }
-          }
+          hit = Math.abs(dx) < obj.r * 2.8 && dy >= -obj.r;
+        }
+        if (hit) {
+          var d2 = Math.hypot(dx, dy);
+          if (d2 < bestDist) { bestDist = d2; best = obj; }
         }
       }
       if (best) {
+        // If the ball is just resting on the floor (not in flight), give it a pop upward
+        var onFloor = !best.inFlight && best.y + best.r >= self.floorY() - 4;
+        if (onFloor) {
+          // Calculate velocity needed to reach just below zoneTop (10px clearance)
+          var targetY  = zoneTop + 10;
+          var dy2      = best.y - targetY;   // upward distance (positive)
+          var grav     = 0.4 * (window.Settings ? Settings.gravityMult : 1.0);  // approx per-frame gravity
+          // v = sqrt(2 * g * dy)
+          var popVY    = -Math.sqrt(Math.max(0, 2 * grav * dy2));
+          best.vy      = Math.min(popVY, -2);  // cap so it always moves up
+          best.vx      = 0;
+          best.inFlight= true;
+          best.pinned  = false;
+          // Don't start a sling — just launch the pop
+          return;
+        }
         best.vx = 0; best.vy = 0; best.pinned = true;
         self.sling = { obj: best, anchorX: best.x, anchorY: best.y,
                        startX: pos.x, startY: pos.y, pullX: pos.x, pullY: pos.y };
@@ -737,6 +763,12 @@ class Game {
           return;
         }
         self._editorOnMove(pos); return;
+      }
+      if (self._draggingZoneSlider && self._zoneSliderRect) {
+        var zr2 = self._zoneSliderRect;
+        var zt2 = Math.max(0, Math.min(1, (pos.x - zr2.x) / zr2.w));
+        self._slingZoneH = Math.round(40 + zt2 * 260);
+        return;
       }
       if (self._draggingBrickSlider && self._brickSliderRect) {
         var br2 = self._brickSliderRect;
@@ -761,6 +793,7 @@ class Game {
       e.preventDefault();
       self._draggingSlider = false;
       self._draggingBrickSlider = false;
+      self._draggingZoneSlider = false;
       if (self._editorMode) {
         self._editorPinchStart = null;
         self._editorScrollStart  = undefined;
@@ -2971,14 +3004,36 @@ class Game {
     var ctx = this.ctx, W = this.W, H = this.H;
     ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(0, floorY, W, H - floorY);
     ctx.save();
+
+    // Sling zone line — dotted line above floor showing tap-to-sling reach
+    var zoneH = this._slingZoneH !== undefined ? this._slingZoneH : 100;
+    var zoneY = floorY - zoneH;
+    ctx.setLineDash([5, 8]);
+    ctx.strokeStyle = 'rgba(0,200,150,0.28)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath(); ctx.moveTo(0, zoneY); ctx.lineTo(W, zoneY); ctx.stroke();
+    ctx.setLineDash([]);
+    // Tiny label on right edge
+    ctx.fillStyle = 'rgba(0,200,150,0.35)'; ctx.font = "7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+    ctx.fillText('SLING ZONE', W - 4, zoneY - 1);
+
+    // Floor line
     ctx.strokeStyle = 'rgba(0,180,255,0.55)'; ctx.lineWidth = 2;
     ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 10;
     ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(W, floorY); ctx.stroke();
     ctx.shadowBlur = 0;
+
+    // Dotted floor echo
+    ctx.setLineDash([3, 6]);
+    ctx.strokeStyle = 'rgba(0,140,255,0.18)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, floorY + 4); ctx.lineTo(W, floorY + 4); ctx.stroke();
+    ctx.setLineDash([]);
+
     ctx.fillStyle = 'rgba(0,140,200,0.22)'; ctx.font = "9px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     var hint = this._aimMode === 'push' ? '↑  DRAG UP TO AIM  ↑' : '▼  PULL DOWN TO AIM  ▼';
-    ctx.fillText(hint, W / 2, floorY + 6);
+    ctx.fillText(hint, W / 2, floorY + 8);
     ctx.restore();
   }
 
@@ -3134,6 +3189,29 @@ class Game {
     ctx.fillText('SPEED ' + pct + '%', sx + sliderW / 2, sy - 1);
 
     ctx.restore();
+
+    // ── Sling zone height slider (above brick slider) ─────────────────────────
+    var zsy    = bsy - 28;
+    var ztrackY = zsy + sliderH / 2;
+    this._zoneSliderRect = { x: sx, y: zsy, w: sliderW, h: sliderH, trackY: ztrackY };
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,10,28,0.55)';
+    ctx.beginPath(); ctx.roundRect(sx - 8, zsy - 2, sliderW + 16, sliderH + 4, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,200,150,0.20)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, ztrackY); ctx.lineTo(sx + sliderW, ztrackY); ctx.stroke();
+    var zoneH3   = this._slingZoneH !== undefined ? this._slingZoneH : 100;
+    var zThT     = Math.max(0, Math.min(1, (zoneH3 - 40) / 260));  // range 40–300
+    var zThX     = sx + zThT * sliderW;
+    ctx.strokeStyle = 'rgba(0,200,150,0.55)'; ctx.shadowColor = '#00cc99'; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.moveTo(sx, ztrackY); ctx.lineTo(zThX, ztrackY); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(zThX, ztrackY, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#00cc99'; ctx.shadowColor = '#00cc99'; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = 'rgba(0,200,150,0.50)'; ctx.font = "bold 7px 'Share Tech Mono', monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('ZONE ' + zoneH3 + 'px', sx + sliderW / 2, zsy - 1);
+    ctx.restore();
   }
 
   _drawCornerButtons() {
@@ -3150,9 +3228,9 @@ class Game {
     ];
     // Row B (bottom): ball display buttons
     var leftBtns = [
-      { key: '_showVelocityArrows', label: '↗',   default: true },
-      { key: '_showBallLabel',      label: 'Aa',  default: true },
-      { key: '_showBallAbbr',       label: 'BNC', default: true },
+      { key: '_showVelocityArrows', label: '↗',   default: true  },
+      { key: '_showBallLabel',      label: 'Aa',  default: true  },
+      { key: '_showBallAbbr',       label: 'BNC', default: false },
     ];
     var rowAY = btmY - btnH - gap;
     this._cornerBrickBtns = [];
