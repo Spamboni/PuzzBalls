@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1315;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1316;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -46,6 +46,7 @@ class Game {
     this.ballQueue  = [];   // remaining balls to be slung, by type
     this.objectives = [];   // { description, met }
     this.speedMult  = 0.5;  // global simulation speed — 50% default
+    this.brickSpeedMult = 0.5;  // brick movement speed multiplier
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
@@ -351,7 +352,7 @@ class Game {
             { id:'hp',    key:'maxHealth',  defKey:'rectHP',    step:5,    min:10,   max:400 },
             { id:'regen', key:'regenAfter', defKey:'rectRegen', step:100,  min:200,  max:10000 },
             { id:'dens',  key:'_density',   defKey:'density',   step:0.1,  min:0.5,  max:5.0 },
-            { id:'dist',  key:'_maxTravel', defKey:'maxTravel', step:5,    min:0,    max:300 },
+            { id:'dist',  key:'_maxTravel', defKey:'maxTravel', step:10,   min:0,    max:900 },
             { id:'decel', key:'_decel',     defKey:'decel',     step:0.01, min:0.50, max:0.99 },
           ];
           var movNow = self._editorSelected ? (self._editorSelected._movable||false) : (self._editorMovable||false);
@@ -493,7 +494,7 @@ class Game {
             if (pos.x >= vs.x && pos.x <= vs.x + vs.w && pos.y >= vs.y && pos.y <= vs.y + vs.h) {
               var t2 = Math.max(0, Math.min(1, (pos.x - vs.trackX) / vs.trackW));
               sb3._noteConfig = sb3._noteConfig || {};
-              sb3._noteConfig.vol = parseFloat((t2 * 1.2).toFixed(2));
+              sb3._noteConfig.vol = parseFloat((0.05 + t2 * 1.15).toFixed(2));
               return;
             }
           }
@@ -543,17 +544,27 @@ class Game {
         }
         // Only place/select bricks in the play area (above floor)
         if (!inPanel) self._editorOnDown(pos);
+        // Start scroll tracking if tapped in panel area
+        else { self._editorScrollStart = self._editorScrollY || 0; self._editorScrollDragY = pos.y; }
         return;
       }
 
       // ── Speed slider ─────────────────────────────────────────────────────
+      if (self._brickSliderRect) {
+        var bsr = self._brickSliderRect;
+        if (pos.y >= bsr.y - 10 && pos.y <= bsr.y + bsr.h + 10 &&
+            pos.x >= bsr.x - 15  && pos.x <= bsr.x + bsr.w + 15) {
+          self._draggingBrickSlider = true;
+          self.brickSpeedMult = Math.max(0, Math.min(1, (pos.x - bsr.x) / bsr.w));
+          return;
+        }
+      }
       if (self._sliderRect) {
         var sr = self._sliderRect;
         if (pos.y >= sr.y - 10 && pos.y <= sr.y + sr.h + 10 &&
             pos.x >= sr.x - 15  && pos.x <= sr.x + sr.w + 15) {
           self._draggingSlider = true;
           var t = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
-          // Map 0→1 to 0.125→1.0
           self.speedMult = 0.125 + t * 0.875;
           return;
         }
@@ -675,8 +686,18 @@ class Game {
           self._editorHandleTouch(e.touches);
           return;
         }
-        self._editorPinchStart = null; // clear pinch if back to 1 finger
+        self._editorPinchStart = null;
+        // Scroll editor panel if dragging in panel area
+        if (pos.y >= self.floorY() && self._editorScrollStart !== undefined) {
+          self._editorScrollY = Math.min(0, self._editorScrollStart + (pos.y - self._editorScrollDragY));
+          return;
+        }
         self._editorOnMove(pos); return;
+      }
+      if (self._draggingBrickSlider && self._brickSliderRect) {
+        var br2 = self._brickSliderRect;
+        self.brickSpeedMult = Math.max(0, Math.min(1, (pos.x - br2.x) / br2.w));
+        return;
       }
       if (self._draggingSlider && self._sliderRect) {
         var sr = self._sliderRect;
@@ -695,8 +716,11 @@ class Game {
     function onUp(e) {
       e.preventDefault();
       self._draggingSlider = false;
+      self._draggingBrickSlider = false;
       if (self._editorMode) {
         self._editorPinchStart = null;
+        self._editorScrollStart  = undefined;
+        self._editorScrollDragY  = undefined;
         self._editorOnUp();
         return;
       }
@@ -779,8 +803,9 @@ class Game {
       var mbrick = this.bricks[i];
       if (mbrick._movable && (Math.abs(mbrick._vx||0) > 0.05 || Math.abs(mbrick._vy||0) > 0.05 || Math.abs(mbrick._angularV||0) > 0.001)) {
         var decel = mbrick._decel || 0.88;
-        mbrick.x += (mbrick._vx || 0);
-        mbrick.y += (mbrick._vy || 0);
+        var bsm   = this.brickSpeedMult !== undefined ? this.brickSpeedMult : 0.5;
+        mbrick.x += (mbrick._vx || 0) * bsm * 2;
+        mbrick.y += (mbrick._vy || 0) * bsm * 2;
         var prevRot = mbrick._rotation || 0;
         var da2 = mbrick._angularV || 0;
         mbrick._rotation = prevRot + da2;
@@ -1138,29 +1163,44 @@ class Game {
         }
 
         // Movable brick physics — translate + rotate around chosen pivot
-        if (brick._movable) {
+        if (brick._movable && !destroyed) {
           var brickDensity = brick._density || 1.0;
           var ballSpeed    = Math.hypot(ball.vx, ball.vy);
-          // Scale force so a full-speed hit (speed~12) on density=1 gives ~4px/frame velocity
-          // That allows the brick to travel ~60px before stopping at default decel=0.88
-          var impactForce  = (ballSpeed * 0.35) / Math.max(0.2, brickDensity);
+          // Base force: generous scale so bricks travel visibly
+          var baseForce    = (ballSpeed * 0.8) / Math.max(0.1, brickDensity);
 
-          brick._vx = (brick._vx || 0) - bnx * impactForce;
-          brick._vy = (brick._vy || 0) - bny * impactForce;
+          // Hit offset from brick center (normalized 0=center, 1=edge)
+          var brickHalfW = (brick.w || 60) / 2;
+          var brickHalfH = (brick.h || 22) / 2;
+          var hitOffXraw = ball.x - brick.x;
+          var hitOffYraw = ball.y - brick.y;
+          // Normalized: 0 at center, 1 at far edge
+          var edgeFrac   = Math.min(1, Math.max(Math.abs(hitOffXraw) / brickHalfW,
+                                                 Math.abs(hitOffYraw) / brickHalfH));
+          // Center hit = max linear movement, no rotation
+          // Edge hit = mix of linear + rotation
+          // linearFrac: 1.0 at center, 0.5 at edge
+          var linearFrac  = 1.0 - edgeFrac * 0.5;
+          var rotateFrac  = edgeFrac;
 
-          // Pivot offset: L = -w/2, C = 0, R = +w/2 from brick center
+          // Linear impulse
+          brick._vx = (brick._vx || 0) - bnx * baseForce * linearFrac;
+          brick._vy = (brick._vy || 0) - bny * baseForce * rotateFrac;
+
+          // Angular impulse — scaled by edge fraction so center hits barely spin
+          // When ↔ROT (translateOnRotate) ON: use selected pivot
+          // When ⊕ROT OFF: use center as pivot always (free spin + translate)
           var pivotStr = brick._pivot || 'C';
-          var pivotOff = pivotStr === 'L' ? -(brick.w || 60) / 2
-                       : pivotStr === 'R' ?  (brick.w || 60) / 2
-                       : 0;
-          // Cross product: (hitPoint - pivot) × impactDir
-          var hitOffX = (ball.x - brick.x) - pivotOff;
-          var hitOffY =  ball.y - brick.y;
-          var torque  = (hitOffX * (-bny) - hitOffY * (-bnx)) * impactForce * 0.012;
+          var pivotOff = (brick._translateOnRotate !== false)
+            ? (pivotStr === 'L' ? -brickHalfW : pivotStr === 'R' ? brickHalfW : 0)
+            : 0;
+          var hitPivX = hitOffXraw - pivotOff;
+          var hitPivY = hitOffYraw;
+          var torque  = (hitPivX * (-bny) - hitPivY * (-bnx)) * baseForce * 0.018 * rotateFrac;
           brick._angularV = (brick._angularV || 0) + torque;
 
           if (brick._startX === undefined) { brick._startX = brick.x; brick._startY = brick.y; }
-          if (window.Sound) Sound.brickShatter(impactForce * 0.3);
+          if (window.Sound) Sound.brickShatter(baseForce * 0.2);
         }
         this.collisions++;
         this.ui.setCollisions(this.collisions);
@@ -2058,7 +2098,7 @@ class Game {
     var floorY = this.floorY();
 
     // Panel sits BELOW the floor line — play area fully visible above it
-    var panelY = floorY + 6;
+    var panelY = floorY + 6 + (this._editorScrollY || 0);
     this._editorPanelRect = { y: floorY };  // taps below this line go to panel
 
     ctx.save();
@@ -2261,7 +2301,7 @@ class Game {
     var DECELval = (sb2 && sb2._decel !== undefined) ? sb2._decel : (bd2.decel || 0.88);
     var thirdW   = Math.floor((W - 16) / 3);
     this._editorSliders.dens  = drawSlider('DENS',  DENSval,  0.5, 5.0,  false, false, !movActive2, padding,               row3Y, thirdW);
-    this._editorSliders.dist  = drawSlider('DIST',  DISTval,  0,   300,  false, false, !movActive2, padding + thirdW,      row3Y, thirdW);
+    this._editorSliders.dist  = drawSlider('DIST',  DISTval,  0,   900,  false, false, !movActive2, padding + thirdW,      row3Y, thirdW);
     this._editorSliders.decel = drawSlider('DECEL', DECELval, 0.5, 0.99, false, false, !movActive2, padding + thirdW * 2,  row3Y, thirdW);
 
     // MOV toggle — compact, after row3
@@ -2482,7 +2522,7 @@ class Game {
     ctx.beginPath(); ctx.roundRect(volX, inY + 5, volW, 8, 4); ctx.fill();
     ctx.strokeStyle = 'rgba(180,80,255,0.4)'; ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.roundRect(volX, inY + 5, volW, 8, 4); ctx.stroke();
-    var volT   = Math.max(0, Math.min(1, curVol / 1.2));
+    var volT   = Math.max(0, Math.min(1, (curVol - 0.05) / 1.15));
     var volThX = volX + volW * volT;
     ctx.fillStyle = 'rgba(180,80,255,0.8)';
     ctx.beginPath(); ctx.roundRect(volX, inY + 5, volW * volT, 8, 4); ctx.fill();
@@ -2676,13 +2716,33 @@ class Game {
     var ctx    = this.ctx;
     var W      = this.W;
     var H      = this.H;
-    // Leave room: left side = 3 buttons × 32px + gap, right side = 2 buttons × 32px + gap
     var leftReserve  = 3 * 32 + 16;
     var rightReserve = 2 * 32 + 16;
     var sliderW = W - leftReserve - rightReserve;
     var sliderH = 28;
     var sx     = leftReserve;
     var sy     = H - 36;
+
+    // ── Brick speed slider (above ball speed slider) ──────────────────────────
+    var bsy    = sy - 30;
+    var btrackY = bsy + sliderH / 2;
+    this._brickSliderRect = { x: sx, y: bsy, w: sliderW, h: sliderH, trackY: btrackY };
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,10,28,0.65)';
+    ctx.beginPath(); ctx.roundRect(sx - 8, bsy - 2, sliderW + 16, sliderH + 4, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,140,0,0.25)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, btrackY); ctx.lineTo(sx + sliderW, btrackY); ctx.stroke();
+    var bThX = sx + this.brickSpeedMult * sliderW;
+    ctx.strokeStyle = 'rgba(255,160,0,0.7)'; ctx.shadowColor = '#ff9900'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.moveTo(sx, btrackY); ctx.lineTo(bThX, btrackY); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(bThX, btrackY, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffaa22'; ctx.shadowColor = '#ffaa22'; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,160,0,0.55)'; ctx.font = "bold 8px 'Share Tech Mono', monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('BRICKS ' + Math.round(this.brickSpeedMult * 100) + '%', sx + sliderW / 2, bsy - 1);
+    ctx.restore();
     var trackY = sy + sliderH / 2;
 
     // Store rect for touch handling

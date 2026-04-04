@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1315;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1316;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -90,7 +90,7 @@ class UI {
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
-      circularHP: 100, circularRegen: 5000, circularR: 22,
+      circularHP: 100, circularRegen: 2000, circularR: 22,
       density: 1.0, maxTravel: 60, decel: 0.88,
     };
     window.SoundVariants = window.SoundVariants || {};
@@ -198,7 +198,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.15</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.16</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -221,10 +221,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.15 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.16 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1315) {
-            verEl.textContent = 'v13.15 ✓';
+          } else if (loaded === 1316) {
+            verEl.textContent = 'v13.16 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -246,7 +246,7 @@ class UI {
       } else if (t.id === 'bricks') {
         window.BrickDefaults = window.BrickDefaults || {
           rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
-          circularHP: 100, circularRegen: 5000, circularR: 22,
+          circularHP: 100, circularRegen: 2000, circularR: 22,
           density: 1.0, maxTravel: 60, decel: 0.88,
         };
         var bd = window.BrickDefaults;
@@ -264,7 +264,7 @@ class UI {
         pane.appendChild(bHdr2);
         _addSlider(pane,'HP',       'BrickDefaults','circularHP',    10, 500, 10,  function(v){return v+' hp';});
         _addSlider(pane,'Radius',   'BrickDefaults','circularR',     8,  80,  2,   function(v){return v+'px';});
-        _addSlider(pane,'Regen',    'BrickDefaults','circularRegen', 0, 30000, 1000, function(v){return v ? (v/1000).toFixed(0)+'s' : 'OFF';});
+        _addSlider(pane,'Regen',    'BrickDefaults','circularRegen', 200, 10000, 200, function(v){ return (v/1000).toFixed(1)+'s'; });
 
         var bHdr3 = _el('div',''); bHdr3.textContent = '⚙ MOVABLE BRICK DEFAULTS';
         bHdr3.style.cssText = 'color:#ffaa44;font-size:10px;font-weight:bold;padding:8px 0 2px;';
