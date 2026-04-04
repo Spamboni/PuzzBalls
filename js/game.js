@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1310;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1311;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -313,25 +313,37 @@ class Game {
             }
           }
         }
-        // Inline brick field taps (cycle value)
-        if (self._editorFieldRects) {
-          for (var fi2 = 0; fi2 < self._editorFieldRects.length; fi2++) {
-            var fr = self._editorFieldRects[fi2];
-            if (pos.x >= fr.x && pos.x <= fr.x + fr.w && pos.y >= fr.y && pos.y <= fr.y + fr.h) {
-              if (self._editorSelected) {
-                var cur2 = self._editorSelected[fr.key] !== undefined ? self._editorSelected[fr.key] : fr.min;
-                var next2 = parseFloat(cur2) + fr.step;
-                if (next2 > fr.max) next2 = fr.min;
-                self._editorSelected[fr.key] = next2;
-                if (fr.key === 'maxHealth') { self._editorSelected.health = next2; self._editorSelected.maxHealth = next2; }
-              } else {
-                // Update BrickDefaults
-                window.BrickDefaults = window.BrickDefaults || {};
-                var dCur = window.BrickDefaults[fr.defKey] || fr.min;
-                var dNext = parseFloat(dCur) + fr.step;
-                if (dNext > fr.max) dNext = fr.min;
-                window.BrickDefaults[fr.defKey] = dNext;
+        // Slider drag start — check all 4 sliders
+        if (self._editorSliders) {
+          var sliderDefs = [
+            { id:'hp',    key:'maxHealth',  defKey:'rectHP',    step:5,    min:10,   max:400 },
+            { id:'regen', key:'regenAfter', defKey:'rectRegen', step:500,  min:0,    max:30000 },
+            { id:'dens',  key:'_density',   defKey:'density',   step:0.1,  min:0.5,  max:5.0 },
+            { id:'dist',  key:'_maxTravel', defKey:'maxTravel', step:5,    min:0,    max:300 },
+          ];
+          var movNow = self._editorSelected ? (self._editorSelected._movable||false) : (self._editorMovable||false);
+          for (var sdi = 0; sdi < sliderDefs.length; sdi++) {
+            var sd  = sliderDefs[sdi];
+            var sl2 = self._editorSliders[sd.id];
+            if (!sl2) continue;
+            // Skip DENS/DIST if not movable
+            if ((sd.id === 'dens' || sd.id === 'dist') && !movNow) continue;
+            if (pos.x >= sl2.trackX - 10 && pos.x <= sl2.trackX + sl2.trackW + 10 &&
+                pos.y >= sl2.y && pos.y <= sl2.y + sl2.h) {
+              // Check ∞ button on HP
+              if (sd.id === 'hp' && sl2.infRect) {
+                var ir = sl2.infRect;
+                if (pos.x >= ir.x && pos.x <= ir.x + ir.w && pos.y >= ir.y && pos.y <= ir.y + ir.h) {
+                  if (self._editorSelected) {
+                    self._editorSelected._invincible = !self._editorSelected._invincible;
+                    if (self._editorSelected._invincible) self._editorSelected.maxHealth = Infinity;
+                    else { self._editorSelected.maxHealth = 100; self._editorSelected.health = 100; }
+                  }
+                  return;
+                }
               }
+              // Start drag on track
+              self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step }, sl2);
               return;
             }
           }
@@ -805,22 +817,31 @@ class Game {
     }
     for (i = 0; i < toAdd.length; i++) this.objects.push(toAdd[i]);
 
-    // Brick overlap separation — only when editor is NOT open
+    // Brick overlap separation — AABB-based, only when editor is NOT open
     if (!this._editorMode) {
       for (i = 0; i < this.bricks.length; i++) {
         for (j = i + 1; j < this.bricks.length; j++) {
           var ba = this.bricks[i], bb = this.bricks[j];
           if (!ba.isAlive() || !bb.isAlive()) continue;
-          var dx2   = bb.x - ba.x, dy2 = bb.y - ba.y;
-          var dist2 = Math.hypot(dx2, dy2) || 1;
-          var wa = (ba instanceof CircularBrick) ? ba.r : Math.max(ba.w, ba.h) / 2;
-          var wb = (bb instanceof CircularBrick) ? bb.r : Math.max(bb.w, bb.h) / 2;
-          var minD = wa + wb;
-          if (dist2 < minD) {
-            var push = (minD - dist2) * 0.08;
-            var nx2  = dx2 / dist2, ny2 = dy2 / dist2;
-            ba.x -= nx2 * push; ba.y -= ny2 * push;
-            bb.x += nx2 * push; bb.y += ny2 * push;
+          var dx2 = bb.x - ba.x, dy2 = bb.y - ba.y;
+          // Use actual half-extents for each axis
+          var haWx = (ba instanceof CircularBrick) ? ba.r : ba.w / 2;
+          var haWy = (ba instanceof CircularBrick) ? ba.r : ba.h / 2;
+          var hbWx = (bb instanceof CircularBrick) ? bb.r : bb.w / 2;
+          var hbWy = (bb instanceof CircularBrick) ? bb.r : bb.h / 2;
+          var overlapX = (haWx + hbWx) - Math.abs(dx2);
+          var overlapY = (haWy + hbWy) - Math.abs(dy2);
+          // Only separate if actually overlapping on BOTH axes
+          if (overlapX > 0 && overlapY > 0) {
+            var push = 0.06;
+            // Push along the axis with less overlap (minimum penetration)
+            if (overlapX < overlapY) {
+              var dirX = dx2 >= 0 ? 1 : -1;
+              ba.x -= dirX * overlapX * push; bb.x += dirX * overlapX * push;
+            } else {
+              var dirY = dy2 >= 0 ? 1 : -1;
+              ba.y -= dirY * overlapY * push; bb.y += dirY * overlapY * push;
+            }
           }
         }
       }
@@ -1819,13 +1840,37 @@ class Game {
   }
 
   _editorOnMove(pos) {
+    // Slider drag in panel area
+    if (this._editorDragSlider) {
+      var sl = this._editorDragSlider;
+      var t  = Math.max(0, Math.min(1, (pos.x - sl.trackX) / sl.trackW));
+      var val = sl.min + t * (sl.max - sl.min);
+      val = Math.round(val / (sl.step || 1)) * (sl.step || 1);
+      val = Math.max(sl.min, Math.min(sl.max, val));
+      this._setSliderVal(sl.key, sl.defKey, val);
+      return;
+    }
     if (!this._editorDragging) return;
     this._editorDragging.x = pos.x - (this._editorDragOffX || 0);
-    this._editorDragging.y = pos.y - (this._editorDragOffY || 0);
+    // Clamp brick above floor
+    var maxBrickY = this.floorY() - (this._editorDragging.h || this._editorDragging.r || 15) / 2 - 4;
+    this._editorDragging.y = Math.min(pos.y - (this._editorDragOffY || 0), maxBrickY);
+  }
+
+  _setSliderVal(key, defKey, val) {
+    var sb = this._editorSelected;
+    if (sb) {
+      sb[key] = val;
+      if (key === 'maxHealth') { sb.health = val; sb.maxHealth = val; }
+    } else {
+      window.BrickDefaults = window.BrickDefaults || {};
+      if (defKey) window.BrickDefaults[defKey] = val;
+    }
   }
 
   _editorOnUp() {
-    this._editorDragging = null;
+    this._editorDragging    = null;
+    this._editorDragSlider  = null;
   }
 
   _editorDeleteSelected() {
@@ -1944,97 +1989,146 @@ class Game {
       ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('DEL', curX + delW2/2, btnY + btnH/2);
     }
-    // Row 2: Brick settings — always visible, uses selected brick or shows defaults
-    var row2Y = btnY + btnH + 8;
+    // Row 2+3: Sliders for HP (with ∞), REGEN, DENS, DIST
+    // Rows sit below the button row. Two sliders per row, each half screen width.
+    var sliderRowH = 22;
+    var row2Y = btnY + btnH + 10;
+    var row3Y = row2Y + sliderRowH + 6;
     var bd2   = window.BrickDefaults || {};
     var sb2   = this._editorSelected;
-    var fW = 42, fH = 22, fGap = 4, fStartX = 14;
+    var movActive2 = sb2 ? (sb2._movable || false) : (this._editorMovable || false);
 
-    var fields = [
-      { label:'HP',    key:'maxHealth',  defKey:'rectHP',   step:10,   min:10,  max:500,   fmt: function(v){ return v; } },
-      { label:'REGEN', key:'regenAfter', defKey:'rectRegen',step:1000, min:0,   max:30000, fmt: function(v){ return v ? (v/1000).toFixed(0)+'s' : 'OFF'; } },
-      { label:'DENS',  key:'_density',   defKey:'density',  step:0.5,  min:0.5, max:5.0,   fmt: function(v){ return parseFloat(v).toFixed(1); } },
-      { label:'DIST',  key:'_maxTravel', defKey:'maxTravel',step:10,   min:0,   max:300,   fmt: function(v){ return v+'px'; } },
-    ];
+    var halfW  = Math.floor((W - 16) / 2);
+    var lblW   = 34;   // label area
+    var infW   = 18;   // ∞ button on HP slider
+    var padding = 8;
 
-    this._editorFieldRects = [];
-    for (var fi = 0; fi < fields.length; fi++) {
-      var fld = fields[fi];
-      var val = sb2 ? (sb2[fld.key] !== undefined ? sb2[fld.key] : (bd2[fld.defKey] || fld.min))
-                    : (bd2[fld.defKey] || fld.min);
-      var fBx = fStartX + fi * (fW + fGap);
-      var isActive = !!sb2;
+    // Helper to draw a labeled slider on canvas
+    // Returns the rect stored for interaction
+    var drawSlider = function(label, valRaw, min, max, isInf, infActive, grayed, sx, sy, sw) {
+      var lx = sx, ly = sy;
+      var slW = sw - lblW - (isInf ? infW + 3 : 0) - 2;
+      var slX = sx + lblW;
+      var slY = sy + sliderRowH / 2;
+      var alpha = grayed ? 0.30 : 1.0;
 
-      ctx.fillStyle = isActive ? 'rgba(0,20,55,0.9)' : 'rgba(0,10,30,0.6)';
-      ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.fill();
-      ctx.strokeStyle = isActive ? 'rgba(0,180,255,0.6)' : 'rgba(0,100,180,0.3)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.stroke();
+      // Label
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#88aacc'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, lx + 2, slY);
 
-      ctx.fillStyle = isActive ? '#88ccff' : '#445566';
+      // Track background
+      ctx.fillStyle = grayed ? 'rgba(30,40,60,0.5)' : 'rgba(0,20,50,0.8)';
+      ctx.beginPath(); ctx.roundRect(slX, sy + 7, slW, 8, 4); ctx.fill();
+      ctx.strokeStyle = grayed ? '#334455' : 'rgba(0,150,255,0.4)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.roundRect(slX, sy + 7, slW, 8, 4); ctx.stroke();
+
+      // Fill (progress)
+      var t = isInf && infActive ? 1.0 : Math.max(0, Math.min(1, (valRaw - min) / (max - min)));
+      if (!grayed) {
+        var fillColor = infActive ? '#ff8800' : '#0088ff';
+        ctx.fillStyle = fillColor + (grayed ? '44' : 'cc');
+        ctx.beginPath(); ctx.roundRect(slX, sy + 7, slW * t, 8, 4); ctx.fill();
+      }
+
+      // Thumb
+      var thumbX = slX + slW * t;
+      ctx.beginPath(); ctx.arc(thumbX, slY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = grayed ? '#334455' : (infActive ? '#ffaa22' : '#00aaff');
+      ctx.shadowColor = grayed ? 'transparent' : (infActive ? '#ff8800' : '#0088ff');
+      ctx.shadowBlur  = grayed ? 0 : 6;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Value text right of thumb
+      var valText = isInf && infActive ? '∞' : (label === 'REGEN' ? (valRaw ? (valRaw/1000).toFixed(0)+'s' : 'OFF') :
+                    label === 'DENS' ? parseFloat(valRaw).toFixed(1) :
+                    label === 'DIST' ? valRaw+'px' : String(valRaw));
+      ctx.fillStyle = grayed ? '#445566' : '#ccddff';
       ctx.font = "7px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillText(fld.label, fBx + fW/2, row2Y + 1);
-      ctx.fillStyle = isActive ? '#ffffff' : '#667788';
-      ctx.font = "bold 8px 'Share Tech Mono',monospace";
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(fld.fmt(val), fBx + fW/2, row2Y + fH - 1);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(valText, thumbX + 8, slY);
 
-      this._editorFieldRects.push({ x: fBx, y: row2Y, w: fW, h: fH, key: fld.key, defKey: fld.defKey, step: fld.step, min: fld.min, max: fld.max });
-    }
+      // ∞ button
+      var infRect = null;
+      if (isInf) {
+        var ix = slX + slW + 3;
+        ctx.fillStyle = infActive ? 'rgba(255,140,0,0.35)' : 'rgba(0,15,40,0.8)';
+        ctx.beginPath(); ctx.roundRect(ix, sy + 4, infW, 14, 3); ctx.fill();
+        ctx.strokeStyle = infActive ? '#ffaa00' : '#446688'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(ix, sy + 4, infW, 14, 3); ctx.stroke();
+        ctx.fillStyle = infActive ? '#ffcc44' : '#668899';
+        ctx.font = "bold 9px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('∞', ix + infW/2, sy + sliderRowH/2);
+        infRect = { x: ix, y: sy + 4, w: infW, h: 14 };
+      }
 
-    // MOV toggle
-    var movInX = fStartX + fields.length * (fW + fGap);
-    var movActive = sb2 ? (sb2._movable || false) : (this._editorMovable || false);
-    ctx.fillStyle = movActive ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.7)';
-    ctx.beginPath(); ctx.roundRect(movInX, row2Y, 42, fH, 3); ctx.fill();
-    ctx.strokeStyle = movActive ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.roundRect(movInX, row2Y, 42, fH, 3); ctx.stroke();
-    ctx.fillStyle = movActive ? '#ffcc44' : '#668899';
-    ctx.font = "bold 7px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(movActive ? '● MOV' : '■ STAT', movInX + 21, row2Y + fH/2);
-    this._editorMovInlineRect = { x: movInX, y: row2Y, w: 42, h: fH };
+      ctx.globalAlpha = 1.0;
+      return {
+        x: slX, y: sy, w: slW, h: sliderRowH,
+        trackX: slX, trackW: slW, min: min, max: max,
+        infRect: infRect,
+      };
+    };
 
-    // PIVOT selector (LEFT / CTR / RIGHT) — only for rect bricks
-    var pivX = movInX + 46;
-    var pivots = ['L', 'C', 'R'];
-    var pivColors = ['#ffcc44', '#44ccff', '#ff8844'];
-    var curPivot = sb2 ? (sb2._pivot || 'C') : (this._editorPivot || 'C');
+    var HPval   = (sb2 && sb2.maxHealth  !== undefined) ? sb2.maxHealth  : (bd2.rectHP    || 100);
+    var REGval  = (sb2 && sb2.regenAfter !== undefined) ? sb2.regenAfter : (bd2.rectRegen || 5000);
+    var DENSval = (sb2 && sb2._density   !== undefined) ? sb2._density   : (bd2.density   || 1.0);
+    var DISTval = (sb2 && sb2._maxTravel !== undefined) ? sb2._maxTravel : (bd2.maxTravel || 60);
+    var HPinf   = (sb2 && sb2._invincible) || false;
+
+    this._editorSliders = {};
+    // Row A: HP (left half) | REGEN (right half)
+    this._editorSliders.hp    = drawSlider('HP',    HPval,   10, 400, true,  HPinf,       false,       padding,          row2Y, halfW);
+    this._editorSliders.regen = drawSlider('REGEN', REGval,  0, 30000, false, false,       false,       padding + halfW,  row2Y, halfW);
+    // Row B: DENS (left half) | DIST (right half) — grayed unless movable
+    this._editorSliders.dens  = drawSlider('DENS',  DENSval, 0.5, 5.0, false, false,       !movActive2, padding,          row3Y, halfW);
+    this._editorSliders.dist  = drawSlider('DIST',  DISTval, 0,   300, false, false,       !movActive2, padding + halfW,  row3Y, halfW);
+
+    // MOV toggle — compact, after row3
+    var row4Y = row3Y + sliderRowH + 6;
+    var movInX = padding, movW3 = 48, pivX3 = movInX + movW3 + 6;
+    var movActive3 = movActive2;
+    this._editorMovInlineRect = { x: movInX, y: row4Y, w: movW3, h: 20 };
+    ctx.fillStyle = movActive3 ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
+    ctx.beginPath(); ctx.roundRect(movInX, row4Y, movW3, 20, 3); ctx.fill();
+    ctx.strokeStyle = movActive3 ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect(movInX, row4Y, movW3, 20, 3); ctx.stroke();
+    ctx.fillStyle = movActive3 ? '#ffcc44' : '#668899';
+    ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(movActive3 ? '● MOV' : '■ STAT', movInX + movW3/2, row4Y + 10);
+
+    // PIVOT buttons
+    var pivots3 = ['L', 'C', 'R'], pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
+    var curPivot3 = sb2 ? (sb2._pivot || 'C') : (this._editorPivot || 'C');
     this._editorPivotRects = [];
-    var pW = 22;
-    for (var pi = 0; pi < pivots.length; pi++) {
-      var px2 = pivX + pi * (pW + 2);
-      var pActive = curPivot === pivots[pi];
-      ctx.fillStyle = pActive ? pivColors[pi] + '33' : 'rgba(0,10,30,0.6)';
-      ctx.beginPath(); ctx.roundRect(px2, row2Y, pW, fH, 3); ctx.fill();
-      ctx.strokeStyle = pActive ? pivColors[pi] : '#334455'; ctx.lineWidth = pActive ? 1.5 : 0.8;
-      ctx.beginPath(); ctx.roundRect(px2, row2Y, pW, fH, 3); ctx.stroke();
-      ctx.fillStyle = pActive ? pivColors[pi] : '#445566';
-      ctx.font = "bold 8px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(pivots[pi], px2 + pW/2, row2Y + fH/2);
-      this._editorPivotRects.push({ x: px2, y: row2Y, w: pW, h: fH, val: pivots[pi] });
+    var pW3 = 22;
+    for (var pi3 = 0; pi3 < pivots3.length; pi3++) {
+      var px3 = pivX3 + pi3 * (pW3 + 2);
+      var pAct = curPivot3 === pivots3[pi3];
+      ctx.fillStyle = pAct ? pivColors3[pi3] + '33' : 'rgba(0,10,30,0.6)';
+      ctx.beginPath(); ctx.roundRect(px3, row4Y, pW3, 20, 3); ctx.fill();
+      ctx.strokeStyle = pAct ? pivColors3[pi3] : '#334455'; ctx.lineWidth = pAct ? 1.5 : 0.8;
+      ctx.beginPath(); ctx.roundRect(px3, row4Y, pW3, 20, 3); ctx.stroke();
+      ctx.fillStyle = pAct ? pivColors3[pi3] : '#445566';
+      ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(pivots3[pi3], px3 + pW3/2, row4Y + 10);
+      this._editorPivotRects.push({ x: px3, y: row4Y, w: pW3, h: 20, val: pivots3[pi3] });
     }
 
-    // TRANSLATE toggle (rotate + move vs rotate in place)
-    var transX = pivX + pivots.length * (pW + 2) + 4;
-    var transOn = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
-    ctx.fillStyle = transOn ? 'rgba(0,200,100,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(transX, row2Y, 32, fH, 3); ctx.fill();
-    ctx.strokeStyle = transOn ? '#00ff88' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(transX, row2Y, 32, fH, 3); ctx.stroke();
-    ctx.fillStyle = transOn ? '#00ff88' : '#445566';
-    ctx.font = "bold 7px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(transOn ? '↔ROT' : '⊕ROT', transX + 16, row2Y + fH/2);
-    this._editorTransRect = { x: transX, y: row2Y, w: 32, h: fH };
-
-    ctx.fillStyle = sb2 ? 'rgba(150,200,255,0.35)' : 'rgba(100,150,200,0.25)';
-    ctx.font = "7px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    var hint2 = sb2 ? 'Tap to cycle value  •  Pinch=scale  Twist=rotate'
-                    : 'Defaults for new bricks  •  Tap field to see value';
-    ctx.fillText(hint2, 14, row2Y + fH + 2);
+    // ↔ROT toggle
+    var transX3 = pivX3 + pivots3.length * (pW3 + 2) + 6;
+    var transOn3 = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
+    this._editorTransRect = { x: transX3, y: row4Y, w: 36, h: 20 };
+    ctx.fillStyle = transOn3 ? 'rgba(0,200,100,0.20)' : 'rgba(0,10,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 36, 20, 3); ctx.fill();
+    ctx.strokeStyle = transOn3 ? '#00ff88' : '#334455'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(transX3, row4Y, 36, 20, 3); ctx.stroke();
+    ctx.fillStyle = transOn3 ? '#00ff88' : '#445566';
+    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(transOn3 ? '↔ROT' : '⊕ROT', transX3 + 18, row4Y + 10);
 
     // Highlight selected brick
     if (this._editorSelected) {

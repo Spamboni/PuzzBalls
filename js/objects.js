@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1308;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1311;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -496,6 +496,7 @@ class BreakableBrick {
 
   takeDamage(amount) {
     if (this.health <= 0) return false;
+    if (this._invincible) return false;  // indestructible
     this.health -= amount;
     this.hitFlash = 1;
     if (this.health <= 0) {
@@ -541,9 +542,24 @@ class BreakableBrick {
     // When dead, draw ghost regen countdown
     if (this.health <= 0) {
       if (!this.regenAfter) return;
+      var t2 = performance.now();
+
+      // Snap-to-spawn animation: over first 500ms, lerp toward spawn point
+      var drawX = this.x, drawY = this.y;
+      if (this._spawnX !== undefined) {
+        var elapsed   = this.regenAfter - this.regenTimer;  // ms since destruction
+        var snapDur   = 500;  // ms to snap back
+        var snapFrac  = Math.min(1, elapsed / snapDur);
+        // Ease out cubic
+        var ease = 1 - Math.pow(1 - snapFrac, 3);
+        drawX = this.x + (this._spawnX - this.x) * ease;
+        drawY = this.y + (this._spawnY - this.y) * ease;
+      }
+
       ctx.save();
-      ctx.translate(this.x, this.y);
-      ctx.globalAlpha = 0.28 + 0.1 * Math.sin(t * 0.005);
+      ctx.translate(drawX, drawY);
+      if (this._rotation) ctx.rotate(this._rotation);
+      ctx.globalAlpha = 0.28 + 0.10 * Math.sin(t2 * 0.005);
       ctx.strokeStyle = glow;
       ctx.lineWidth   = 1.5;
       ctx.setLineDash([4, 4]);
@@ -773,17 +789,26 @@ class CircularBrick {
 
     if (this.health <= 0) {
       if (!this.regenAfter) return;
+      var t3 = performance.now();
+      // Snap-to-spawn animation
+      var drawCX = this.x, drawCY = this.y;
+      if (this._spawnX !== undefined) {
+        var elapsed2  = this.regenAfter - this.regenTimer;
+        var ease2 = 1 - Math.pow(1 - Math.min(1, elapsed2 / 500), 3);
+        drawCX = this.x + (this._spawnX - this.x) * ease2;
+        drawCY = this.y + (this._spawnY - this.y) * ease2;
+      }
       ctx.save();
-      ctx.globalAlpha = 0.28 + 0.1 * Math.sin(t * 0.005);
+      ctx.globalAlpha = 0.28 + 0.1 * Math.sin(t3 * 0.005);
       ctx.strokeStyle = glow; ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(drawCX, drawCY, this.r, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
-      var prog = 1 - (this.regenTimer / this.regenAfter);
+      var prog2 = 1 - (this.regenTimer / this.regenAfter);
       ctx.fillStyle = glow + '44';
       ctx.beginPath();
-      ctx.moveTo(this.x, this.y);
-      ctx.arc(this.x, this.y, this.r, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
+      ctx.moveTo(drawCX, drawCY);
+      ctx.arc(drawCX, drawCY, this.r, -Math.PI / 2, -Math.PI / 2 + prog2 * Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1; ctx.restore();
       return;
