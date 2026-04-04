@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1307;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1309;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -257,6 +257,12 @@ var Sound = (function() {
 
     // Ball-specific sounds (§3.2)
     var variant = (window.SoundVariants && window.SoundVariants[ballType]) || 0;
+    if (variant === -1) return;  // None — silence
+
+    // Per-sound volume multiplier
+    var svol = (window.SoundVolumes && window.SoundVolumes[ballType] !== undefined)
+              ? window.SoundVolumes[ballType] / 100 : 1.0;
+    vol *= svol;
 
     switch (ballType) {
       case 'exploder':

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1308;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1309;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -310,25 +310,62 @@ class Game {
           }
         }
         // Inline brick field taps (cycle value)
-        if (self._editorFieldRects && self._editorSelected) {
+        if (self._editorFieldRects) {
           for (var fi2 = 0; fi2 < self._editorFieldRects.length; fi2++) {
             var fr = self._editorFieldRects[fi2];
             if (pos.x >= fr.x && pos.x <= fr.x + fr.w && pos.y >= fr.y && pos.y <= fr.y + fr.h) {
-              var cur2 = self._editorSelected[fr.key] !== undefined ? self._editorSelected[fr.key] : fr.min;
-              var next2 = cur2 + fr.step;
-              if (next2 > fr.max) next2 = fr.min;
-              self._editorSelected[fr.key] = next2;
-              if (fr.key === 'maxHealth') { self._editorSelected.health = next2; self._editorSelected.maxHealth = next2; }
+              if (self._editorSelected) {
+                var cur2 = self._editorSelected[fr.key] !== undefined ? self._editorSelected[fr.key] : fr.min;
+                var next2 = parseFloat(cur2) + fr.step;
+                if (next2 > fr.max) next2 = fr.min;
+                self._editorSelected[fr.key] = next2;
+                if (fr.key === 'maxHealth') { self._editorSelected.health = next2; self._editorSelected.maxHealth = next2; }
+              } else {
+                // Update BrickDefaults
+                window.BrickDefaults = window.BrickDefaults || {};
+                var dCur = window.BrickDefaults[fr.defKey] || fr.min;
+                var dNext = parseFloat(dCur) + fr.step;
+                if (dNext > fr.max) dNext = fr.min;
+                window.BrickDefaults[fr.defKey] = dNext;
+              }
               return;
             }
           }
         }
         // Inline movable toggle
-        if (self._editorMovInlineRect && self._editorSelected) {
+        if (self._editorMovInlineRect) {
           var mr2 = self._editorMovInlineRect;
           if (pos.x >= mr2.x && pos.x <= mr2.x + mr2.w && pos.y >= mr2.y && pos.y <= mr2.y + mr2.h) {
-            self._editorSelected._movable = !self._editorSelected._movable;
-            self._editorMovable = self._editorSelected._movable;
+            if (self._editorSelected) {
+              self._editorSelected._movable = !self._editorSelected._movable;
+              self._editorMovable = self._editorSelected._movable;
+            } else {
+              self._editorMovable = !self._editorMovable;
+            }
+            return;
+          }
+        }
+        // Pivot selector
+        if (self._editorPivotRects) {
+          for (var piv = 0; piv < self._editorPivotRects.length; piv++) {
+            var pr = self._editorPivotRects[piv];
+            if (pos.x >= pr.x && pos.x <= pr.x + pr.w && pos.y >= pr.y && pos.y <= pr.y + pr.h) {
+              if (self._editorSelected) self._editorSelected._pivot = pr.val;
+              self._editorPivot = pr.val;
+              return;
+            }
+          }
+        }
+        // Translate toggle
+        if (self._editorTransRect) {
+          var tr2 = self._editorTransRect;
+          if (pos.x >= tr2.x && pos.x <= tr2.x + tr2.w && pos.y >= tr2.y && pos.y <= tr2.y + tr2.h) {
+            if (self._editorSelected) {
+              self._editorSelected._translateOnRotate = !(self._editorSelected._translateOnRotate !== false);
+              self._editorTranslate = self._editorSelected._translateOnRotate;
+            } else {
+              self._editorTranslate = !(self._editorTranslate !== false);
+            }
             return;
           }
         }
@@ -604,7 +641,19 @@ class Game {
         var decel = mbrick._decel || 0.88;
         mbrick.x += (mbrick._vx || 0);
         mbrick.y += (mbrick._vy || 0);
-        mbrick._rotation = (mbrick._rotation || 0) + (mbrick._angularV || 0);
+        var prevRot = mbrick._rotation || 0;
+        mbrick._rotation = prevRot + (mbrick._angularV || 0);
+        // Translate-on-rotate: brick moves as a whole when rotating (not just spinning in place)
+        if (mbrick._translateOnRotate !== false && mbrick._angularV) {
+          var pivStr  = mbrick._pivot || 'C';
+          var pivOff  = pivStr === 'L' ? -(mbrick.w || 60) / 2
+                      : pivStr === 'R' ?  (mbrick.w || 60) / 2 : 0;
+          // Apply rotation around the pivot point, translating the brick center accordingly
+          var da2   = mbrick._angularV || 0;
+          var cos2  = Math.cos(da2), sin2 = Math.sin(da2);
+          mbrick.x += pivOff * (cos2 - 1);
+          mbrick.y += pivOff * sin2;
+        }
         mbrick._vx = (mbrick._vx || 0) * decel;
         mbrick._vy = (mbrick._vy || 0) * decel;
         mbrick._angularV = (mbrick._angularV || 0) * decel;
@@ -879,26 +928,26 @@ class Game {
           }
         }
 
-        // Movable brick physics — translate + rotate around brick CENTER
+        // Movable brick physics — translate + rotate around chosen pivot
         if (brick._movable) {
           var brickDensity = brick._density || 1.0;
           var ballSpeed    = Math.hypot(ball.vx, ball.vy);
           var impactForce  = ballSpeed / (brickDensity * 3);
 
-          // Linear impulse — push brick in direction ball was travelling
           brick._vx = (brick._vx || 0) - bnx * impactForce;
           brick._vy = (brick._vy || 0) - bny * impactForce;
 
-          // Angular impulse — cross product of (hit point relative to CENTER) × impact normal
-          // Positive = clockwise, negative = counter-clockwise
-          // hitOff = vector from brick center to contact point (in pixels)
-          var hitOffX = ball.x - brick.x;   // pixels from center
-          var hitOffY = ball.y - brick.y;
-          // 2D cross product: r × F = rx*Fy - ry*Fx
+          // Pivot offset: L = -w/2, C = 0, R = +w/2 from brick center
+          var pivotStr = brick._pivot || 'C';
+          var pivotOff = pivotStr === 'L' ? -(brick.w || 60) / 2
+                       : pivotStr === 'R' ?  (brick.w || 60) / 2
+                       : 0;
+          // Cross product: (hitPoint - pivot) × impactDir
+          var hitOffX = (ball.x - brick.x) - pivotOff;
+          var hitOffY =  ball.y - brick.y;
           var torque  = (hitOffX * (-bny) - hitOffY * (-bnx)) * impactForce * 0.012;
           brick._angularV = (brick._angularV || 0) + torque;
 
-          // Record start position for travel clamping
           if (brick._startX === undefined) { brick._startX = brick.x; brick._startY = brick.y; }
           if (window.Sound) Sound.brickShatter(impactForce * 0.3);
         }
@@ -1899,67 +1948,97 @@ class Game {
     ctx.fillStyle = '#00ff88'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('DONE', doneX + 26, btnY + btnH / 2);
 
-    // Row 2: Selected brick settings inline
+    // Row 2: Brick settings — always visible, uses selected brick or shows defaults
     var row2Y = btnY + btnH + 8;
-    if (this._editorSelected && this._showBrickSettings) {
-      var sb2   = this._editorSelected;
-      var isCirc = sb2 instanceof CircularBrick;
+    var bd2   = window.BrickDefaults || {};
+    var sb2   = this._editorSelected;
+    var fW = 42, fH = 22, fGap = 4, fStartX = 14;
 
-      // Settings row: HP | REGEN | MOV | DENSITY | TRAVEL | DECEL
-      var fields = [
-        { label:'HP',    val: sb2.maxHealth || 100,       step:10, min:10,  max:500, key:'maxHealth', fmt: function(v){ return v; } },
-        { label:'REGEN', val: sb2.regenAfter || 0,        step:1000, min:0, max:30000, key:'regenAfter', fmt: function(v){ return v ? (v/1000).toFixed(0)+'s' : 'OFF'; } },
-        { label:'DENS',  val: sb2._density || 1.0,        step:0.5, min:0.5, max:5, key:'_density', fmt: function(v){ return v.toFixed(1); } },
-        { label:'DIST',  val: sb2._maxTravel || 60,       step:10, min:0,  max:300, key:'_maxTravel', fmt: function(v){ return v+'px'; } },
-      ];
+    var fields = [
+      { label:'HP',    key:'maxHealth',  defKey:'rectHP',   step:10,   min:10,  max:500,   fmt: function(v){ return v; } },
+      { label:'REGEN', key:'regenAfter', defKey:'rectRegen',step:1000, min:0,   max:30000, fmt: function(v){ return v ? (v/1000).toFixed(0)+'s' : 'OFF'; } },
+      { label:'DENS',  key:'_density',   defKey:'density',  step:0.5,  min:0.5, max:5.0,   fmt: function(v){ return parseFloat(v).toFixed(1); } },
+      { label:'DIST',  key:'_maxTravel', defKey:'maxTravel',step:10,   min:0,   max:300,   fmt: function(v){ return v+'px'; } },
+    ];
 
-      this._editorFieldRects = [];
-      var fW = 46, fH = 20, fGap = 5;
-      var fStartX = 14;
-      for (var fi = 0; fi < fields.length; fi++) {
-        var fld   = fields[fi];
-        var fBx   = fStartX + fi * (fW + fGap);
+    this._editorFieldRects = [];
+    for (var fi = 0; fi < fields.length; fi++) {
+      var fld = fields[fi];
+      var val = sb2 ? (sb2[fld.key] !== undefined ? sb2[fld.key] : (bd2[fld.defKey] || fld.min))
+                    : (bd2[fld.defKey] || fld.min);
+      var fBx = fStartX + fi * (fW + fGap);
+      var isActive = !!sb2;
 
-        ctx.fillStyle = 'rgba(0,15,40,0.8)';
-        ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.fill();
-        ctx.strokeStyle = 'rgba(0,160,255,0.45)'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.stroke();
+      ctx.fillStyle = isActive ? 'rgba(0,20,55,0.9)' : 'rgba(0,10,30,0.6)';
+      ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.fill();
+      ctx.strokeStyle = isActive ? 'rgba(0,180,255,0.6)' : 'rgba(0,100,180,0.3)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(fBx, row2Y, fW, fH, 3); ctx.stroke();
 
-        ctx.fillStyle = '#88ccff'; ctx.font = "7px 'Share Tech Mono',monospace";
-        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-        ctx.fillText(fld.label, fBx + fW/2, row2Y + 1);
-        ctx.fillStyle = '#ffffff'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
-        ctx.textBaseline = 'bottom';
-        ctx.fillText(fld.fmt(fld.val), fBx + fW/2, row2Y + fH - 1);
+      ctx.fillStyle = isActive ? '#88ccff' : '#445566';
+      ctx.font = "7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(fld.label, fBx + fW/2, row2Y + 1);
+      ctx.fillStyle = isActive ? '#ffffff' : '#667788';
+      ctx.font = "bold 8px 'Share Tech Mono',monospace";
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(fld.fmt(val), fBx + fW/2, row2Y + fH - 1);
 
-        this._editorFieldRects.push({ x: fBx, y: row2Y, w: fW, h: fH, key: fld.key, step: fld.step, min: fld.min, max: fld.max });
-      }
+      this._editorFieldRects.push({ x: fBx, y: row2Y, w: fW, h: fH, key: fld.key, defKey: fld.defKey, step: fld.step, min: fld.min, max: fld.max });
+    }
 
-      // MOV toggle inline
-      var movInX = fStartX + fields.length * (fW + fGap);
-      ctx.fillStyle = sb2._movable ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
-      ctx.beginPath(); ctx.roundRect(movInX, row2Y, 46, fH, 3); ctx.fill();
-      ctx.strokeStyle = sb2._movable ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.roundRect(movInX, row2Y, 46, fH, 3); ctx.stroke();
-      ctx.fillStyle = sb2._movable ? '#ffcc44' : '#668899';
+    // MOV toggle
+    var movInX = fStartX + fields.length * (fW + fGap);
+    var movActive = sb2 ? (sb2._movable || false) : (this._editorMovable || false);
+    ctx.fillStyle = movActive ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.7)';
+    ctx.beginPath(); ctx.roundRect(movInX, row2Y, 42, fH, 3); ctx.fill();
+    ctx.strokeStyle = movActive ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.roundRect(movInX, row2Y, 42, fH, 3); ctx.stroke();
+    ctx.fillStyle = movActive ? '#ffcc44' : '#668899';
+    ctx.font = "bold 7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(movActive ? '● MOV' : '■ STAT', movInX + 21, row2Y + fH/2);
+    this._editorMovInlineRect = { x: movInX, y: row2Y, w: 42, h: fH };
+
+    // PIVOT selector (LEFT / CTR / RIGHT) — only for rect bricks
+    var pivX = movInX + 46;
+    var pivots = ['L', 'C', 'R'];
+    var pivColors = ['#ffcc44', '#44ccff', '#ff8844'];
+    var curPivot = sb2 ? (sb2._pivot || 'C') : (this._editorPivot || 'C');
+    this._editorPivotRects = [];
+    var pW = 22;
+    for (var pi = 0; pi < pivots.length; pi++) {
+      var px2 = pivX + pi * (pW + 2);
+      var pActive = curPivot === pivots[pi];
+      ctx.fillStyle = pActive ? pivColors[pi] + '33' : 'rgba(0,10,30,0.6)';
+      ctx.beginPath(); ctx.roundRect(px2, row2Y, pW, fH, 3); ctx.fill();
+      ctx.strokeStyle = pActive ? pivColors[pi] : '#334455'; ctx.lineWidth = pActive ? 1.5 : 0.8;
+      ctx.beginPath(); ctx.roundRect(px2, row2Y, pW, fH, 3); ctx.stroke();
+      ctx.fillStyle = pActive ? pivColors[pi] : '#445566';
       ctx.font = "bold 8px 'Share Tech Mono',monospace";
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(sb2._movable ? '● MOV' : '■ STAT', movInX + 23, row2Y + fH/2);
-      this._editorMovInlineRect = { x: movInX, y: row2Y, w: 46, h: fH };
-
-      ctx.fillStyle = 'rgba(150,200,255,0.35)';
-      ctx.font = "7px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText('Tap value to cycle  |  Pinch=scale  Twist=rotate', 14, row2Y + fH + 3);
-    } else {
-      ctx.fillStyle = 'rgba(150,200,255,0.40)';
-      ctx.font = "8px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      var hint = this._editorSelectMode
-        ? 'Tap a brick to select it  •  Drag to move'
-        : 'Tap to place  •  Pinch to scale  •  2-finger twist to rotate';
-      ctx.fillText(hint, 14, row2Y + 10);
+      ctx.fillText(pivots[pi], px2 + pW/2, row2Y + fH/2);
+      this._editorPivotRects.push({ x: px2, y: row2Y, w: pW, h: fH, val: pivots[pi] });
     }
+
+    // TRANSLATE toggle (rotate + move vs rotate in place)
+    var transX = pivX + pivots.length * (pW + 2) + 4;
+    var transOn = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
+    ctx.fillStyle = transOn ? 'rgba(0,200,100,0.20)' : 'rgba(0,10,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(transX, row2Y, 32, fH, 3); ctx.fill();
+    ctx.strokeStyle = transOn ? '#00ff88' : '#334455'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(transX, row2Y, 32, fH, 3); ctx.stroke();
+    ctx.fillStyle = transOn ? '#00ff88' : '#445566';
+    ctx.font = "bold 7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(transOn ? '↔ROT' : '⊕ROT', transX + 16, row2Y + fH/2);
+    this._editorTransRect = { x: transX, y: row2Y, w: 32, h: fH };
+
+    ctx.fillStyle = sb2 ? 'rgba(150,200,255,0.35)' : 'rgba(100,150,200,0.25)';
+    ctx.font = "7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    var hint2 = sb2 ? 'Tap to cycle value  •  Pinch=scale  Twist=rotate'
+                    : 'Defaults for new bricks  •  Tap field to see value';
+    ctx.fillText(hint2, 14, row2Y + fH + 2);
 
     // Highlight selected brick
     if (this._editorSelected) {

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1308;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1309;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -198,7 +198,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v13.08</b>';
+        vRow.innerHTML = '<b>PuzzBalls v13.09</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -221,10 +221,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v13.08 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v13.09 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1308) {
-            verEl.textContent = 'v13.08 ✓';
+          } else if (loaded === 1309) {
+            verEl.textContent = 'v13.09 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -350,32 +350,85 @@ class UI {
         var variantNames = [
           'Default', 'Soft thud', 'Hard crack', 'Glass ping',
           'Metallic clank', 'Deep boom', 'Hollow knock', 'Plastic pop',
-          '🎵 Boing!', '💫 Zap!'
+          '🎵 Boing!', '💫 Zap!', '🔇 None'
         ];
 
+        // Default sound name lookup (what "Default" actually is per ball type)
+        var defaultSoundNames = {
+          bouncer:    'sine bounce',   exploder:   'heavy thud',
+          sticky:     'dull thump',    splitter:   'crisp click',
+          gravity:    'resonant hum',  explosion:  'deep boom',
+          brick_hit:  'glass crack',   brick_brick:'stone thud',
+        };
+
         soundItems.forEach(function(item) {
-          var row2 = _el('div','slider-row');
-          row2.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:3px 4px;';
+          var row2 = _el('div','');
+          row2.style.cssText = 'padding:3px 4px 0;';
+
+          // Label row
+          var labelRow = _el('div','');
+          labelRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
           var lbl2 = _el('span','');
-          lbl2.textContent = item.label;
+          var defName = defaultSoundNames[item.key] || 'default';
+          lbl2.textContent = item.label + ' (default: ' + defName + ')';
           lbl2.style.cssText = 'font-size:9px;color:' + item.color + ';flex:1;';
-          row2.appendChild(lbl2);
+          labelRow.appendChild(lbl2);
 
           var sel2 = document.createElement('select');
-          sel2.style.cssText = 'background:rgba(0,20,50,0.9);color:#aaddff;border:1px solid #336;border-radius:4px;font-size:9px;padding:2px 4px;max-width:110px;';
+          sel2.style.cssText = 'background:rgba(0,20,50,0.9);color:#aaddff;border:1px solid #336;border-radius:4px;font-size:9px;padding:2px 4px;max-width:100px;';
           variantNames.forEach(function(vn, vi) {
             var opt2 = document.createElement('option');
-            opt2.value = vi; opt2.textContent = vn;
+            opt2.value = vi === 10 ? -1 : vi; // -1 = None
+            opt2.textContent = vn;
             sel2.appendChild(opt2);
           });
-          var cur = window.SoundVariants[item.key] || 0;
-          sel2.value = cur;
+          var curV = window.SoundVariants[item.key];
+          sel2.value = curV === undefined ? 0 : curV;
           sel2.addEventListener('change', function() {
             window.SoundVariants[item.key] = parseInt(sel2.value);
           });
-          row2.appendChild(sel2);
+          labelRow.appendChild(sel2);
+          row2.appendChild(labelRow);
+
+          // Volume slider for this sound
+          window.SoundVolumes = window.SoundVolumes || {};
+          var volRow = _el('div','');
+          volRow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 0 4px;';
+          var volLbl = _el('span','');
+          volLbl.textContent = 'Vol:';
+          volLbl.style.cssText = 'font-size:8px;color:#668899;';
+          volRow.appendChild(volLbl);
+          var volSlider = document.createElement('input');
+          volSlider.type = 'range'; volSlider.min = 0; volSlider.max = 200; volSlider.step = 5;
+          volSlider.value = (window.SoundVolumes[item.key] !== undefined) ? window.SoundVolumes[item.key] : 100;
+          volSlider.style.cssText = 'flex:1;height:14px;accent-color:' + item.color + ';';
+          var volVal = _el('span','');
+          volVal.textContent = volSlider.value + '%';
+          volVal.style.cssText = 'font-size:8px;color:#aaddff;min-width:30px;';
+          volSlider.addEventListener('input', function() {
+            window.SoundVolumes[item.key] = parseInt(volSlider.value);
+            volVal.textContent = volSlider.value + '%';
+          });
+          volRow.appendChild(volSlider); volRow.appendChild(volVal);
+          row2.appendChild(volRow);
           pane.appendChild(row2);
         });
+
+        // Reset sound settings button
+        var resetSoundBtn = _el('button', 'settings-reset-btn');
+        resetSoundBtn.textContent = 'RESET SOUND SETTINGS';
+        resetSoundBtn.style.marginTop = '10px';
+        function doResetSounds(e) {
+          e.preventDefault();
+          window.SoundVariants = {};
+          window.SoundVolumes  = {};
+          panel.innerHTML = '';
+          self._buildSettingsPanel();
+          self._settingsPanel.classList.add('open');
+        }
+        resetSoundBtn.addEventListener('click', doResetSounds);
+        resetSoundBtn.addEventListener('touchend', doResetSounds);
+        pane.appendChild(resetSoundBtn);
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
       } else {
