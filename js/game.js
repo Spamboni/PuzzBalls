@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1434;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1435;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -330,15 +330,16 @@ class Game {
       if (self._editorMode) {
         // Taps in the chute column (right strip) always start a scroll — never build there
         var chuteX = self.W - 50;
-        if (pos.x >= chuteX && pos.y < self.floorY()) {
+        if (pos.x >= chuteX && pos.y < self.floorY() + (self._viewScrollY || 0)) {
           self._editorScrollPending  = true;
           self._editorScrollDragging = false;
           self._editorScrollStart    = self._viewScrollY || 0;
           self._editorScrollDragY    = pos.y;
           return;
         }
-        // All panel buttons are below floorY — handle them, then return
-        var inPanel = pos.y >= self.floorY();
+        // Panel boundary in screen space = floorY shifted by viewScrollY
+        var _screenFloorY = self.floorY() + (self._viewScrollY || 0);
+        var inPanel = pos.y >= _screenFloorY;
 
         // Always check panel buttons regardless of Y position (buttons are below floor)
         if (self._editorModeBtn) {
@@ -432,7 +433,11 @@ class Game {
                   return;
                 }
               }
-              // Double-tap on value area → prompt for direct entry
+              // Double-tap: only in brick mode, not tube mode
+              if (self._editorTubeMode) {
+                self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step, invert: sd.invert, isDim: sd.isDim, isRot: sd.isRot, id: sd.id }, sl2);
+                return;
+              }
               var elapsed2 = performance.now() - (self._lastSliderTap || 0);
               if (elapsed2 < 350 && self._lastSliderTapId === sd.id) {
                 self._lastSliderTap = 0;
@@ -580,16 +585,18 @@ class Game {
           }
         }
         // Tab switching — ALWAYS checked first, before any panel content routing
+        // Tab checks — translate to editor coordinate space
+        var _tabY = pos.y - (self._viewScrollY || 0);
         if (self._editorBrickTab) {
           var bt = self._editorBrickTab;
-          if (pos.x >= bt.x-6 && pos.x <= bt.x+bt.w+6 && pos.y >= bt.y-6 && pos.y <= bt.y+bt.h+10) {
+          if (pos.x >= bt.x-6 && pos.x <= bt.x+bt.w+6 && _tabY >= bt.y-6 && _tabY <= bt.y+bt.h+10) {
             self._editorTubeMode = false; window._tubeEditorMode = false;
             if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
           }
         }
         if (self._editorTubeTab) {
           var tt = self._editorTubeTab;
-          if (pos.x >= tt.x-6 && pos.x <= tt.x+tt.w+6 && pos.y >= tt.y-6 && pos.y <= tt.y+tt.h+10) {
+          if (pos.x >= tt.x-6 && pos.x <= tt.x+tt.w+6 && _tabY >= tt.y-6 && _tabY <= tt.y+tt.h+10) {
             self._editorTubeMode = true; window._tubeEditorMode = true;
             if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
           }
@@ -597,33 +604,43 @@ class Game {
         // Done button — in both brick and tube modes
         if (self._editorDoneBtn) {
           var dnb2 = self._editorDoneBtn;
-          if (pos.x >= dnb2.x-4 && pos.x <= dnb2.x+dnb2.w+4 && pos.y >= dnb2.y-4 && pos.y <= dnb2.y+dnb2.h+4) {
+          if (pos.x >= dnb2.x-4 && pos.x <= dnb2.x+dnb2.w+4 && _tabY >= dnb2.y-4 && _tabY <= dnb2.y+dnb2.h+4) {
             self.toggleEditor(); return;
           }
         }
         // In tube editor mode — handle tube panel taps
         if (self._editorTubeMode && inPanel) {
+          // Translate tap position into editor coordinate space
+          var _tpy = pos.y - (self._viewScrollY || 0);
+          var _tpx = pos.x;
           // Type buttons
           if (self._tubeBtns) for (var tbi=0;tbi<self._tubeBtns.length;tbi++) {
             var tb=self._tubeBtns[tbi];
-            if (pos.x>=tb.x-2&&pos.x<=tb.x+tb.w+2&&pos.y>=tb.y-2&&pos.y<=tb.y+tb.h+2) {
+            if (_tpx>=tb.x-2&&_tpx<=tb.x+tb.w+2&&_tpy>=tb.y-2&&_tpy<=tb.y+tb.h+2) {
               self._tubeType=tb.val; if(window.Sound&&Sound.uiTap)Sound.uiTap(0.22); return;
             }
           }
           // Style buttons
           if (self._tubeStyleBtns) for (var tsb=0;tsb<self._tubeStyleBtns.length;tsb++) {
             var tsbt=self._tubeStyleBtns[tsb];
-            if (pos.x>=tsbt.x&&pos.x<=tsbt.x+tsbt.w&&pos.y>=tsbt.y&&pos.y<=tsbt.y+tsbt.h) { self._tubeStyle=tsbt.val; if(self._tubeSelected)self._tubeSelected.style=tsbt.val; return; }
+            if (_tpx>=tsbt.x&&_tpx<=tsbt.x+tsbt.w&&_tpy>=tsbt.y&&_tpy<=tsbt.y+tsbt.h) { self._tubeStyle=tsbt.val; if(self._tubeSelected)self._tubeSelected.style=tsbt.val; return; }
+          }
+          // Anchor buttons
+          if (self._tubeAnchorBtns) for (var tab2=0;tab2<self._tubeAnchorBtns.length;tab2++) {
+            var tabtn=self._tubeAnchorBtns[tab2];
+            if (_tpx>=tabtn.x&&_tpx<=tabtn.x+tabtn.w&&_tpy>=tabtn.y&&_tpy<=tabtn.y+tabtn.h) {
+              self._tubeAnchor=tabtn.val; return;
+            }
           }
           // Layer buttons
           if (self._tubeLayerBtns) for (var tlb=0;tlb<self._tubeLayerBtns.length;tlb++) {
             var tlbt=self._tubeLayerBtns[tlb];
-            if (pos.x>=tlbt.x&&pos.x<=tlbt.x+tlbt.w&&pos.y>=tlbt.y&&pos.y<=tlbt.y+tlbt.h) { self._tubeLayer=tlbt.val; if(self._tubeSelected)self._tubeSelected.layer=tlbt.val; return; }
+            if (_tpx>=tlbt.x&&_tpx<=tlbt.x+tlbt.w&&_tpy>=tlbt.y&&_tpy<=tlbt.y+tlbt.h) { self._tubeLayer=tlbt.val; if(self._tubeSelected)self._tubeSelected.layer=tlbt.val; return; }
           }
           // Delete tube button
           if (self._tubeDelBtn) {
             var tdb=self._tubeDelBtn;
-            if (pos.x>=tdb.x&&pos.x<=tdb.x+tdb.w&&pos.y>=tdb.y&&pos.y<=tdb.y+tdb.h) {
+            if (_tpx>=tdb.x&&_tpx<=tdb.x+tdb.w&&_tpy>=tdb.y&&_tpy<=tdb.y+tdb.h) {
               self.tubes.remove(self._tubeSelected); self._tubeSelected=null;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.25); return;
             }
@@ -646,8 +663,8 @@ class Game {
             var tsl=tubeSliders[tsi].sl, tcb=tubeSliders[tsi].cb;
             if (!tsl) continue;
             // Use generous hit area — full row height around the slider track
-            if (pos.x>=tsl.trackX-16&&pos.x<=tsl.trackX+tsl.trackW+16&&
-                pos.y>=tsl.y-8&&pos.y<=tsl.y+tsl.h+8) {
+            if (_tpx>=tsl.trackX-16&&_tpx<=tsl.trackX+tsl.trackW+16&&
+                _tpy>=tsl.y-8&&_tpy<=tsl.y+tsl.h+8) {
               self._tubeDragSlider={sl:tsl,cb:tcb}; return;
             }
           }
@@ -731,7 +748,9 @@ class Game {
           }
         }
         // Only place/select bricks in the play area (above floor)
-        if (!inPanel) self._editorOnDown(pos);
+        // Only interact with play area for brick placement when NOT in tube mode
+        if (!inPanel && !self._editorTubeMode) self._editorOnDown(pos);
+        else if (!inPanel && self._editorTubeMode) self._tubeEditorOnDown(pos);
         return;
       }
 
@@ -893,17 +912,24 @@ class Game {
       // Tube slider drag
       if (self._tubeDragSlider) {
         var tsl2 = self._tubeDragSlider.sl;
-        var t3 = Math.max(0, Math.min(1, (pos.x - tsl2.trackX) / tsl2.trackW));
+        var t3 = Math.max(0, Math.min(1, (pos.x - tsl2.trackX) / tsl2.trackW));  // X doesn't need scroll offset
         var v3 = tsl2.min + t3 * (tsl2.max - tsl2.min);
         self._tubeDragSlider.cb(v3);
         return;
       }
       // Tube piece drag
       if (self._tubeDragging) {
-        self._tubeDragging.x = pos.x - (self._tubeDragOffX || 0);
-        self._tubeDragging.y = pos.y - (self._tubeDragOffY || 0);
-        self._tubeDragging.rebuild();
-        self.tubes.checkSnap(self._tubeDragging);
+        var td = self._tubeDragging;
+        var conn = td.connectedA || td.connectedB;
+        if (conn) {
+          // Pivot around joint
+          self.tubes.dragConnected(td, pos, self._tubeDragOffX || 0, self._tubeDragOffY || 0);
+        } else {
+          td.x = pos.x - (self._tubeDragOffX || 0);
+          td.y = pos.y - (self._tubeDragOffY || 0);
+          td.rebuild();
+          self.tubes.checkSnap(td);
+        }
         return;
       }
       if (self._editorMode) {
@@ -2560,11 +2586,11 @@ class Game {
     this.tubes.draw(ctx, 'above', this.frame, this._tubeSelected);
     if (this.sling) this._drawSling();
     this._drawSparks();
-    // Restore transform before fixed-position overlays
+    if (this._editorMode) this._drawEditor();
+    // Restore transform before fixed-position overlays (speed slider + corner buttons stay fixed)
     if (vSY !== 0) ctx.restore();
     this._drawSpeedSlider();
     this._drawCornerButtons();
-    if (this._editorMode) this._drawEditor();
   }
 
   // ── Brick Editor (§4.3) ───────────────────────────────────────────────────
@@ -2725,6 +2751,7 @@ class Game {
   // Multi-touch: pinch to scale, two-finger rotate
   _editorHandleTouch(touches) {
     if (!this._editorMode || !this._editorSelected || touches.length < 2) return;
+    if (this._editorTubeMode) return;  // don't pinch bricks when in tube mode
     var rect = this.canvas.getBoundingClientRect();
     var t0   = touches[0], t1 = touches[1];
     var p0   = { x: t0.clientX - rect.left, y: t0.clientY - rect.top };
@@ -3346,6 +3373,16 @@ class Game {
       if (hitTube) break;
     }
     if (hitTube) {
+      var now2 = performance.now();
+      var dtap = now2 - (this._lastTubeTap || 0);
+      this._lastTubeTap = now2;
+      // Double-tap in select mode = disconnect
+      if (dtap < 350 && this._tubeSelectMode && this._lastTubeTapId === hitTube.id) {
+        this.tubes.disconnect(hitTube);
+        this._lastTubeTap = 0;
+        return;
+      }
+      this._lastTubeTapId = hitTube.id;
       this._tubeSelected = hitTube;
       this._tubeDragging = hitTube;
       this._tubeDragOffX = pos.x - hitTube.x;
@@ -3449,9 +3486,25 @@ class Game {
     this._tubeSliderSpd = drawTS('SPD', spdVal, 0.2, 3.0, padding + halfW, row3Y, halfW);
     var row4Y = row3Y + rH + gap;
     this._tubeSliderRot = drawTS('ROT', rotVal, -180, 180, padding, row4Y, W - 16);
+    // Rotation pivot anchor buttons: LEFT | MID | RIGHT
+    var row4bY = row4Y + rH + 3;
+    var anchors = ['L','MID','R']; var aW = 40;
+    this._tubeAnchorBtns = [];
+    for (var ai = 0; ai < anchors.length; ai++) {
+      var ax2 = padding + ai * (aW + 4);
+      var aAct = (this._tubeAnchor || 'MID') === anchors[ai];
+      ctx.fillStyle = aAct ? 'rgba(0,160,255,0.35)' : 'rgba(0,15,40,0.6)';
+      ctx.beginPath(); ctx.roundRect(ax2, row4bY, aW, 16, 3); ctx.fill();
+      ctx.strokeStyle = aAct ? '#00aaff' : '#224466'; ctx.lineWidth = aAct ? 1.4 : 0.7;
+      ctx.beginPath(); ctx.roundRect(ax2, row4bY, aW, 16, 3); ctx.stroke();
+      ctx.fillStyle = aAct ? '#44ccff' : '#557799';
+      ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(anchors[ai], ax2 + aW/2, row4bY + 8);
+      this._tubeAnchorBtns.push({ x:ax2, y:row4bY, w:aW, h:16, val:anchors[ai] });
+    }
+    var row5Y = row4bY + 16 + gap;
 
     // Layer buttons
-    var row5Y = row4Y + rH + gap;
     var layers = ['main','behind','above'];
     var lW = Math.floor((W - 16) / 3);
     this._tubeLayerBtns = [];

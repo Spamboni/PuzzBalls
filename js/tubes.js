@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1434;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1435;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -453,7 +453,7 @@ class TubePiece {
       var prevPt = this._pointAtT(Math.max(0, tRing - 0.02));
       var tang = Math.atan2(rpt.y - prevPt.y, rpt.x - prevPt.x);
       var pulse = 0.6 + 0.4 * Math.sin(frame * 0.15 + ri * 1.4);
-      ctx.save(); ctx.translate(rpt.x, rpt.y); ctx.rotate(tang + Math.PI/2);
+      ctx.save(); ctx.translate(rpt.x, rpt.y); ctx.rotate(tang);  // align cross-section to path
       ctx.beginPath(); ctx.ellipse(0, 0, tubeR * 0.32, tubeR, 0, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba('+cr+','+cg+','+cb+','+(alpha * pulse * 0.85)+')';
       ctx.lineWidth = 1.2; ctx.shadowColor = 'rgba('+cr+','+cg+','+cb+',0.8)';
@@ -519,10 +519,10 @@ class TubeManager {
     if (tube._ball) { tube._ball._inTube = null; tube._ball.pinned = false; }
   }
 
-  // ── Update all tubes + handle captures ───────────────────────────────────
+  // ── Update all tubes + handle captures + exterior collisions ─────────────
   update(balls) {
     var self = this;
-    // Try to capture free balls
+    // Try to capture free balls into tube ends
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var tube = this.tubes[ti];
       if (tube._ball) continue;
@@ -536,15 +536,95 @@ class TubeManager {
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var result = this.tubes[ti].update();
       if (result) {
-        // Ball exited — release it
         result.ball._inTube  = null;
         result.ball.pinned   = false;
         result.ball.inFlight = true;
       }
     }
+    // Exterior collision — balls bounce off tube outer surface
+    for (var ti = 0; ti < this.tubes.length; ti++) {
+      var tube = this.tubes[ti];
+      var pts  = tube._path;
+      if (!pts || pts.length < 2) continue;
+      var tubeR = tube.radius;
+      for (var bi = 0; bi < balls.length; bi++) {
+        var ball = balls[bi];
+        if (ball.dead || (ball._inTube === tube)) continue;
+        // Check distance from ball to each path segment
+        for (var pi = 0; pi < pts.length - 1; pi++) {
+          var ax = pts[pi].x, ay = pts[pi].y;
+          var bx2 = pts[pi+1].x, by2 = pts[pi+1].y;
+          var dx = bx2 - ax, dy2 = by2 - ay;
+          var segLen = Math.hypot(dx, dy2);
+          if (segLen < 0.001) continue;
+          var t = Math.max(0, Math.min(1, ((ball.x-ax)*dx + (ball.y-ay)*dy2) / (segLen*segLen)));
+          var cpx = ax + t*dx, cpy = ay + t*dy2;
+          var dist = Math.hypot(ball.x - cpx, ball.y - cpy);
+          var minDist = tubeR + ball.r;
+          if (dist < minDist && dist > 0.1) {
+            // Push ball out
+            var nx2 = (ball.x - cpx) / dist, ny2 = (ball.y - cpy) / dist;
+            var overlap = minDist - dist;
+            ball.x += nx2 * overlap;
+            ball.y += ny2 * overlap;
+            // Reflect velocity component along normal
+            var dot = ball.vx * nx2 + ball.vy * ny2;
+            if (dot < 0) {
+              var bounce = 0.55;
+              ball.vx -= (1 + bounce) * dot * nx2;
+              ball.vy -= (1 + bounce) * dot * ny2;
+            }
+            break;
+          }
+        }
+      }
+    }
   }
 
-  // ── Snap check: returns nearest socket pair within snap distance ──────────
+  // ── Connection system ─────────────────────────────────────────────────────
+  // Connect two tube sockets permanently
+  connect(tubeA, sideA, tubeB, sideB) {
+    // Store mutual references
+    if (sideA === 'A') tubeA.connectedA = { tube: tubeB, side: sideB };
+    else               tubeA.connectedB = { tube: tubeB, side: sideB };
+    if (sideB === 'A') tubeB.connectedA = { tube: tubeA, side: sideA };
+    else               tubeB.connectedB = { tube: tubeA, side: sideA };
+  }
+
+  // Disconnect a tube from all its connections
+  disconnect(tube) {
+    var self = this;
+    ['connectedA','connectedB'].forEach(function(slot) {
+      var conn = tube[slot];
+      if (!conn) return;
+      var other = conn.tube;
+      if (other.connectedA && other.connectedA.tube === tube) other.connectedA = null;
+      if (other.connectedB && other.connectedB.tube === tube) other.connectedB = null;
+      tube[slot] = null;
+    });
+  }
+
+  // When dragging a connected tube: pivot around the joint if dragging the free end
+  dragConnected(tube, pos, dragOffX, dragOffY) {
+    var conn = tube.connectedA || tube.connectedB;
+    if (!conn) return false;  // not connected — normal drag
+    // Pivot point = the connected socket position
+    var pivotSock = (tube.connectedA && tube.connectedA.tube) ? tube.socketA() : tube.socketB();
+    var pivotX = pivotSock.x, pivotY = pivotSock.y;
+    // Angle from pivot to new drag position
+    var newAngle = Math.atan2((pos.y - dragOffY) - pivotY, (pos.x - dragOffX) - pivotX);
+    var origAngle = Math.atan2(tube.y - pivotY, tube.x - pivotX);
+    var deltaAngle = newAngle - origAngle;
+    tube.rotation += deltaAngle;
+    // Move center to maintain pivot
+    var armLen = Math.hypot(tube.x - pivotX, tube.y - pivotY);
+    tube.x = pivotX + Math.cos(newAngle) * armLen;
+    tube.y = pivotY + Math.sin(newAngle) * armLen;
+    tube.rebuild();
+    return true;
+  }
+
+  // ── Snap check ───────────────────────────────────────────────────────────
   checkSnap(dragTube) {
     dragTube._snapHighlight = null;
     var snapDist = this.SNAP_DIST;
@@ -557,7 +637,8 @@ class TubeManager {
       for (var di = 0; di < dragSocks.length; di++) {
         for (var oi = 0; oi < otherSocks.length; oi++) {
           var d = Math.hypot(dragSocks[di].x - otherSocks[oi].x, dragSocks[di].y - otherSocks[oi].y);
-          if (d < bestD) { bestD = d; best = { drag: dragSocks[di], other: otherSocks[oi], dist: d }; }
+          if (d < bestD) { bestD = d; best = { drag: dragSocks[di], other: otherSocks[oi], dist: d,
+            dragSide: di === 0 ? 'A' : 'B', otherSide: oi === 0 ? 'A' : 'B', otherTube: other }; }
         }
       }
     }
@@ -568,18 +649,19 @@ class TubeManager {
     return null;
   }
 
-  // ── Apply snap: move dragTube so its socket aligns with target socket ─────
+  // ── Apply snap and connect ────────────────────────────────────────────────
   applySnap(dragTube, snapResult, snapRotation) {
     var ds = snapResult.drag, os = snapResult.other;
     var dx = os.x - ds.x, dy = os.y - ds.y;
     dragTube.x += dx; dragTube.y += dy;
     if (snapRotation) {
-      // Align entry/exit angles so they face each other
       var targetAngle = os.angle + Math.PI;
-      var currentAngle = ds.angle;
-      dragTube.rotation += targetAngle - currentAngle;
+      dragTube.rotation += targetAngle - ds.angle;
     }
     dragTube.rebuild();
+    // Lock the connection
+    this.connect(dragTube, snapResult.dragSide, snapResult.otherTube, snapResult.otherSide);
+    dragTube._snapHighlight = null;
   }
 
   // ── Draw (split by layer) ─────────────────────────────────────────────────
