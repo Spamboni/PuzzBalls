@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1326;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1400;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1061,6 +1061,30 @@ class Game {
       }
     }
 
+    // ── Piston physics — knock balls sitting above the generator cap ──────────
+    if (this._pistonCapY !== undefined) {
+      for (i = 0; i < this.objects.length; i++) {
+        var pObj = this.objects[i];
+        if (pObj.dead || pObj.inFlight) continue;
+        // Check piston 1
+        if (Math.abs(pObj.x - this._piston1X) < pObj.r + 4) {
+          var pTip1 = this._pistonY1;
+          if (pObj.y + pObj.r > pTip1 - 2 && pObj.y - pObj.r < this._pistonCapY) {
+            pObj.y = pTip1 - pObj.r - 1;
+            if (pObj.vy > -1) { pObj.vy = -6; pObj.inFlight = true; }
+          }
+        }
+        // Check piston 2
+        if (Math.abs(pObj.x - this._piston2X) < pObj.r + 4) {
+          var pTip2 = this._pistonY2;
+          if (pObj.y + pObj.r > pTip2 - 2 && pObj.y - pObj.r < this._pistonCapY) {
+            pObj.y = pTip2 - pObj.r - 1;
+            if (pObj.vy > -1) { pObj.vy = -6; pObj.inFlight = true; }
+          }
+        }
+      }
+    }
+
     // Enforce chute left wall as physics boundary
     this._enforceChuteWall();
 
@@ -1862,94 +1886,191 @@ class Game {
     ctx.lineTo(W, floorY);
     ctx.stroke();
 
-    // ── FUTURISTIC BALL GENERATOR CAP — animated mechanical device ────────────
-    var capH   = 44;
+    // ── BALL GENERATOR CAP — redesigned ─────────────────────────────────────
+    var capH   = 52;                 // taller to fit new layout
     var capY   = topY - capH;
     var capX   = leftX;
     var capW   = CW;
     var cMid   = capX + capW / 2;
     var cFrame = this.frame;
 
-    // Cap body
-    ctx.fillStyle = 'rgba(5,18,40,0.92)';
-    ctx.beginPath(); ctx.roundRect(capX, capY, capW, capH, [5, 5, 0, 0]); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,200,255,0.75)';
+    // ── Hazard stripe right wall ──────────────────────────────────────────────
+    var stripeW = 7;
+    var stripeH = capH + 18;
+    var stripeY = capY - 4;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(W - stripeW, stripeY, stripeW, stripeH); ctx.clip();
+    var stripeSize = 10;
+    for (var si2 = -stripeH; si2 < stripeH * 2; si2 += stripeSize * 2) {
+      ctx.fillStyle = '#ffcc00'; ctx.fillRect(W - stripeW, stripeY + si2, stripeW, stripeSize);
+      ctx.fillStyle = '#111111'; ctx.fillRect(W - stripeW, stripeY + si2 + stripeSize, stripeW, stripeSize);
+    }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,180,255,0.4)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(W - stripeW, stripeY); ctx.lineTo(W - stripeW, stripeY + stripeH); ctx.stroke();
+
+    // ── Cap body — rounded top corners ───────────────────────────────────────
+    ctx.fillStyle = 'rgba(4,14,34,0.96)';
+    ctx.beginPath(); ctx.roundRect(capX, capY, capW - stripeW, capH, [10, 10, 0, 0]); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,200,255,0.80)';
     ctx.lineWidth   = 1.8;
-    ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 8;
-    ctx.beginPath(); ctx.roundRect(capX, capY, capW, capH, [5, 5, 0, 0]); ctx.stroke();
+    ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.roundRect(capX, capY, capW - stripeW, capH, [10, 10, 0, 0]); ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Left gear — spinning teeth on vertical spindle
-    var gearCY  = capY + capH / 2;
-    var gearR   = 7;
-    var teeth   = 8;
-    var gAngle  = (cFrame * 0.04) % (Math.PI * 2);
-    ctx.strokeStyle = 'rgba(0,180,255,0.70)';
-    ctx.lineWidth   = 1.2;
-    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 4;
-    var gearLX = capX + 8;
-    for (var ti2 = 0; ti2 < teeth; ti2++) {
-      var ta = gAngle + (ti2 / teeth) * Math.PI * 2;
+    // ── Horizontal hazard band (side-view gear zone) ──────────────────────────
+    var hazY  = capY + capH - 16;
+    var hazH  = 10;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(capX + 1, hazY, capW - stripeW - 2, hazH); ctx.clip();
+    var hStripe = 8;
+    for (var hi = -hazH * 2; hi < capW; hi += hStripe * 2) {
+      ctx.fillStyle = 'rgba(255,200,0,0.55)';
+      ctx.fillRect(capX + hi, hazY, hStripe, hazH);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(capX + hi + hStripe, hazY, hStripe, hazH);
+    }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,200,255,0.45)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(capX, hazY); ctx.lineTo(capX + capW - stripeW, hazY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(capX, hazY + hazH); ctx.lineTo(capX + capW - stripeW, hazY + hazH); ctx.stroke();
+
+    // ── Side-view edge gear (rotates horizontally inside the hazard band) ─────
+    // Appears as a circle with small rectangular teeth on top and bottom rim,
+    // squashed vertically to suggest side-on perspective
+    var sGearCX = cMid;
+    var sGearCY = hazY + hazH / 2;
+    var sGearRX = (capW - stripeW) / 2 - 6;  // wide (horizontal)
+    var sGearRY = 3.5;                         // shallow (side-on)
+    var sGearTeeth = 10;
+    var sGearAngle = (cFrame * 0.035) % (Math.PI * 2);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(capX + 1, hazY, capW - stripeW - 2, hazH); ctx.clip();
+    ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1;
+    // Ellipse body
+    ctx.beginPath(); ctx.ellipse(sGearCX, sGearCY, sGearRX, sGearRY, 0, 0, Math.PI * 2); ctx.stroke();
+    // Teeth: small vertical bumps on top and bottom of ellipse
+    for (var st = 0; st < sGearTeeth; st++) {
+      var sAngle = sGearAngle + (st / sGearTeeth) * Math.PI * 2;
+      var tx3 = sGearCX + Math.cos(sAngle) * sGearRX;
+      var toothH2 = 2.5 * Math.abs(Math.sin(sAngle)); // perspective: taller at sides
       ctx.beginPath();
-      ctx.moveTo(gearLX + Math.cos(ta) * (gearR - 2), gearCY + Math.sin(ta) * (gearR - 2));
-      ctx.lineTo(gearLX + Math.cos(ta) * (gearR + 2), gearCY + Math.sin(ta) * (gearR + 2));
+      ctx.moveTo(tx3, sGearCY - sGearRY - toothH2);
+      ctx.lineTo(tx3, sGearCY - sGearRY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(tx3, sGearCY + sGearRY);
+      ctx.lineTo(tx3, sGearCY + sGearRY + toothH2);
       ctx.stroke();
     }
-    ctx.beginPath(); ctx.arc(gearLX, gearCY, gearR - 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
 
-    // Right gear — counter-rotating
-    var gearRX  = capX + capW - 8;
-    var gAngle2 = -(cFrame * 0.04) % (Math.PI * 2);
-    ctx.strokeStyle = 'rgba(0,180,255,0.70)';
-    for (var ti3 = 0; ti3 < teeth; ti3++) {
-      var ta2 = gAngle2 + (ti3 / teeth) * Math.PI * 2;
+    // ── Top-down gears (left and right, proper tooth shapes) ─────────────────
+    var gearAreaH = hazY - capY;
+    var gearCY2   = capY + gearAreaH / 2;
+    var gearR2    = Math.min(9, (capW - stripeW) / 4 - 1);
+    var teeth2    = 8;
+    var toothLen  = 3.5;
+    var toothW    = 0.55;   // half-angle of tooth base in radians
+
+    function drawGear(gx, gy, r, angle, col) {
+      ctx.save();
+      ctx.strokeStyle = col; ctx.lineWidth = 1.1;
+      ctx.shadowColor = col; ctx.shadowBlur = 5;
+      // Hub circle
+      ctx.beginPath(); ctx.arc(gx, gy, r * 0.38, 0, Math.PI * 2); ctx.stroke();
+      // Rim + teeth
       ctx.beginPath();
-      ctx.moveTo(gearRX + Math.cos(ta2) * (gearR - 2), gearCY + Math.sin(ta2) * (gearR - 2));
-      ctx.lineTo(gearRX + Math.cos(ta2) * (gearR + 2), gearCY + Math.sin(ta2) * (gearR + 2));
+      for (var tooth = 0; tooth < teeth2; tooth++) {
+        var baseA1 = angle + (tooth / teeth2) * Math.PI * 2 - toothW;
+        var baseA2 = angle + (tooth / teeth2) * Math.PI * 2 + toothW;
+        var tipA   = angle + (tooth / teeth2) * Math.PI * 2;
+        var tipR   = r + toothLen;
+        // Move to base arc start
+        if (tooth === 0) ctx.moveTo(gx + Math.cos(baseA1)*r, gy + Math.sin(baseA1)*r);
+        else ctx.arc(gx, gy, r, baseA1 - toothW * 0.5, baseA1, false);
+        // Tooth sides: up to tip, across, back down
+        ctx.lineTo(gx + Math.cos(baseA1)*tipR*0.85, gy + Math.sin(baseA1)*tipR*0.85);
+        ctx.arc(gx, gy, tipR, baseA1, baseA2, false);
+        ctx.lineTo(gx + Math.cos(baseA2)*r, gy + Math.sin(baseA2)*r);
+      }
+      ctx.closePath();
+      // Fill gear body
+      ctx.fillStyle = 'rgba(0,30,60,0.7)'; ctx.fill();
       ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
     }
-    ctx.beginPath(); ctx.arc(gearRX, gearCY, gearR - 2, 0, Math.PI * 2); ctx.stroke();
-    ctx.shadowBlur = 0;
 
-    // Pistons — two pairs: top and bottom, alternating phase
-    var pistonOff = Math.sin(cFrame * 0.12) * 4;
-    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
-    ctx.lineWidth   = 3; ctx.lineCap = 'round';
-    ctx.shadowColor = '#00ddff'; ctx.shadowBlur = 5;
-    // Left piston pair (top + bottom, same phase)
-    ctx.beginPath(); ctx.moveTo(capX, capY + capH * 0.25); ctx.lineTo(capX - 6 - pistonOff, capY + capH * 0.25); ctx.stroke();
-    ctx.fillStyle = 'rgba(0,200,255,0.8)';
-    ctx.beginPath(); ctx.arc(capX - 7 - pistonOff, capY + capH * 0.25, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
-    ctx.beginPath(); ctx.moveTo(capX, capY + capH * 0.65); ctx.lineTo(capX - 6 + pistonOff, capY + capH * 0.65); ctx.stroke();
-    ctx.fillStyle = 'rgba(0,200,255,0.8)';
-    ctx.beginPath(); ctx.arc(capX - 7 + pistonOff, capY + capH * 0.65, 2.5, 0, Math.PI * 2); ctx.fill();
-    // Right piston pair (opposite phase)
-    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
-    ctx.beginPath(); ctx.moveTo(capX + capW, capY + capH * 0.35); ctx.lineTo(capX + capW + 6 - pistonOff, capY + capH * 0.35); ctx.stroke();
-    ctx.fillStyle = 'rgba(0,200,255,0.8)';
-    ctx.beginPath(); ctx.arc(capX + capW + 7 - pistonOff, capY + capH * 0.35, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,220,255,0.65)';
-    ctx.beginPath(); ctx.moveTo(capX + capW, capY + capH * 0.75); ctx.lineTo(capX + capW + 6 + pistonOff, capY + capH * 0.75); ctx.stroke();
-    ctx.fillStyle = 'rgba(0,200,255,0.8)';
-    ctx.beginPath(); ctx.arc(capX + capW + 7 + pistonOff, capY + capH * 0.75, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
+    var gAngleL = (cFrame * 0.045) % (Math.PI * 2);
+    var gAngleR = -(cFrame * 0.045) % (Math.PI * 2) + Math.PI / teeth2;
+    var gearLX2 = capX + (capW - stripeW) * 0.28;
+    var gearRX2 = capX + (capW - stripeW) * 0.72;
+    drawGear(gearLX2, gearCY2, gearR2, gAngleL, 'rgba(0,180,255,0.80)');
+    drawGear(gearRX2, gearCY2, gearR2, gAngleR, 'rgba(0,180,255,0.80)');
 
-    // Center energy core
-    var corePulse = 0.5 + 0.5 * Math.sin(cFrame * 0.18);
-    var coreR = 4 + corePulse * 2;
-    var gCore = ctx.createRadialGradient(cMid, gearCY, 0, cMid, gearCY, coreR + 4);
-    gCore.addColorStop(0, 'rgba(0,255,200,' + (0.7 + corePulse * 0.3) + ')');
-    gCore.addColorStop(1, 'rgba(0,80,180,0.00)');
-    ctx.fillStyle = gCore;
-    ctx.beginPath(); ctx.arc(cMid, gearCY, coreR + 4, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(160,255,240,' + (0.9 + corePulse * 0.1) + ')';
-    ctx.beginPath(); ctx.arc(cMid, gearCY, coreR * 0.35, 0, Math.PI * 2); ctx.fill();
+    // ── Center energy core ────────────────────────────────────────────────────
+    var corePulse2 = 0.5 + 0.5 * Math.sin(cFrame * 0.18);
+    var coreR2 = 3.5 + corePulse2 * 1.8;
+    var gCore2 = ctx.createRadialGradient(cMid, gearCY2, 0, cMid, gearCY2, coreR2 + 5);
+    gCore2.addColorStop(0, 'rgba(0,255,200,' + (0.8 + corePulse2 * 0.2) + ')');
+    gCore2.addColorStop(1, 'rgba(0,80,180,0.00)');
+    ctx.fillStyle = gCore2;
+    ctx.beginPath(); ctx.arc(cMid, gearCY2, coreR2 + 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(180,255,245,' + (0.9 + corePulse2 * 0.1) + ')';
+    ctx.beginPath(); ctx.arc(cMid, gearCY2, coreR2 * 0.3, 0, Math.PI * 2); ctx.fill();
 
-    // Scan lines
-    ctx.strokeStyle = 'rgba(0,180,255,0.10)'; ctx.lineWidth = 0.8;
-    for (var sl = capY + 7; sl < capY + capH - 3; sl += 5) {
-      ctx.beginPath(); ctx.moveTo(capX + 3, sl); ctx.lineTo(capX + capW - 3, sl); ctx.stroke();
+    // ── Pistons — on top, pointing upward ────────────────────────────────────
+    // Two pistons with alternating phase, tall enough to hit a ball above the cap
+    var pistonW    = 5;
+    var pistonMaxH = 18;   // maximum extension above cap top
+    var pistonMinH = 6;
+    var phase1 = Math.sin(cFrame * 0.14);              // piston 1
+    var phase2 = Math.sin(cFrame * 0.14 + Math.PI);    // piston 2 (opposite)
+    var piston1H = pistonMinH + (phase1 * 0.5 + 0.5) * (pistonMaxH - pistonMinH);
+    var piston2H = pistonMinH + (phase2 * 0.5 + 0.5) * (pistonMaxH - pistonMinH);
+    var piston1X = capX + (capW - stripeW) * 0.32;
+    var piston2X = capX + (capW - stripeW) * 0.68;
+
+    // Store piston positions for physics hit detection
+    this._pistonY1 = capY - piston1H;
+    this._pistonY2 = capY - piston2H;
+    this._piston1X = piston1X;
+    this._piston2X = piston2X;
+    this._pistonCapY = capY;
+
+    [{ px: piston1X, pH: piston1H, phase: phase1 },
+     { px: piston2X, pH: piston2H, phase: phase2 }].forEach(function(p) {
+      var px4 = p.px, ph4 = p.pH;
+      var tipY = capY - ph4;
+      // Shaft — two-tone gradient
+      var shaftGrad = ctx.createLinearGradient(px4 - pistonW/2, 0, px4 + pistonW/2, 0);
+      shaftGrad.addColorStop(0,   'rgba(0,80,140,0.90)');
+      shaftGrad.addColorStop(0.4, 'rgba(0,160,255,0.75)');
+      shaftGrad.addColorStop(1,   'rgba(0,50,100,0.90)');
+      ctx.fillStyle = shaftGrad;
+      ctx.beginPath(); ctx.roundRect(px4 - pistonW/2, tipY, pistonW, ph4, [3,3,0,0]); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,200,255,0.60)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.roundRect(px4 - pistonW/2, tipY, pistonW, ph4, [3,3,0,0]); ctx.stroke();
+      // Head cap — bright highlight
+      var headH = 4;
+      var headGrad = ctx.createLinearGradient(px4 - pistonW/2, tipY, px4 + pistonW/2, tipY + headH);
+      headGrad.addColorStop(0, 'rgba(200,240,255,0.95)');
+      headGrad.addColorStop(1, 'rgba(0,160,255,0.70)');
+      ctx.fillStyle = headGrad;
+      ctx.beginPath(); ctx.roundRect(px4 - pistonW/2 - 1, tipY - 1, pistonW + 2, headH, 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,220,255,0.85)'; ctx.lineWidth = 0.8; ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.roundRect(px4 - pistonW/2 - 1, tipY - 1, pistonW + 2, headH, 2); ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Base collar at cap top
+      ctx.fillStyle = 'rgba(0,100,180,0.80)';
+      ctx.beginPath(); ctx.roundRect(px4 - pistonW/2 - 1, capY - 3, pistonW + 2, 6, 1); ctx.fill();
+    });
+
+    // Scan lines on gear area only
+    ctx.strokeStyle = 'rgba(0,180,255,0.08)'; ctx.lineWidth = 0.8;
+    for (var sl2 = capY + 4; sl2 < hazY - 2; sl2 += 4) {
+      ctx.beginPath(); ctx.moveTo(capX + 3, sl2); ctx.lineTo(capX + capW - stripeW - 3, sl2); ctx.stroke();
     }
 
 
