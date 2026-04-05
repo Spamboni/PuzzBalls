@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1442;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1444;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -155,10 +155,14 @@ class Game {
     this.ports      = [];
     this.spawners   = [];
 
+    // Restore editor-placed bricks from custom level save
     if (ld.objects) {
       ld.objects.forEach(function(objDef) {
         var x = (objDef.rx !== undefined ? objDef.rx * W : objDef.x || W * 0.5);
         var y = (objDef.ry !== undefined ? objDef.ry * self.floorY() : objDef.y || self.floorY() * 0.5);
+        // Custom levels store absolute x/y directly
+        if (objDef.x !== undefined) x = objDef.x;
+        if (objDef.y !== undefined) y = objDef.y;
         var obj = null;
         switch (objDef.type) {
           case 'button':
@@ -167,14 +171,24 @@ class Game {
             break;
           case 'breakable_brick':
             obj = new BreakableBrick(x, y, objDef.w || 40, objDef.h || 22, objDef.health || 100, objDef.id, objDef.regenAfter || null);
-            self.bricks.push(obj);
-            break;
-          case 'vertical_brick':
-            obj = new VerticalBrick(x, y, objDef.w || 22, objDef.h || 60, objDef.health || 100, objDef.id, objDef.regenAfter || null);
+            if (objDef.rotation) obj._rotation = objDef.rotation;
+            if (objDef._movable) obj._movable = objDef._movable;
+            if (objDef._density !== undefined) obj._density = objDef._density;
+            if (objDef._maxTravel !== undefined) obj._maxTravel = objDef._maxTravel;
+            if (objDef._decel !== undefined) obj._decel = objDef._decel;
+            if (objDef._rotSpeed !== undefined) obj._rotSpeed = objDef._rotSpeed;
+            if (objDef._rotDecel !== undefined) obj._rotDecel = objDef._rotDecel;
+            if (objDef._wallBounce !== undefined) obj._wallBounce = objDef._wallBounce;
+            if (objDef._invincible) obj._invincible = true;
+            if (objDef._noRegen) obj._noRegen = true;
+            if (objDef._noteConfig) obj._noteConfig = objDef._noteConfig;
             self.bricks.push(obj);
             break;
           case 'circular_brick':
             obj = new CircularBrick(x, y, objDef.r || 22, objDef.health || 100, objDef.id, objDef.regenAfter || null);
+            if (objDef.rotation) obj._rotation = objDef.rotation;
+            if (objDef._movable) obj._movable = objDef._movable;
+            if (objDef._noteConfig) obj._noteConfig = objDef._noteConfig;
             self.bricks.push(obj);
             break;
           case 'turnstile':
@@ -224,6 +238,12 @@ class Game {
     this.collisions = 0;
     this.score      = 0;
     this.sling      = null;
+
+    // Restore tubes from custom level save
+    this.tubes = new TubeManager();
+    if (ld.tubeData && ld.tubeData.length > 0) {
+      this.tubes.fromJSON(ld.tubeData);
+    }
 
     this.ui.attachObjects(this.objects);
     this.ui.setScore(0);
@@ -670,8 +690,8 @@ class Game {
           if (self._tubeDelBtn) {
             var tdb=self._tubeDelBtn;
             if (_tpx>=tdb.x&&_tpx<=tdb.x+tdb.w&&_tpy>=tdb.y&&_tpy<=tdb.y+tdb.h) {
-              self.tubes.remove(self._tubeSelected); self._tubeSelected=null;
-              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.25); return;
+              self._tubeDeleteMode = !self._tubeDeleteMode;
+              if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._tubeDeleteMode); return;
             }
           }
           // Build/Select mode toggle
@@ -754,7 +774,9 @@ class Game {
         if (self._editorDelBtn) {
           var db = self._editorDelBtn;
           if (_px >= db.x && _px <= db.x + db.w && _py >= db.y && _py <= db.y + db.h) {
-            self._editorDeleteSelected(); return;
+            self._editorBrickDeleteMode = !self._editorBrickDeleteMode;
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorBrickDeleteMode);
+            return;
           }
         }
         if (self._editorUndoBtn) {
@@ -778,6 +800,12 @@ class Game {
               self._undoApply(rSnap);
             }
             return;
+          }
+        }
+        if (self._editorSaveBtn) {
+          var sb4 = self._editorSaveBtn;
+          if (_px >= sb4.x && _px <= sb4.x+sb4.w && _py >= sb4.y && _py <= sb4.y+sb4.h) {
+            self._saveCustomLevel(); return;
           }
         }
         if (self._editorDoneBtn) {
@@ -2706,8 +2734,10 @@ class Game {
     } else {
       this._editorNotePopup = false;
       this._viewScrollY = 0;
-      this._tubeSelected = null;   // clear so bounding box doesn't persist
+      this._tubeSelected = null;
       this._tubeDragging = null;
+      this._editorBrickDeleteMode = false;
+      this._tubeDeleteMode = false;
       if (window.Sound && Sound.editorClose) Sound.editorClose();
       // Lock in current position/rotation as spawn point for all bricks
       for (var bi = 0; bi < this.bricks.length; bi++) {
@@ -2747,6 +2777,15 @@ class Game {
     }
     if (bestBrick) {
       var b = bestBrick;
+      // Brick delete mode: tap = delete
+      if (this._editorBrickDeleteMode) {
+        this._undoPush();
+        var idx2 = this.bricks.indexOf(b);
+        if (idx2 >= 0) this.bricks.splice(idx2, 1);
+        if (this._editorSelected === b) { this._editorSelected = null; this._showBrickSettings = false; }
+        if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
+        return;
+      }
       this._editorSelected = b;
       this._editorDragOffX = pos.x - b.x;
       this._editorDragOffY = pos.y - b.y;
@@ -3131,6 +3170,13 @@ class Game {
     ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(doneX, btnY, 56, btnH, 4); ctx.stroke();
     ctx.fillStyle = '#00ff88'; ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('DONE', doneX + 28, btnY + btnH/2);
+    // SAVE LEVEL button
+    var saveX = doneX - 68;
+    this._editorSaveBtn = { x: saveX, y: btnY, w: 64, h: btnH };
+    ctx.fillStyle = 'rgba(0,40,80,0.85)'; ctx.beginPath(); ctx.roundRect(saveX, btnY, 64, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#4488ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(saveX, btnY, 64, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#88aaff'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('💾 SAVE LVL', saveX + 32, btnY + btnH/2);
 
     var clearX = doneX - 56;
     this._editorClearBtn = { x: clearX, y: btnY, w: 52, h: btnH };
@@ -3193,14 +3239,18 @@ class Game {
     // DEL — always shown after other buttons, before CLR ALL
     var delW2 = 36;
     if (curX + delW2 < clearX - 4) {
+      var bDelActive = this._editorBrickDeleteMode || false;
       this._editorDelBtn = { x: curX, y: btnY, w: delW2, h: btnH };
-      ctx.fillStyle = this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)';
+      ctx.fillStyle = bDelActive ? 'rgba(180,0,0,0.85)' : (this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)');
       ctx.beginPath(); ctx.roundRect(curX, btnY, delW2, btnH, 4); ctx.fill();
-      ctx.strokeStyle = this._editorSelected ? '#ff4444' : '#882222'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = bDelActive ? '#ff2222' : (this._editorSelected ? '#ff4444' : '#882222');
+      if (bDelActive) { ctx.shadowColor='#ff0000'; ctx.shadowBlur=8; }
+      ctx.lineWidth = bDelActive ? 2 : 1.5;
       ctx.beginPath(); ctx.roundRect(curX, btnY, delW2, btnH, 4); ctx.stroke();
-      ctx.fillStyle = this._editorSelected ? '#ff6666' : '#884444';
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = bDelActive ? '#ff4444' : (this._editorSelected ? '#ff6666' : '#884444');
       ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('DEL', curX + delW2/2, btnY + btnH/2);
+      ctx.fillText(bDelActive ? '✕DEL' : 'DEL', curX + delW2/2, btnY + btnH/2);
     }
     // Row 2+3: Sliders for HP (with ∞), REGEN, DENS, DIST
     // Rows sit below the button row. Two sliders per row, each half screen width.
@@ -3529,6 +3579,48 @@ class Game {
     ctx.restore();
   }
 
+  _saveCustomLevel() {
+    var name = prompt('Level name:', 'My Level ' + (Date.now() % 10000));
+    if (!name) return;
+    var W = this.W, floorY = this.floorY();
+    // Serialize bricks
+    var brickData = this.bricks.map(function(b) {
+      return {
+        type: b instanceof CircularBrick ? 'circular_brick' : 'breakable_brick',
+        x: b.x, y: b.y, w: b.w || null, h: b.h || null, r: b.r || null,
+        rotation: b._rotation || 0,
+        health: b.maxHealth || 100, regenAfter: b.regenAfter || null,
+        _movable: b._movable || false, _density: b._density,
+        _maxTravel: b._maxTravel, _decel: b._decel,
+        _rotSpeed: b._rotSpeed, _rotDecel: b._rotDecel,
+        _wallBounce: b._wallBounce, _invincible: b._invincible || false,
+        _noRegen: b._noRegen || false, _noteConfig: b._noteConfig || null,
+        id: b.id || ('b_' + Math.random().toString(36).slice(2,8))
+      };
+    });
+    // Serialize tubes
+    var tubeData = this.tubes ? this.tubes.toJSON() : [];
+    var levelObj = {
+      id: 'custom_' + Date.now(),
+      name: name,
+      custom: true,
+      balls: [{ type: 'bouncer', count: 5 }],
+      obstacles: [],
+      objects: brickData,
+      tubeData: tubeData,
+      target: { rx: 0.15, ry: 0.10, r: 1, barrierR: 1, barrierThickness: 0, barrierGap: Math.PI, barrierGapAngle: 0 },
+      objectives: [],
+    };
+    // Save to localStorage
+    var saved = JSON.parse(localStorage.getItem('puzzballs_custom_levels') || '[]');
+    saved.push(levelObj);
+    localStorage.setItem('puzzballs_custom_levels', JSON.stringify(saved));
+    // Notify menu to refresh
+    if (window._menuRefreshCallback) window._menuRefreshCallback();
+    if (window.Sound && Sound.win) Sound.win();
+    alert('Level "' + name + '" saved! It will appear in the main menu.');
+  }
+
   _tubeEditorOnDown(pos) {
     var tubes = this.tubes.tubes;
     // Try to select existing tube first (always, in both modes)
@@ -3545,6 +3637,13 @@ class Game {
       if (hitTube) break;
     }
     if (hitTube) {
+      // Tube delete mode: tap = delete
+      if (this._tubeDeleteMode) {
+        this.tubes.remove(hitTube);
+        if (this._tubeSelected === hitTube) this._tubeSelected = null;
+        if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
+        return;
+      }
       var now2 = performance.now();
       var dtap = now2 - (this._lastTubeTap || 0);
       this._lastTubeTap = now2;
@@ -3707,8 +3806,15 @@ class Game {
       ctx.beginPath(); ctx.roundRect(delTX, row6Y, 52, rH, 3); ctx.fill();
       ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.roundRect(delTX, row6Y, 52, rH, 3); ctx.stroke();
+      var tDelAct = this._tubeDeleteMode || false;
+      ctx.fillStyle = tDelAct ? 'rgba(180,0,0,0.9)' : 'rgba(80,10,10,0.85)';
+      ctx.beginPath(); ctx.roundRect(delTX, row6Y, 52, rH, 3); ctx.fill();
+      ctx.strokeStyle = tDelAct ? '#ff2222' : '#ff4444'; ctx.lineWidth = tDelAct ? 2 : 1;
+      if (tDelAct) { ctx.shadowColor='#ff0000'; ctx.shadowBlur=8; }
+      ctx.beginPath(); ctx.roundRect(delTX, row6Y, 52, rH, 3); ctx.stroke();
+      ctx.shadowBlur = 0;
       ctx.fillStyle = '#ff8888'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('✕ DEL TUBE', delTX + 26, row6Y + rH/2);
+      ctx.fillText(tDelAct ? '✕ DELETING' : '✕ DEL TUBE', delTX + 26, row6Y + rH/2);
     }
 
     // DONE button — always visible at bottom of tube panel
@@ -3749,13 +3855,17 @@ class Game {
     ctx.fillStyle = '#dd88ff'; ctx.font = "bold 10px 'Share Tech Mono',monospace";
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText('🎵 BRICK NOTE', popX + 10, popY + 8);
-    var closeX = popX + popW - 26, closeY = popY + 6;
-    this._notePopupClose = { x: closeX, y: closeY, w: 20, h: 20 };
-    ctx.fillStyle = 'rgba(100,0,100,0.5)';
-    ctx.beginPath(); ctx.roundRect(closeX, closeY, 20, 20, 3); ctx.fill();
-    ctx.fillStyle = '#ff88ff'; ctx.font = "bold 11px 'Share Tech Mono',monospace";
+    // DONE button — green, easy to tap
+    var doneNoteX = popX + popW - 58, doneNoteY = popY + 5;
+    var doneNoteW = 50, doneNoteH = 22;
+    this._notePopupClose = { x: doneNoteX, y: doneNoteY, w: doneNoteW, h: doneNoteH };
+    ctx.fillStyle = 'rgba(0,60,30,0.9)';
+    ctx.beginPath(); ctx.roundRect(doneNoteX, doneNoteY, doneNoteW, doneNoteH, 4); ctx.fill();
+    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(doneNoteX, doneNoteY, doneNoteW, doneNoteH, 4); ctx.stroke();
+    ctx.fillStyle = '#00ff88'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('✕', closeX + 10, closeY + 10);
+    ctx.fillText('DONE', doneNoteX + doneNoteW/2, doneNoteY + doneNoteH/2);
 
     var cfg = brick._noteConfig || {};
     var curNote   = cfg.note   || 'C';

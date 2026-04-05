@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['menu.js'] = 1201;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['menu.js'] = 1444;
 // menu.js — Main menu / level selector screen
 
 var LEVEL_CATALOG = [
@@ -84,12 +84,46 @@ var Menu = (function() {
     presetBar.appendChild(presetSelect);
     _container.appendChild(presetBar);
 
-    // ── Level cards ──────────────────────────────────────────────────────────
+    // ── Level cards (built-in + custom) ──────────────────────────────────────
     var grid = _el('div', 'level-grid');
     LEVEL_CATALOG.forEach(function(level) {
       grid.appendChild(_makeLevelCard(level, presetSelect));
     });
+
+    // Load custom levels from localStorage
+    try {
+      var customLevels = JSON.parse(localStorage.getItem('puzzballs_custom_levels') || '[]');
+      if (customLevels.length > 0) {
+        var customHeader = _el('div', 'menu-section-header');
+        customHeader.textContent = '⭐ YOUR LEVELS';
+        customHeader.style.cssText = 'color:#88aaff;font-size:11px;letter-spacing:2px;padding:8px 4px 4px;width:100%;text-align:center;font-family:Share Tech Mono,monospace;';
+        grid.appendChild(customHeader);
+        customLevels.forEach(function(level) {
+          var card = _makeLevelCard({ id: level.id, name: level.name, description: 'Custom level', difficulty: 'Custom', stars: 0, locked: false, custom: true }, presetSelect);
+          // Add delete button to card
+          var delBtn = _el('button', 'card-delete-btn');
+          delBtn.textContent = '✕';
+          delBtn.style.cssText = 'position:absolute;top:4px;right:4px;background:rgba(180,0,0,0.7);border:1px solid #ff4444;color:#ff8888;border-radius:3px;padding:2px 6px;font-size:10px;cursor:pointer;z-index:10;';
+          delBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (confirm('Delete "' + level.name + '"?')) {
+              var saved = JSON.parse(localStorage.getItem('puzzballs_custom_levels') || '[]');
+              saved = saved.filter(function(l) { return l.id !== level.id; });
+              localStorage.setItem('puzzballs_custom_levels', JSON.stringify(saved));
+              _render();
+            }
+          });
+          card.style.position = 'relative';
+          card.appendChild(delBtn);
+          grid.appendChild(card);
+        });
+      }
+    } catch(e) { /* localStorage unavailable */ }
+
     _container.appendChild(grid);
+
+    // Register refresh callback for game to call after saving
+    window._menuRefreshCallback = _render;
 
     // ── Footer ───────────────────────────────────────────────────────────────
     var footer = _el('div', 'menu-footer');
