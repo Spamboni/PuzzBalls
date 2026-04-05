@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1402;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1430;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -48,6 +48,10 @@ class Game {
     this.speedMult  = 0.5;  // global simulation speed — 50% default
     this.brickSpeedMult = 0.5;  // brick movement speed multiplier
     this._slingZoneH    = 100;  // px above floor that balls can be tapped
+    this.tubes          = new TubeManager();
+    this._tubeSelected  = null;
+    this._tubeDragging  = null;
+    this._editorTubeMode = false;
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
@@ -380,6 +384,7 @@ class Game {
             { id:'blen',   key:'_blen',      defKey:'rectW',     step:5,    min:5,    max:900,  invert:false, isDim:true },
             { id:'bwid',   key:'_bwid',      defKey:'rectH',     step:1,    min:2,    max:200,  invert:false, isDim:true },
             { id:'rot',    key:'_rotDeg',    defKey:null,        step:1,    min:-180, max:180,  invert:false, isRot:true },
+            { id:'wbounce',key:'_wallBounce',defKey:'wallBounce', step:0.05, min:0.0,  max:1.0,  invert:false },
           ];
           var movNow = self._editorSelected ? (self._editorSelected._movable||false) : (self._editorMovable||false);
           for (var sdi = 0; sdi < sliderDefs.length; sdi++) {
@@ -411,6 +416,24 @@ class Game {
                   return;
                 }
               }
+              // Double-tap on value area → prompt for direct entry
+              var elapsed2 = performance.now() - (self._lastSliderTap || 0);
+              if (elapsed2 < 350 && self._lastSliderTapId === sd.id) {
+                self._lastSliderTap = 0;
+                var curVal2 = self._editorSelected ? (self._editorSelected[sd.key] || 0) : (window.BrickDefaults && window.BrickDefaults[sd.defKey] || 0);
+                var entered = prompt(sd.id.toUpperCase() + ' (' + sd.min + ' - ' + sd.max + '):', sd.invert ? (1-curVal2).toFixed(2) : String(curVal2));
+                if (entered !== null) {
+                  var parsed = parseFloat(entered);
+                  if (!isNaN(parsed)) {
+                    var clamped = Math.max(sd.min, Math.min(sd.max, parsed));
+                    var actual = sd.invert ? (1 - clamped) : clamped;
+                    self._setSliderVal(sd.key, sd.defKey, actual, sd);
+                  }
+                }
+                return;
+              }
+              self._lastSliderTap = performance.now();
+              self._lastSliderTapId = sd.id;
               // Start drag on track
               self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step, invert: sd.invert, isDim: sd.isDim, isRot: sd.isRot, id: sd.id }, sl2);
               return;
@@ -540,6 +563,62 @@ class Game {
             return;
           }
         }
+        // In tube editor mode — handle tube panel taps
+        if (self._editorTubeMode && inPanel) {
+          // Type buttons
+          if (self._tubeBtns) for (var tbi=0;tbi<self._tubeBtns.length;tbi++) {
+            var tb=self._tubeBtns[tbi];
+            if (pos.x>=tb.x&&pos.x<=tb.x+tb.w&&pos.y>=tb.y&&pos.y<=tb.y+tb.h) { self._tubeType=tb.val; return; }
+          }
+          // Style buttons
+          if (self._tubeStyleBtns) for (var tsb=0;tsb<self._tubeStyleBtns.length;tsb++) {
+            var tsbt=self._tubeStyleBtns[tsb];
+            if (pos.x>=tsbt.x&&pos.x<=tsbt.x+tsbt.w&&pos.y>=tsbt.y&&pos.y<=tsbt.y+tsbt.h) { self._tubeStyle=tsbt.val; if(self._tubeSelected)self._tubeSelected.style=tsbt.val; return; }
+          }
+          // Layer buttons
+          if (self._tubeLayerBtns) for (var tlb=0;tlb<self._tubeLayerBtns.length;tlb++) {
+            var tlbt=self._tubeLayerBtns[tlb];
+            if (pos.x>=tlbt.x&&pos.x<=tlbt.x+tlbt.w&&pos.y>=tlbt.y&&pos.y<=tlbt.y+tlbt.h) { self._tubeLayer=tlbt.val; if(self._tubeSelected)self._tubeSelected.layer=tlbt.val; return; }
+          }
+          // Delete tube button
+          if (self._tubeDelBtn) {
+            var tdb=self._tubeDelBtn;
+            if (pos.x>=tdb.x&&pos.x<=tdb.x+tdb.w&&pos.y>=tdb.y&&pos.y<=tdb.y+tdb.h) { self.tubes.remove(self._tubeSelected); self._tubeSelected=null; return; }
+          }
+          // Sliders
+          var tubeSliders = [
+            { sl:self._tubeSliderLen, cb:function(v){self._tubeLength=v;if(self._tubeSelected){self._tubeSelected.length=v;self._tubeSelected.rebuild();}} },
+            { sl:self._tubeSliderSpd, cb:function(v){self._tubeSpeedMod=v;if(self._tubeSelected)self._tubeSelected.speedMod=v;} },
+            { sl:self._tubeSliderRot, cb:function(v){self._tubeRotation=v*Math.PI/180;if(self._tubeSelected){self._tubeSelected.rotation=v*Math.PI/180;self._tubeSelected.rebuild();}} },
+          ];
+          for (var tsi=0;tsi<tubeSliders.length;tsi++) {
+            var tsl=tubeSliders[tsi].sl, tcb=tubeSliders[tsi].cb;
+            if (!tsl) continue;
+            if (pos.x>=tsl.trackX-8&&pos.x<=tsl.trackX+tsl.trackW+8&&pos.y>=tsl.y&&pos.y<=tsl.y+tsl.h) {
+              self._tubeDragSlider={sl:tsl,cb:tcb}; return;
+            }
+          }
+          return;
+        }
+        // Tab switching
+        if (self._editorBrickTab) {
+          var bt = self._editorBrickTab;
+          if (pos.x >= bt.x && pos.x <= bt.x+bt.w && pos.y >= bt.y && pos.y <= bt.y+bt.h) {
+            self._editorTubeMode = false; window._tubeEditorMode = false; return;
+          }
+        }
+        if (self._editorTubeTab) {
+          var tt = self._editorTubeTab;
+          if (pos.x >= tt.x && pos.x <= tt.x+tt.w && pos.y >= tt.y && pos.y <= tt.y+tt.h) {
+            self._editorTubeMode = true; window._tubeEditorMode = true; return;
+          }
+        }
+        // In tube editor mode — handle tube taps
+        if (self._editorTubeMode) {
+          // Tube placement and selection handled by _tubeEditorOnDown
+          if (!inPanel) self._tubeEditorOnDown(pos);
+          return;
+        }
         // GRID toggle
         if (self._editorGridBtn) {
           var gb = self._editorGridBtn;
@@ -579,6 +658,29 @@ class Game {
           var db = self._editorDelBtn;
           if (pos.x >= db.x && pos.x <= db.x + db.w && pos.y >= db.y && pos.y <= db.y + db.h) {
             self._editorDeleteSelected(); return;
+          }
+        }
+        if (self._editorUndoBtn) {
+          var ub = self._editorUndoBtn;
+          if (pos.x >= ub.x && pos.x <= ub.x+ub.w && pos.y >= ub.y && pos.y <= ub.y+ub.h) {
+            if (self._undoHistory && self._undoHistory.length > 0) {
+              self._redoHistory.push(self._undoHistory.pop());
+              var snap = self._undoHistory[self._undoHistory.length-1];
+              if (snap) self._undoApply(snap);
+              else self.bricks = [];
+            }
+            return;
+          }
+        }
+        if (self._editorRedoBtn) {
+          var rb = self._editorRedoBtn;
+          if (pos.x >= rb.x && pos.x <= rb.x+rb.w && pos.y >= rb.y && pos.y <= rb.y+rb.h) {
+            if (self._redoHistory && self._redoHistory.length > 0) {
+              var rSnap = self._redoHistory.pop();
+              self._undoHistory.push(rSnap);
+              self._undoApply(rSnap);
+            }
+            return;
           }
         }
         if (self._editorDoneBtn) {
@@ -662,31 +764,25 @@ class Game {
         var sobj = self.objects[si];
         if (sobj.type === BALL_TYPES.STICKY && sobj.stuckTo === '_wall_') {
           if (Math.hypot(pos.x - sobj.x, pos.y - sobj.y) < sobj.r + 14) {
-            var bs_s     = BallSettings.sticky;
-            var maxY     = bs_s.bounceHeightY   || 80;
-            var maxX     = bs_s.bounceDistanceX || 60;
-            var deadZone = (bs_s.deadZonePercent || 30) / 100;
-            var deadRadius = maxX * deadZone;
+            var bs_s = BallSettings.sticky;
+            // Direction = from ball toward tap point (flick in direction of tap)
+            var tapDX = pos.x - sobj.x, tapDY = pos.y - sobj.y;
+            var tapDist = Math.hypot(tapDX, tapDY) || 1;
+            var tapNX = tapDX / tapDist, tapNY = tapDY / tapDist;
 
-            // Surface normal: stored when stuck, or infer from position
+            // Surface normal (away from wall)
             var nx = sobj._stickNx !== undefined ? sobj._stickNx : 0;
             var ny = sobj._stickNy !== undefined ? sobj._stickNy : -1;
 
-            // Primary velocity = along the normal (away from surface) = Y axis of launch
-            // Secondary = perpendicular to normal = X axis of launch
-            // Perpendicular = (-ny, nx)
-            var side   = Math.random() > 0.5 ? 1 : -1;
-            var rawX   = deadRadius + Math.random() * (maxX - deadRadius);
-            var launchAlong = maxY / 18;         // speed along normal
-            var launchPerp  = rawX * side / 22;  // speed perpendicular
+            // If tap is on the same side as the wall (would go into wall), reflect
+            if (tapNX * nx + tapNY * ny < 0) { tapNX = -tapNX; tapNY = -tapNY; }
 
-            sobj.vx = nx * launchAlong + (-ny) * launchPerp;
-            sobj.vy = ny * launchAlong + nx    * launchPerp;
+            // Fixed launch speed (set velocity, not random)
+            var launchSpeed = (bs_s.bounceHeightY || 80) / 18;
+            sobj.vx = tapNX * launchSpeed;
+            sobj.vy = tapNY * launchSpeed;
 
-            // Ensure we're actually moving away from surface
-            if (sobj.vx * nx + sobj.vy * ny < 0) { sobj.vx = -sobj.vx; sobj.vy = -sobj.vy; }
-
-            // Nudge position away from surface by a ball radius to prevent re-stick
+            // Nudge away from wall
             sobj.x += nx * (sobj.r + 3);
             sobj.y += ny * (sobj.r + 3);
 
@@ -745,6 +841,22 @@ class Game {
     function onMove(e) {
       e.preventDefault();
       var pos = getPos(e);
+      // Tube slider drag
+      if (self._tubeDragSlider) {
+        var tsl2 = self._tubeDragSlider.sl;
+        var t3 = Math.max(0, Math.min(1, (pos.x - tsl2.trackX) / tsl2.trackW));
+        var v3 = tsl2.min + t3 * (tsl2.max - tsl2.min);
+        self._tubeDragSlider.cb(v3);
+        return;
+      }
+      // Tube piece drag
+      if (self._tubeDragging) {
+        self._tubeDragging.x = pos.x - (self._tubeDragOffX || 0);
+        self._tubeDragging.y = pos.y - (self._tubeDragOffY || 0);
+        self._tubeDragging.rebuild();
+        self.tubes.checkSnap(self._tubeDragging);
+        return;
+      }
       if (self._editorMode) {
         // Multi-touch: pinch/rotate
         if (e.touches && e.touches.length >= 2) {
@@ -796,6 +908,15 @@ class Game {
       self._draggingSlider = false;
       self._draggingBrickSlider = false;
       self._draggingZoneSlider = false;
+      // Release tube drag — apply snap if close enough
+      if (self._tubeDragging) {
+        var snapResult = self.tubes.checkSnap(self._tubeDragging);
+        if (snapResult && snapResult.dist < self.tubes.SNAP_DIST) {
+          self.tubes.applySnap(self._tubeDragging, snapResult, false);
+        }
+        self._tubeDragging = null;
+      }
+      self._tubeDragSlider = null;
 
       // Quick tap on floor ball → pop it up (no drag happened)
       if (self._pendingFloorBall) {
@@ -960,6 +1081,7 @@ class Game {
         }
 
         // Screen edge bounce — use rotated AABB extent so long rotated bricks can't clip
+        var bWallBounce = mbrick._wallBounce !== undefined ? mbrick._wallBounce : 0.45;
         var bRot2 = mbrick._rotation || 0;
         var bW2 = mbrick.w || (mbrick.r || 10) * 2;
         var bH2 = mbrick.h || (mbrick.r || 10) * 2;
@@ -969,27 +1091,27 @@ class Game {
         var bFloor = this.floorY();
         if (mbrick.x - bHWall < 0) {
           mbrick.x = bHWall;
-          mbrick._vx = Math.abs(mbrick._vx || 0) * 0.45;
+          mbrick._vx = Math.abs(mbrick._vx || 0) * bWallBounce;
           mbrick._angularV = (mbrick._angularV || 0) * -0.55;
         } else if (mbrick.x + bHWall > this.W) {
           mbrick.x = this.W - bHWall;
-          mbrick._vx = -Math.abs(mbrick._vx || 0) * 0.45;
+          mbrick._vx = -Math.abs(mbrick._vx || 0) * bWallBounce;
           mbrick._angularV = (mbrick._angularV || 0) * -0.55;
         }
         if (mbrick.y - bHHall < 0) {
           mbrick.y = bHHall;
-          mbrick._vy = Math.abs(mbrick._vy || 0) * 0.45;
+          mbrick._vy = Math.abs(mbrick._vy || 0) * bWallBounce;
           mbrick._angularV = (mbrick._angularV || 0) * -0.4;
         } else if (mbrick.y + bHHall > bFloor) {
           mbrick.y = bFloor - bHHall;
-          mbrick._vy = -Math.abs(mbrick._vy || 0) * 0.4;
+          mbrick._vy = -Math.abs(mbrick._vy || 0) * bWallBounce * 0.9;
           mbrick._angularV = (mbrick._angularV || 0) * -0.3;
         }
         // Bounce off chute left wall
         var chuteLeftX = this.W - 46;
         if (mbrick.x + bHWall > chuteLeftX) {
           mbrick.x = chuteLeftX - bHWall;
-          mbrick._vx = -Math.abs(mbrick._vx || 0) * 0.45;
+          mbrick._vx = -Math.abs(mbrick._vx || 0) * bWallBounce;
           mbrick._angularV = (mbrick._angularV || 0) * -0.5;
         }
 
@@ -1076,11 +1198,15 @@ class Game {
 
     // ── Cap + piston physics ─────────────────────────────────────────────────
     if (this._pistonCapY !== undefined) {
-      var capLeft2 = this.W - 46;  // leftX
-      var capRight2 = this.W;
+      var capLeft2 = this.W - 46;
+      // Store prev positions BEFORE iterating so delta is valid for all balls
+      var _pistonPrevY1 = this._pistonPrevY1 !== undefined ? this._pistonPrevY1 : this._pistonY1;
+      var _pistonPrevY2 = this._pistonPrevY2 !== undefined ? this._pistonPrevY2 : this._pistonY2;
+      this._pistonPrevY1 = this._pistonY1;
+      this._pistonPrevY2 = this._pistonY2;
       for (i = 0; i < this.objects.length; i++) {
         var pObj = this.objects[i];
-        if (pObj.dead) continue;
+        if (pObj.dead || pObj._inChute) continue;
 
         // Cap body wall — only applies to balls FULLY inside the chute column
         // (pObj.x > capLeft2 means it's inside the shaft, not just near it)
@@ -1091,32 +1217,31 @@ class Game {
           }
         }
 
-        // Piston head collision — hit ball upward on rising stroke
-        var pistonPrevY1 = this._pistonPrevY1 || this._pistonY1;
-        var pistonPrevY2 = this._pistonPrevY2 || this._pistonY2;
-        if (Math.abs(pObj.x - this._piston1X) < pObj.r + 4) {
+        // Piston head collision — both pistons, rising stroke kicks upward
+        var pHitR = pObj.r + 5;
+        if (Math.abs(pObj.x - this._piston1X) < pHitR) {
           var pTip1 = this._pistonY1;
-          if (pObj.y + pObj.r > pTip1 - 2 && pObj.y - pObj.r < this._pistonCapY) {
-            pObj.y = pTip1 - pObj.r - 1;
-            // Only kick if piston is moving upward (rising stroke)
-            var pVel1 = pTip1 - pistonPrevY1;
-            if (pVel1 < 0) { pObj.vy = Math.min(pObj.vy, pVel1 * 6 - 2); pObj.inFlight = true; }
-            else if (pObj.vy > 0) pObj.vy = 0;
+          if (pObj.y + pObj.r > pTip1 - 1 && pObj.y < this._pistonCapY) {
+            var pVel1 = pTip1 - _pistonPrevY1;
+            pObj.y = pTip1 - pObj.r;
+            if (pVel1 < -0.3) { pObj.vy = pVel1 * 7 - 3; pObj.inFlight = true; }
+            else { if (pObj.vy > 0) pObj.vy = 0; }
           }
         }
-        if (Math.abs(pObj.x - this._piston2X) < pObj.r + 4) {
+        if (Math.abs(pObj.x - this._piston2X) < pHitR) {
           var pTip2 = this._pistonY2;
-          if (pObj.y + pObj.r > pTip2 - 2 && pObj.y - pObj.r < this._pistonCapY) {
-            pObj.y = pTip2 - pObj.r - 1;
-            var pVel2 = pTip2 - pistonPrevY2;
-            if (pVel2 < 0) { pObj.vy = Math.min(pObj.vy, pVel2 * 6 - 2); pObj.inFlight = true; }
-            else if (pObj.vy > 0) pObj.vy = 0;
+          if (pObj.y + pObj.r > pTip2 - 1 && pObj.y < this._pistonCapY) {
+            var pVel2 = pTip2 - _pistonPrevY2;
+            pObj.y = pTip2 - pObj.r;
+            if (pVel2 < -0.3) { pObj.vy = pVel2 * 7 - 3; pObj.inFlight = true; }
+            else { if (pObj.vy > 0) pObj.vy = 0; }
           }
         }
-        this._pistonPrevY1 = this._pistonY1;
-        this._pistonPrevY2 = this._pistonY2;
       }
     }
+
+    // Update tube routing
+    this.tubes.update(this.objects);
 
     // Enforce chute left wall as physics boundary
     this._enforceChuteWall();
@@ -2353,23 +2478,25 @@ class Game {
     }
 
     this._drawFloor(floorY);
-    // Draw grid overlay when editor is open and grid is enabled
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
-    this._drawChute();   // chute rendered above floor, below balls
+    // Behind-layer tubes drawn first (under everything)
+    this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
+    this._drawChute();
     this.barrier.draw(ctx);
     this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
-
-    // Phase 2: Draw interactive objects (below balls so balls appear on top)
+    // Main-layer tubes under bricks
+    this.tubes.draw(ctx, 'main', this.frame, this._tubeSelected);
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
     for (var i = 0; i < this.bricks.length; i++) {
-      this.bricks[i].draw(ctx);  // brick.draw() handles its own rotation
+      this.bricks[i].draw(ctx);
     }
     for (var i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].draw(ctx);
     for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
     for (var i = 0; i < this.spawners.length;   i++) this.spawners[i].draw(ctx);
-
     for (var j = 0; j < this.objects.length;   j++) this._drawBall(this.objects[j]);
+    // Above-layer tubes on top of everything
+    this.tubes.draw(ctx, 'above', this.frame, this._tubeSelected);
     if (this.sling) this._drawSling();
     this._drawSparks();
     this._drawSpeedSlider();
@@ -2379,12 +2506,45 @@ class Game {
 
   // ── Brick Editor (§4.3) ───────────────────────────────────────────────────
 
+  _undoPush() {
+    if (!this._undoHistory) { this._undoHistory = []; this._redoHistory = []; }
+    var snap = this.bricks.map(function(b) {
+      return { x:b.x, y:b.y, w:b.w, h:b.h, r:b.r, _rotation:b._rotation,
+               maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
+               _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
+               _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot,
+               _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
+               _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
+    });
+    this._undoHistory.push(snap);
+    if (this._undoHistory.length > 50) this._undoHistory.shift();
+    this._redoHistory = [];
+  }
+
+  _undoApply(snap) {
+    // Restore brick list to snapshot
+    this.bricks = snap.map(function(s) {
+      var b = s._ref;
+      if (!b) return null;
+      b.x=s.x; b.y=s.y; b.w=s.w; b.h=s.h; if(s.r)b.r=s.r;
+      b._rotation=s._rotation||0; b.maxHealth=s.maxHealth; b.health=s.maxHealth;
+      b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
+      b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
+      b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
+      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._translateOnRotate=s._translateOnRotate;
+      b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
+      return b;
+    }).filter(Boolean);
+  }
+
   toggleEditor() {
     this._editorMode = !this._editorMode;
     if (this._editorMode) {
       this._editorBrickType   = 'breakable_brick';
       this._editorDragging    = null;
       this._editorSelected    = null;
+      if (!this._undoHistory) { this._undoHistory = []; this._redoHistory = []; }
       if (this._editorTranslate === undefined) this._editorTranslate = false;  // default ⊕ROT
     } else {
       this._editorNotePopup = false;
@@ -2471,6 +2631,7 @@ class Game {
     obj._spawnRot= obj._rotation;
     obj._startX  = pos.x;
     obj._startY  = pos.y;
+    this._undoPush();
     this.bricks.push(obj);
     EventManager.registerTarget(id, obj);
     this._editorSelected    = obj;
@@ -2621,6 +2782,7 @@ class Game {
   }
 
   _editorOnUp() {
+    if (this._editorDragging || this._editorDragSlider) this._undoPush();
     this._editorDragging    = null;
     this._editorDragSlider  = null;
   }
@@ -2629,6 +2791,7 @@ class Game {
     if (!this._editorSelected) return;
     var idx = this.bricks.indexOf(this._editorSelected);
     if (idx >= 0) {
+      this._undoPush();
       this.bricks.splice(idx, 1);
       // Deletion sound — descending crack
       if (window.Sound && Sound.getCtx) {
@@ -2668,9 +2831,33 @@ class Game {
     ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(0, floorY + 1); ctx.lineTo(W, floorY + 1); ctx.stroke();
 
-    ctx.fillStyle = '#00ffee'; ctx.font = "bold 9px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillText('BRICK EDITOR', 10, panelY + 2);
+    // Tab row: BRICKS | TUBES
+    var tabW = 70, tabH = 18, tabY = panelY + 2;
+    var isBrickTab = !this._editorTubeMode;
+    // Bricks tab
+    ctx.fillStyle = isBrickTab ? 'rgba(0,180,255,0.25)' : 'rgba(0,10,30,0.5)';
+    ctx.beginPath(); ctx.roundRect(8, tabY, tabW, tabH, [4,4,0,0]); ctx.fill();
+    ctx.strokeStyle = isBrickTab ? '#00ccff' : '#224466'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(8, tabY, tabW, tabH, [4,4,0,0]); ctx.stroke();
+    ctx.fillStyle = isBrickTab ? '#00ffee' : '#446688';
+    ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🧱 BRICKS', 8 + tabW/2, tabY + tabH/2);
+    this._editorBrickTab = { x:8, y:tabY, w:tabW, h:tabH };
+    // Tubes tab
+    ctx.fillStyle = !isBrickTab ? 'rgba(0,200,120,0.25)' : 'rgba(0,10,30,0.5)';
+    ctx.beginPath(); ctx.roundRect(8 + tabW + 4, tabY, tabW, tabH, [4,4,0,0]); ctx.fill();
+    ctx.strokeStyle = !isBrickTab ? '#00ff88' : '#224466'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(8 + tabW + 4, tabY, tabW, tabH, [4,4,0,0]); ctx.stroke();
+    ctx.fillStyle = !isBrickTab ? '#00ff88' : '#446688';
+    ctx.fillText('🔧 TUBES', 8 + tabW + 4 + tabW/2, tabY + tabH/2);
+    this._editorTubeTab = { x:8+tabW+4, y:tabY, w:tabW, h:tabH };
+
+    // Branch to tube editor content if in tube mode
+    if (this._editorTubeMode) {
+      this._drawTubeEditor(ctx, panelY + tabH + 4);
+      ctx.restore();
+      return;
+    }
 
     var btnH = 26, btnY = panelY + 14, startX = 8;
     var isSelect = this._editorSelectMode || false;
@@ -2691,13 +2878,33 @@ class Game {
     ctx.fillStyle = '#ff8844'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('CLR ALL', clearX + 26, btnY + btnH/2);
 
-    // RESET DEF button — clears _editorLastSettings and resets selected brick to defaults
+    // RESET DEF button
     var rstX = clearX - 54;
     this._editorResetDefBtn = { x: rstX, y: btnY, w: 50, h: btnH };
     ctx.fillStyle = 'rgba(0,20,60,0.8)'; ctx.beginPath(); ctx.roundRect(rstX, btnY, 50, btnH, 4); ctx.fill();
     ctx.strokeStyle = '#4488cc'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.roundRect(rstX, btnY, 50, btnH, 4); ctx.stroke();
     ctx.fillStyle = '#88bbff'; ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('RST DEF', rstX + 25, btnY + btnH/2);
+    // UNDO button
+    var undoX = rstX - 36;
+    var canUndo = this._undoHistory && this._undoHistory.length > 0;
+    this._editorUndoBtn = { x: undoX, y: btnY, w: 32, h: btnH };
+    ctx.fillStyle = canUndo ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
+    ctx.beginPath(); ctx.roundRect(undoX, btnY, 32, btnH, 4); ctx.fill();
+    ctx.strokeStyle = canUndo ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(undoX, btnY, 32, btnH, 4); ctx.stroke();
+    ctx.fillStyle = canUndo ? '#44aaff' : '#334455';
+    ctx.fillText('↩', undoX + 16, btnY + btnH/2);
+    // REDO button
+    var redoX = undoX - 36;
+    var canRedo = this._redoHistory && this._redoHistory.length > 0;
+    this._editorRedoBtn = { x: redoX, y: btnY, w: 32, h: btnH };
+    ctx.fillStyle = canRedo ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
+    ctx.beginPath(); ctx.roundRect(redoX, btnY, 32, btnH, 4); ctx.fill();
+    ctx.strokeStyle = canRedo ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(redoX, btnY, 32, btnH, 4); ctx.stroke();
+    ctx.fillStyle = canRedo ? '#44aaff' : '#334455';
+    ctx.fillText('↪', redoX + 16, btnY + btnH/2);
 
     // Left side: SELECT/BUILD + type-specific
     var modeW = 52;
@@ -3020,7 +3227,11 @@ class Game {
     this._editorSliders.blen  = drawSlider('LEN',   LENval,       5,   900,  false, false, false,       padding,              row6Y, halfW);
     this._editorSliders.bwid  = drawSlider('WID',   WIDval,       2,   200,  false, false, false,       padding + halfW,      row6Y, halfW);
     // Row 7: ROTATION — full width, -180 to +180
-    this._editorSliders.rot   = drawSlider('ROT',   ROTval,      -180, 180,  false, false, false,       padding,              row7Y, W - 16);
+    var WBOUNCEval = (sb2 && sb2._wallBounce !== undefined) ? sb2._wallBounce : (bd2.wallBounce || 0.45);
+    var rotW = Math.floor((W - 16) * 0.65);
+    var wbW  = W - 16 - rotW - 4;
+    this._editorSliders.rot     = drawSlider('ROT',    ROTval,      -180, 180,  false, false, false, padding,         row7Y, rotW);
+    this._editorSliders.wbounce = drawSlider('BNCE',   WBOUNCEval,  0.0,  1.0,  false, false, false, padding + rotW + 4, row7Y, wbW);
 
     // ── Note picker popup ────────────────────────────────────────────────────
     if (this._editorNotePopup && sb2) {
@@ -3045,6 +3256,150 @@ class Game {
       ctx.setLineDash([]);
     }
     ctx.restore();
+  }
+
+  _tubeEditorOnDown(pos) {
+    // Try to select existing tube first
+    var tubes = this.tubes.tubes;
+    for (var ti = tubes.length - 1; ti >= 0; ti--) {
+      var tube = tubes[ti];
+      var path = tube._path;
+      if (!path) continue;
+      for (var pi = 0; pi < path.length; pi++) {
+        if (Math.hypot(pos.x - path[pi].x, pos.y - path[pi].y) < tube.radius + 12) {
+          this._tubeSelected = tube;
+          this._tubeDragging = tube;
+          this._tubeDragOffX = pos.x - tube.x;
+          this._tubeDragOffY = pos.y - tube.y;
+          return;
+        }
+      }
+    }
+    // No tube hit — place new tube of selected type
+    var type  = this._tubeType || 'straight';
+    var style = this._tubeStyle || 'glass';
+    var tube  = new TubePiece(type, pos.x, pos.y, this._tubeRotation || 0, {
+      length: this._tubeLength || 80, style: style,
+      speedMod: this._tubeSpeedMod || 1.0,
+      radius: 14, layer: 'main',
+    });
+    this.tubes.add(tube);
+    this._tubeSelected = tube;
+    this._tubeDragging = tube;
+    this._tubeDragOffX = 0;
+    this._tubeDragOffY = 0;
+  }
+
+  _drawTubeEditor(ctx, panelY) {
+    var W = this.W;
+    var padding = 8, btnH = 22, rH = 20, gap = 5;
+    var row1Y = panelY + 24;
+
+    // Tube type buttons
+    var types = ['straight','elbow90','elbow45','elbow30','elbow15','uturn','funnel'];
+    var labels = ['STR','90°','45°','30°','15°','U','FNL'];
+    var tW = Math.floor((W - 16) / types.length);
+    ctx.font = "bold 7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    this._tubeBtns = [];
+    for (var ti = 0; ti < types.length; ti++) {
+      var tx = padding + ti * (tW + 2);
+      var active = (this._tubeType || 'straight') === types[ti];
+      ctx.fillStyle = active ? 'rgba(0,200,120,0.35)' : 'rgba(0,15,40,0.7)';
+      ctx.beginPath(); ctx.roundRect(tx, row1Y, tW, btnH, 3); ctx.fill();
+      ctx.strokeStyle = active ? '#00ff88' : '#224466'; ctx.lineWidth = active ? 1.5 : 0.8;
+      ctx.beginPath(); ctx.roundRect(tx, row1Y, tW, btnH, 3); ctx.stroke();
+      ctx.fillStyle = active ? '#00ff88' : '#557799';
+      ctx.fillText(labels[ti], tx + tW/2, row1Y + btnH/2);
+      this._tubeBtns.push({ x:tx, y:row1Y, w:tW, h:btnH, val:types[ti] });
+    }
+
+    // Style buttons
+    var row2Y = row1Y + btnH + gap;
+    var styles = ['glass','window','solid'];
+    var sW = Math.floor((W - 16) / 3);
+    this._tubeStyleBtns = [];
+    for (var si = 0; si < styles.length; si++) {
+      var sx2 = padding + si * (sW + 2);
+      var sAct = (this._tubeStyle || 'glass') === styles[si];
+      ctx.fillStyle = sAct ? 'rgba(0,150,200,0.35)' : 'rgba(0,15,40,0.7)';
+      ctx.beginPath(); ctx.roundRect(sx2, row2Y, sW, rH, 3); ctx.fill();
+      ctx.strokeStyle = sAct ? '#00aaff' : '#224466'; ctx.lineWidth = sAct ? 1.5 : 0.8;
+      ctx.beginPath(); ctx.roundRect(sx2, row2Y, sW, rH, 3); ctx.stroke();
+      ctx.fillStyle = sAct ? '#44ccff' : '#557799';
+      ctx.fillText(styles[si].toUpperCase(), sx2 + sW/2, row2Y + rH/2);
+      this._tubeStyleBtns.push({ x:sx2, y:row2Y, w:sW, h:rH, val:styles[si] });
+    }
+
+    // Sliders: LENGTH | SPEED MOD | ROTATION
+    var row3Y = row2Y + rH + gap;
+    var halfW = Math.floor((W - 16) / 2);
+    var lenVal = this._tubeLength || 80;
+    var spdVal = this._tubeSpeedMod || 1.0;
+    var rotVal = (this._tubeRotation || 0) * 180 / Math.PI;
+
+    var drawTS = function(label, val, min, max, sx, sy, sw) {
+      var lblW = 32, trW = sw - lblW - 2;
+      var t = Math.max(0, Math.min(1, (val - min) / (max - min)));
+      ctx.fillStyle = '#88aacc'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, sx + 2, sy + rH/2);
+      ctx.fillStyle = 'rgba(0,20,50,0.8)';
+      ctx.beginPath(); ctx.roundRect(sx + lblW, sy + rH/2 - 4, trW, 8, 4); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,180,255,0.3)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.roundRect(sx + lblW, sy + rH/2 - 4, trW, 8, 4); ctx.stroke();
+      ctx.fillStyle = '#0088ffcc';
+      ctx.beginPath(); ctx.roundRect(sx + lblW, sy + rH/2 - 4, trW * t, 8, 4); ctx.fill();
+      var thX = sx + lblW + trW * t;
+      ctx.beginPath(); ctx.arc(thX, sy + rH/2, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#00aaff'; ctx.shadowColor = '#0088ff'; ctx.shadowBlur = 5; ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = '#aaddff'; ctx.font = "6px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      var dispVal = label === 'ROT' ? Math.round(val) + '°' : label === 'SPD' ? val.toFixed(1) + 'x' : Math.round(val) + 'px';
+      ctx.fillText(dispVal, thX + 7, sy + rH/2);
+      return { x: sx + lblW, y: sy + 2, w: trW, h: rH - 4, trackX: sx+lblW, trackW: trW, min, max, label };
+    };
+
+    this._tubeSliderLen = drawTS('LEN', lenVal, 30, 300, padding, row3Y, halfW);
+    this._tubeSliderSpd = drawTS('SPD', spdVal, 0.2, 3.0, padding + halfW, row3Y, halfW);
+    var row4Y = row3Y + rH + gap;
+    this._tubeSliderRot = drawTS('ROT', rotVal, -180, 180, padding, row4Y, W - 16);
+
+    // Layer buttons
+    var row5Y = row4Y + rH + gap;
+    var layers = ['main','behind','above'];
+    var lW = Math.floor((W - 16) / 3);
+    this._tubeLayerBtns = [];
+    for (var li = 0; li < layers.length; li++) {
+      var lx = padding + li * (lW + 2);
+      var lAct = (this._tubeLayer || 'main') === layers[li];
+      ctx.fillStyle = lAct ? 'rgba(180,100,0,0.35)' : 'rgba(0,15,40,0.7)';
+      ctx.beginPath(); ctx.roundRect(lx, row5Y, lW, rH, 3); ctx.fill();
+      ctx.strokeStyle = lAct ? '#ffaa00' : '#224466'; ctx.lineWidth = lAct ? 1.5 : 0.8;
+      ctx.beginPath(); ctx.roundRect(lx, row5Y, lW, rH, 3); ctx.stroke();
+      ctx.fillStyle = lAct ? '#ffcc44' : '#557799';
+      ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(layers[li].toUpperCase(), lx + lW/2, row5Y + rH/2);
+      this._tubeLayerBtns.push({ x:lx, y:row5Y, w:lW, h:rH, val:layers[li] });
+    }
+
+    // Selected tube info + delete
+    if (this._tubeSelected) {
+      var row6Y = row5Y + rH + gap;
+      var t2 = this._tubeSelected;
+      ctx.fillStyle = '#aaddff'; ctx.font = "7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('SEL: ' + t2.type + ' | ' + t2.style + ' | ' + t2.layer + ' | spd:' + t2.speedMod.toFixed(1) + 'x', padding, row6Y + rH/2);
+      // Delete selected
+      var delTX = W - 60;
+      this._tubeDelBtn = { x: delTX, y: row6Y, w: 52, h: rH };
+      ctx.fillStyle = 'rgba(80,10,10,0.85)';
+      ctx.beginPath(); ctx.roundRect(delTX, row6Y, 52, rH, 3); ctx.fill();
+      ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(delTX, row6Y, 52, rH, 3); ctx.stroke();
+      ctx.fillStyle = '#ff8888'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✕ DEL TUBE', delTX + 26, row6Y + rH/2);
+    }
   }
 
   _drawNotePopup(ctx, brick) {
