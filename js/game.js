@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1431;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1432;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -52,6 +52,7 @@ class Game {
     this._tubeSelected  = null;
     this._tubeDragging  = null;
     this._editorTubeMode = false;
+    this._viewScrollY     = 0;   // px the whole view is shifted up
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
@@ -329,6 +330,7 @@ class Game {
       if (self._editorMode) {
         // All panel buttons are below floorY — handle them, then return
         // Taps above floorY go to the play area (brick placement/selection)
+        // Editor draws in screen space (outside vSY translate), so panel threshold is just floorY
         var inPanel = pos.y >= self.floorY();
 
         // Always check panel buttons regardless of Y position (buttons are below floor)
@@ -575,7 +577,9 @@ class Game {
           // Type buttons
           if (self._tubeBtns) for (var tbi=0;tbi<self._tubeBtns.length;tbi++) {
             var tb=self._tubeBtns[tbi];
-            if (pos.x>=tb.x&&pos.x<=tb.x+tb.w&&pos.y>=tb.y&&pos.y<=tb.y+tb.h) { self._tubeType=tb.val; return; }
+            if (pos.x>=tb.x-2&&pos.x<=tb.x+tb.w+2&&pos.y>=tb.y-2&&pos.y<=tb.y+tb.h+2) {
+              self._tubeType=tb.val; if(window.Sound&&Sound.uiTap)Sound.uiTap(0.22); return;
+            }
           }
           // Style buttons
           if (self._tubeStyleBtns) for (var tsb=0;tsb<self._tubeStyleBtns.length;tsb++) {
@@ -607,17 +611,19 @@ class Game {
           }
           return;
         }
-        // Tab switching
+        // Tab switching — check first with extra padding for easy tapping
         if (self._editorBrickTab) {
           var bt = self._editorBrickTab;
-          if (pos.x >= bt.x && pos.x <= bt.x+bt.w && pos.y >= bt.y && pos.y <= bt.y+bt.h) {
-            self._editorTubeMode = false; window._tubeEditorMode = false; return;
+          if (pos.x >= bt.x-4 && pos.x <= bt.x+bt.w+4 && pos.y >= bt.y-4 && pos.y <= bt.y+bt.h+8) {
+            self._editorTubeMode = false; window._tubeEditorMode = false;
+            if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
           }
         }
         if (self._editorTubeTab) {
           var tt = self._editorTubeTab;
-          if (pos.x >= tt.x && pos.x <= tt.x+tt.w && pos.y >= tt.y && pos.y <= tt.y+tt.h) {
-            self._editorTubeMode = true; window._tubeEditorMode = true; return;
+          if (pos.x >= tt.x-4 && pos.x <= tt.x+tt.w+4 && pos.y >= tt.y-4 && pos.y <= tt.y+tt.h+8) {
+            self._editorTubeMode = true; window._tubeEditorMode = true;
+            if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
           }
         }
         // In tube editor mode — handle tube taps
@@ -698,8 +704,6 @@ class Game {
         }
         // Only place/select bricks in the play area (above floor)
         if (!inPanel) self._editorOnDown(pos);
-        // Start scroll tracking if tapped in panel area
-        else { self._editorScrollStart = self._editorScrollY || 0; self._editorScrollDragY = pos.y; }
         return;
       }
 
@@ -804,6 +808,16 @@ class Game {
         }
       }
 
+      // If no button consumed the tap and we're in editor mode, might be a scroll drag
+      // We start tentative — commit to scroll only after > 6px movement
+      if (self._editorMode) {
+        self._editorScrollPending  = true;
+        self._editorScrollDragging = false;
+        self._editorScrollStart    = self._viewScrollY || 0;
+        self._editorScrollDragY    = pos.y;
+        return;
+      }
+
       // ── Ball selection: resting balls + balls within sling zone ────────────
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
       var zoneTop  = self.floorY() - zoneH2;
@@ -872,10 +886,19 @@ class Game {
           return;
         }
         self._editorPinchStart = null;
-        // Scroll editor panel if dragging in panel area
-        if (pos.y >= self.floorY() && self._editorScrollStart !== undefined) {
-          self._editorScrollY = Math.min(0, self._editorScrollStart + (pos.y - self._editorScrollDragY));
-          return;
+        // Universal scroll — promote pending to active after 6px, then scroll
+        if (self._editorScrollPending || self._editorScrollDragging) {
+          var dragDelta = pos.y - self._editorScrollDragY;
+          if (!self._editorScrollDragging && Math.abs(dragDelta) > 6) {
+            self._editorScrollDragging = true;
+            self._editorScrollPending  = false;
+          }
+          if (self._editorScrollDragging) {
+            var rawScroll = self._editorScrollStart + dragDelta;
+            var maxScroll = -340;  // enough to see full editor
+            self._viewScrollY = Math.max(maxScroll, Math.min(0, rawScroll));
+            return;
+          }
         }
         self._editorOnMove(pos); return;
       }
@@ -945,8 +968,9 @@ class Game {
       }
       if (self._editorMode) {
         self._editorPinchStart = null;
-        self._editorScrollStart  = undefined;
-        self._editorScrollDragY  = undefined;
+        self._editorScrollDragging = false;
+        self._editorScrollPending  = false;
+        self._editorScrollStart    = undefined;
         self._editorOnUp();
         return;
       }
@@ -2477,7 +2501,9 @@ class Game {
 
   _draw() {
     var ctx = this.ctx, W = this.W, H = this.H, floorY = this.floorY();
+    var vSY = this._viewScrollY || 0;
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
+    if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
 
@@ -2507,6 +2533,8 @@ class Game {
     this.tubes.draw(ctx, 'above', this.frame, this._tubeSelected);
     if (this.sling) this._drawSling();
     this._drawSparks();
+    // Restore transform before fixed-position overlays
+    if (vSY !== 0) ctx.restore();
     this._drawSpeedSlider();
     this._drawCornerButtons();
     if (this._editorMode) this._drawEditor();
@@ -2557,6 +2585,7 @@ class Game {
       if (window.Sound && Sound.editorOpen) Sound.editorOpen();  // default ⊕ROT
     } else {
       this._editorNotePopup = false;
+      this._viewScrollY = 0;
       if (window.Sound && Sound.editorClose) Sound.editorClose();
       // Lock in current position/rotation as spawn point for all bricks
       for (var bi = 0; bi < this.bricks.length; bi++) {
@@ -2837,17 +2866,18 @@ class Game {
     var floorY = this.floorY();
 
     // Panel sits BELOW the floor line — play area fully visible above it
-    var panelY = floorY + 6 + (this._editorScrollY || 0);
+    // Editor panel is fixed — tabs start flush with the floor line
+    var panelY = floorY;
     this._editorPanelRect = { y: floorY };  // taps below this line go to panel
 
     ctx.save();
     ctx.fillStyle = 'rgba(0,8,22,0.97)';
-    ctx.fillRect(0, floorY, W, H - floorY);
+    ctx.fillRect(0, floorY, W, H - floorY + 400);  // extend down for scroll content
     ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(0, floorY + 1); ctx.lineTo(W, floorY + 1); ctx.stroke();
 
     // Tab row: BRICKS | TUBES
-    var tabW = 70, tabH = 18, tabY = panelY + 2;
+    var tabW = 80, tabH = 22, tabY = panelY;
     var isBrickTab = !this._editorTubeMode;
     // Bricks tab
     ctx.fillStyle = isBrickTab ? 'rgba(0,180,255,0.25)' : 'rgba(0,10,30,0.5)';
@@ -2869,12 +2899,12 @@ class Game {
 
     // Branch to tube editor content if in tube mode
     if (this._editorTubeMode) {
-      this._drawTubeEditor(ctx, panelY + tabH + 4);
+      this._drawTubeEditor(ctx, panelY + tabH + 2);
       ctx.restore();
       return;
     }
 
-    var btnH = 26, btnY = panelY + 14, startX = 8;
+    var btnH = 26, btnY = panelY + tabH + 4, startX = 8;
     var isSelect = this._editorSelectMode || false;
 
     // ── ROW 1 — left side: mode + build options, right side: CLR ALL + DONE ──────
@@ -3308,12 +3338,13 @@ class Game {
   _drawTubeEditor(ctx, panelY) {
     var W = this.W;
     var padding = 8, btnH = 22, rH = 20, gap = 5;
-    var row1Y = panelY + 24;
+    var row1Y = panelY + 6;
 
     // Tube type buttons
     var types = ['straight','elbow90','elbow45','elbow30','elbow15','uturn','funnel'];
     var labels = ['STR','90°','45°','30°','15°','U','FNL'];
-    var tW = Math.floor((W - 16) / types.length);
+    var tW = Math.floor((W - 16) / types.length) - 1;
+    var tH = 28;  // taller for easier mobile tapping
     ctx.font = "bold 7px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     this._tubeBtns = [];
@@ -3321,16 +3352,17 @@ class Game {
       var tx = padding + ti * (tW + 2);
       var active = (this._tubeType || 'straight') === types[ti];
       ctx.fillStyle = active ? 'rgba(0,200,120,0.35)' : 'rgba(0,15,40,0.7)';
-      ctx.beginPath(); ctx.roundRect(tx, row1Y, tW, btnH, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(tx, row1Y, tW, tH, 3); ctx.fill();
       ctx.strokeStyle = active ? '#00ff88' : '#224466'; ctx.lineWidth = active ? 1.5 : 0.8;
-      ctx.beginPath(); ctx.roundRect(tx, row1Y, tW, btnH, 3); ctx.stroke();
+      ctx.beginPath(); ctx.roundRect(tx, row1Y, tW, tH, 3); ctx.stroke();
       ctx.fillStyle = active ? '#00ff88' : '#557799';
-      ctx.fillText(labels[ti], tx + tW/2, row1Y + btnH/2);
-      this._tubeBtns.push({ x:tx, y:row1Y, w:tW, h:btnH, val:types[ti] });
+      ctx.fillText(labels[ti], tx + tW/2, row1Y + tH/2);
+      this._tubeBtns.push({ x:tx, y:row1Y, w:tW, h:tH, val:types[ti] });
     }
+    var row1BotY = row1Y + tH;
 
     // Style buttons
-    var row2Y = row1Y + btnH + gap;
+    var row2Y = row1BotY + gap;
     var styles = ['glass','window','solid'];
     var sW = Math.floor((W - 16) / 3);
     this._tubeStyleBtns = [];

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1326;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1410;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -698,16 +698,32 @@ class BreakableBrick {
       }
     }
 
-    // Health pips along bottom edge
-    var pipW = (this.w - 8) / this.maxHealth - 2;
-    for (var pi = 0; pi < this.maxHealth; pi++) {
-      var alive = pi < this.health;
-      ctx.fillStyle = alive ? glow : 'rgba(80,80,100,0.4)';
-      ctx.shadowColor = alive ? glow : 'transparent';
-      ctx.shadowBlur  = alive ? 4 : 0;
-      ctx.fillRect(bx + 4 + pi * (pipW + 2), by + this.h - 5, pipW, 3);
+    // Health bar — on longest edge, at the bottom (most visible side)
+    // Bar runs along the full width, positioned at the outer bottom edge
+    var barH    = 4;
+    var barFrac = this.health / this.maxHealth;
+    // Full bar background (dark red crosshatch)
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(bx, by + this.h - barH, this.w, barH, [0,0,2,2]); ctx.clip();
+    // Dark base
+    ctx.fillStyle = 'rgba(40,0,0,0.7)'; ctx.fillRect(bx, by + this.h - barH, this.w, barH);
+    // Crosshatch in damaged area
+    var hatchX = bx + this.w * barFrac;
+    if (hatchX < bx + this.w) {
+      ctx.strokeStyle = 'rgba(120,0,0,0.55)'; ctx.lineWidth = 1.5;
+      for (var hx = hatchX - barH; hx < bx + this.w + barH; hx += 5) {
+        ctx.beginPath(); ctx.moveTo(hx, by + this.h - barH); ctx.lineTo(hx + barH, by + this.h); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(hx, by + this.h); ctx.lineTo(hx + barH, by + this.h - barH); ctx.stroke();
+      }
     }
-    ctx.shadowBlur = 0;
+    // Health fill
+    if (barFrac > 0) {
+      ctx.fillStyle = barFrac > 0.5 ? glow + 'cc' : (barFrac > 0.25 ? '#ffaa00cc' : '#ff2200cc');
+      ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 4;
+      ctx.fillRect(bx, by + this.h - barH, this.w * barFrac, barH);
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
 
     // Hit flash
     if (this.hitFlash > 0) {

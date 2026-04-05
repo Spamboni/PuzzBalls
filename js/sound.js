@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1431;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1432;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -687,7 +687,7 @@ window.BrickNote = (function() {
   // Slider tick — very soft blip, not annoying
   S.uiSlider = function() {
     var c = S.getCtx(); if (!c) return;
-    var vol = 0.08 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var vol = 0.02 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
     var now = c.currentTime;
     var o = c.createOscillator(), g = c.createGain();
     o.type = 'sine'; o.frequency.value = 1200 + Math.random() * 400;
@@ -753,7 +753,7 @@ window.BrickNote = (function() {
   // Intro jingle — 8-bit Nintendo style, plays on game/menu load
   S.introJingle = function() {
     var c = S.getCtx(); if (!c) return;
-    var vol = 0.22 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var vol = 0.11 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
     var now = c.currentTime + 0.1;
     // Main melody — square wave, C major feel with a little jump
     var melody = [
