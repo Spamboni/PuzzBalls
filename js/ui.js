@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1324;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1402;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -92,6 +92,7 @@ class UI {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
       circularHP: 100, circularRegen: 2000, circularR: 22,
       density: 1.0, maxTravel: 60, decel: 0.88,
+      rotSpeed: 0.3, rotDecel: 0.88,
     };
     window._gridSize = window._gridSize || 10;
     window.SoundVariants = window.SoundVariants || {};
@@ -199,7 +200,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v14.01</b>';
+        vRow.innerHTML = '<b>PuzzBalls v14.02</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -222,10 +223,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v14.01 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v14.02 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1401) {
-            verEl.textContent = 'v14.01 ✓';
+          } else if (loaded === 1402) {
+            verEl.textContent = 'v14.02 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -249,6 +250,7 @@ class UI {
           rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
           circularHP: 100, circularRegen: 2000, circularR: 22,
           density: 1.0, maxTravel: 60, decel: 0.88,
+          rotSpeed: 0.3, rotDecel: 0.88,
         };
         var bd = window.BrickDefaults;
 

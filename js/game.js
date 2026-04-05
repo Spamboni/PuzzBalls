@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1401;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1402;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -985,6 +985,13 @@ class Game {
           mbrick._vy = -Math.abs(mbrick._vy || 0) * 0.4;
           mbrick._angularV = (mbrick._angularV || 0) * -0.3;
         }
+        // Bounce off chute left wall
+        var chuteLeftX = this.W - 46;
+        if (mbrick.x + bHWall > chuteLeftX) {
+          mbrick.x = chuteLeftX - bHWall;
+          mbrick._vx = -Math.abs(mbrick._vx || 0) * 0.45;
+          mbrick._angularV = (mbrick._angularV || 0) * -0.5;
+        }
 
         // Brick-brick collision — check if this moving brick overlaps any other brick
         var bSpeed = Math.hypot(mbrick._vx || 0, mbrick._vy || 0);
@@ -1075,12 +1082,12 @@ class Game {
         var pObj = this.objects[i];
         if (pObj.dead) continue;
 
-        // Cap body wall — ball cannot enter the generator body
-        if (pObj.x + pObj.r > capLeft2 && pObj.x - pObj.r < capRight2) {
-          if (pObj.y - pObj.r < this._pistonCapY && pObj.y + pObj.r > this._pistonCapY - 54) {
-            // Ball overlapping cap — push it out downward
+        // Cap body wall — only applies to balls FULLY inside the chute column
+        // (pObj.x > capLeft2 means it's inside the shaft, not just near it)
+        if (pObj.x - pObj.r > capLeft2 - 2) {
+          if (pObj.y - pObj.r < this._pistonCapY && pObj.y + pObj.r > this._pistonCapY - 58) {
             pObj.y = this._pistonCapY + pObj.r + 1;
-            if (pObj.vy < 0) pObj.vy = Math.abs(pObj.vy) * 0.5;
+            if (pObj.vy < 0) pObj.vy = Math.abs(pObj.vy) * 0.45;
           }
         }
 
@@ -1730,7 +1737,7 @@ class Game {
           b.vx = -(minV + Math.random() * (maxV - minV));
           b.vy = -(0.5 + Math.random() * 1.0);
           // Give trapdoor angular velocity to swing open (CCW)
-          this._trapdoorAngV = -0.18;
+          this._trapdoorAngV = 0.18;  // positive = outward (CCW from vertical)
           if (window.Sound) Sound.chuteExit();
         }
 
@@ -1889,9 +1896,9 @@ class Game {
     this._trapdoorAngV *= 0.85;
     this._trapdoorAngV -= this._trapdoorAngle * 0.07;  // spring back
     this._trapdoorAngle += this._trapdoorAngV;
-    // Clamp: 0 = closed (vertical), negative = swung open CCW
-    if (this._trapdoorAngle > 0.04) { this._trapdoorAngle = 0.04; this._trapdoorAngV *= -0.25; }
-    if (this._trapdoorAngle < -Math.PI * 0.52) { this._trapdoorAngle = -Math.PI * 0.52; this._trapdoorAngV *= -0.25; }
+    // Clamp: 0 = closed (vertical), positive = open outward (left), small negative = slightly inward
+    if (this._trapdoorAngle > Math.PI * 0.52) { this._trapdoorAngle = Math.PI * 0.52; this._trapdoorAngV *= -0.25; }
+    if (this._trapdoorAngle < -0.15) { this._trapdoorAngle = -0.15; this._trapdoorAngV *= -0.25; }
     var tdA     = this._trapdoorAngle;
     var doorLen = doorLen0;
 
@@ -2395,19 +2402,37 @@ class Game {
 
   _editorOnDown(pos) {
     // Always try to select an existing brick first
+    // Use rotated AABB test so long rotated bricks are selectable at their ends
+    var bestBrick = null, bestDist = 9999;
     for (var i = this.bricks.length - 1; i >= 0; i--) {
       var b = this.bricks[i];
-      var hw = (b instanceof CircularBrick) ? b.r : (b.w || 40) / 2;
-      var hh = (b instanceof CircularBrick) ? b.r : (b.h || 22) / 2;
-      if (Math.abs(pos.x - b.x) < hw + 12 && Math.abs(pos.y - b.y) < hh + 12) {
-        this._editorSelected = b;
-        this._editorDragOffX = pos.x - b.x;
-        this._editorDragOffY = pos.y - b.y;
-        this._editorDragging = b;
-        this._editorMovable  = b._movable || false;
-        this._showBrickSettings = true;  // show inline settings for this brick
-        return;
+      var hit = false;
+      if (b instanceof CircularBrick) {
+        hit = Math.hypot(pos.x - b.x, pos.y - b.y) < b.r + 14;
+      } else {
+        // Transform tap into brick-local space
+        var bRot3 = b._rotation || 0;
+        var cosR3 = Math.cos(-bRot3), sinR3 = Math.sin(-bRot3);
+        var relX3 = pos.x - b.x, relY3 = pos.y - b.y;
+        var localX3 = cosR3 * relX3 - sinR3 * relY3;
+        var localY3 = sinR3 * relX3 + cosR3 * relY3;
+        var pad = 14;
+        hit = Math.abs(localX3) < (b.w || 40) / 2 + pad && Math.abs(localY3) < (b.h || 22) / 2 + pad;
       }
+      if (hit) {
+        var dist3 = Math.hypot(pos.x - b.x, pos.y - b.y);
+        if (dist3 < bestDist) { bestDist = dist3; bestBrick = b; }
+      }
+    }
+    if (bestBrick) {
+      var b = bestBrick;
+      this._editorSelected = b;
+      this._editorDragOffX = pos.x - b.x;
+      this._editorDragOffY = pos.y - b.y;
+      this._editorDragging = b;
+      this._editorMovable  = b._movable || false;
+      this._showBrickSettings = true;
+      return;
     }
     // SELECT mode: tapping empty space just deselects — never place
     if (this._editorSelectMode) {
