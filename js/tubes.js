@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1433;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1434;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -357,11 +357,13 @@ class TubePiece {
 
       // ── End caps ──────────────────────────────────────────────────────────────
       var sockA = this.socketA(), sockB = this.socketB();
-      // Cap faces outward — angle = socket angle + 90° (face of cap perpendicular to tube direction)
-      var capAngA = sockA.angle - Math.PI / 2;
-      var capAngB = sockB.angle - Math.PI / 2;
-      this._drawCap(ctx, sockA.x, sockA.y, capAngA, tubeR, cr, cg, cb, alpha, style);
-      this._drawCap(ctx, sockB.x, sockB.y, capAngB, tubeR, cr, cg, cb, alpha, style);
+      // Cap ellipse major axis must be perpendicular to tube direction.
+      // sockA.angle points outward from the tube end. The cap rotation
+      // should align the ellipse's tall axis (ry) with the tube cross-section,
+      // meaning we rotate by sockA.angle itself (the ellipse is drawn vertically
+      // in local space, then rotated into world space along the tube direction).
+      this._drawCap(ctx, sockA.x, sockA.y, sockA.angle, tubeR, cr, cg, cb, alpha, style);
+      this._drawCap(ctx, sockB.x, sockB.y, sockB.angle, tubeR, cr, cg, cb, alpha, style);
     }
 
     // ── Draw ball inside tube ─────────────────────────────────────────────────
@@ -397,27 +399,29 @@ class TubePiece {
       ctx.fillStyle = 'rgba(0,0,20,0.32)'; ctx.fill();
     }
 
-    // ── Socket indicators in editor ───────────────────────────────────────────
-    if (window._tubeEditorMode || isEditorSelected) {
-      var self2 = this;
-      [this.socketA(), this.socketB()].forEach(function(sock) {
-        ctx.beginPath(); ctx.arc(sock.x, sock.y, isEditorSelected ? 9 : 6, 0, Math.PI * 2);
-        ctx.strokeStyle = isEditorSelected ? '#ffff44' : 'rgba(0,200,255,0.7)';
-        ctx.lineWidth = 1.8; ctx.shadowColor = isEditorSelected ? '#ffff44' : '#00ccff';
-        ctx.shadowBlur = 4; ctx.stroke(); ctx.shadowBlur = 0;
-        // Arrow showing entry direction
-        var ax = sock.x + Math.cos(sock.angle + Math.PI) * 12;
-        var ay = sock.y + Math.sin(sock.angle + Math.PI) * 12;
-        ctx.beginPath(); ctx.moveTo(sock.x, sock.y); ctx.lineTo(ax, ay);
-        ctx.strokeStyle = 'rgba(0,220,255,0.6)'; ctx.lineWidth = 1.2; ctx.stroke();
-      });
+    // ── Snap proximity glow on end caps ───────────────────────────────────────
+    // When a snap target is detected, the matching cap glows bright instead of
+    // showing separate indicator circles
+    if (this._snapHighlight) {
+      // Determine which socket is snapping
+      var sA = this.socketA(), sB = this.socketB();
+      var glowSock = (Math.hypot(sA.x - this._snapHighlight.x, sA.y - this._snapHighlight.y) <
+                      Math.hypot(sB.x - this._snapHighlight.x, sB.y - this._snapHighlight.y)) ? sA : sB;
+      ctx.beginPath(); ctx.arc(glowSock.x, glowSock.y, tubeR + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 14;
+      ctx.stroke(); ctx.shadowBlur = 0;
     }
 
-    // ── Snap highlight ────────────────────────────────────────────────────────
-    if (this._snapHighlight) {
-      ctx.beginPath(); ctx.arc(this._snapHighlight.x, this._snapHighlight.y, 12, 0, Math.PI * 2);
-      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10;
+    // ── Editor selection highlight ────────────────────────────────────────────
+    if (isEditorSelected && this.type !== 'funnel') {
+      var eAS = this._offsetPath(pts, -tubeR-3), eBS = this._offsetPath(pts, tubeR+3);
+      ctx.beginPath(); ctx.moveTo(eAS[0].x, eAS[0].y);
+      for (var i=1;i<eAS.length;i++) ctx.lineTo(eAS[i].x, eAS[i].y);
+      for (var i=eBS.length-1;i>=0;i--) ctx.lineTo(eBS[i].x, eBS[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(255,255,100,0.5)'; ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#ffff44'; ctx.shadowBlur = 6;
       ctx.stroke(); ctx.shadowBlur = 0;
     }
 
