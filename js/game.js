@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1432;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1433;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -3363,8 +3363,8 @@ class Game {
 
     // Style buttons
     var row2Y = row1BotY + gap;
-    var styles = ['glass','window','solid'];
-    var sW = Math.floor((W - 16) / 3);
+    var styles = ['glass','window','solid','energy'];
+    var sW = Math.floor((W - 16) / 4);
     this._tubeStyleBtns = [];
     for (var si = 0; si < styles.length; si++) {
       var sx2 = padding + si * (sW + 2);

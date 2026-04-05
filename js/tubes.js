@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1430;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1433;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -206,117 +206,256 @@ class TubePiece {
     return false;
   }
 
+  // ── Offset path: shift all points perpendicular to path direction ────────────
+  _offsetPath(pts, offset) {
+    var out = [];
+    for (var i = 0; i < pts.length; i++) {
+      // Tangent from neighbours
+      var prev = pts[Math.max(0, i-1)], next = pts[Math.min(pts.length-1, i+1)];
+      var tx = next.x - prev.x, ty = next.y - prev.y;
+      var len = Math.hypot(tx, ty) || 1;
+      // Perpendicular (90° CCW from tangent)
+      var nx = -ty / len, ny = tx / len;
+      out.push({ x: pts[i].x + nx * offset, y: pts[i].y + ny * offset });
+    }
+    return out;
+  }
+
+  // ── Draw ellipse cap at tube opening ─────────────────────────────────────────
+  _drawCap(ctx, cx, cy, angle, tubeR, cr, cg, cb, alpha, style) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    // The cap is an ellipse — squashed on X axis to simulate perspective
+    var rx = tubeR * 0.35, ry = tubeR;
+    // Dark interior
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,2,10,' + (alpha * (style === 'solid' ? 0.95 : 0.55)) + ')';
+    ctx.fill();
+    // Outer rim glow
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.9) + ')';
+    ctx.lineWidth = style === 'solid' ? 2.5 : 1.8;
+    ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.8)';
+    ctx.shadowBlur = style === 'solid' ? 10 : 6;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // Inner wall ring (tube wall thickness illusion)
+    if (style !== 'solid') {
+      ctx.beginPath(); ctx.ellipse(0, 0, rx * 0.55, ry * 0.85, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.35) + ')';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    // Specular highlight dot
+    ctx.beginPath(); ctx.arc(rx * 0.3, -ry * 0.45, ry * 0.12, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,' + (alpha * (style === 'glass' ? 0.7 : 0.4)) + ')';
+    ctx.fill();
+    ctx.restore();
+  }
+
   // ── Draw ─────────────────────────────────────────────────────────────────────
   draw(ctx, frame, isEditorSelected) {
     if (!this._path || this._path.length < 2) return;
     ctx.save();
 
     var color = this._tubeColor();
-    var r = parseInt(color.slice(1,3),16)||0, g2 = parseInt(color.slice(3,5),16)||0, b2 = parseInt(color.slice(5,7),16)||0;
-    var tubeR = this.radius;
-    var alpha = this.layer === 'behind' ? 0.55 : 1.0;
-    var pts   = this._path;
+    var cr = parseInt(color.slice(1,3),16)||0;
+    var cg = parseInt(color.slice(3,5),16)||0;
+    var cb = parseInt(color.slice(5,7),16)||0;
+    var tubeR  = this.radius;
+    var alpha  = this.layer === 'behind' ? 0.50 : 1.0;
+    var pts    = this._path;
+    var style  = this.style;
 
-    // ── Draw tube wall ─────────────────────────────────────────────────────────
     if (this.type === 'funnel') {
       this._drawFunnel(ctx, color, alpha);
+    } else if (style === 'energy') {
+      this._drawEnergy(ctx, frame, cr, cg, cb, alpha, pts, tubeR);
     } else {
-      // Outer wall (filled, colored)
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.lineWidth   = tubeR * 2 + 4;
-      ctx.strokeStyle = 'rgba(' + r + ',' + g2 + ',' + b2 + ',' + (alpha * (this.style === 'glass' ? 0.12 : this.style === 'window' ? 0.30 : 0.70)) + ')';
-      ctx.lineCap     = 'round'; ctx.lineJoin = 'round';
-      ctx.stroke();
+      // ── Compute offset edge paths ─────────────────────────────────────────────
+      var edgeA = this._offsetPath(pts, -tubeR);   // "top" edge
+      var edgeB = this._offsetPath(pts,  tubeR);   // "bottom" edge
 
-      // Outer rim glow
+      // ── Tube body fill ────────────────────────────────────────────────────────
+      // Build closed polygon from edgeA forward + edgeB backward
       ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.lineWidth   = tubeR * 2 + 4;
-      ctx.strokeStyle = 'rgba(' + r + ',' + g2 + ',' + b2 + ',' + (alpha * 0.35) + ')';
-      ctx.shadowColor = 'rgba(' + r + ',' + g2 + ',' + b2 + ',0.4)';
-      ctx.shadowBlur  = 8;
-      ctx.stroke();
-      ctx.shadowBlur  = 0;
+      ctx.moveTo(edgeA[0].x, edgeA[0].y);
+      for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
+      for (var i = edgeB.length - 1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
+      ctx.closePath();
+      var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
+      ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+      ctx.fill();
 
-      // Left edge line
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.lineWidth   = 2;
-      ctx.strokeStyle = 'rgba(' + r + ',' + g2 + ',' + b2 + ',' + (alpha * 0.85) + ')';
-      ctx.shadowColor = color; ctx.shadowBlur = 6;
-      ctx.stroke();
-      ctx.shadowBlur  = 0;
+      // ── Outer glow (wide soft halo along both edges) ──────────────────────────
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      [edgeA, edgeB].forEach(function(edge) {
+        ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+        for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+        ctx.lineWidth   = style === 'solid' ? 6 : 5;
+        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.18) + ')';
+        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.4)';
+        ctx.shadowBlur  = style === 'solid' ? 12 : 8;
+        ctx.stroke();
+        ctx.shadowBlur  = 0;
+      });
 
-      // Window stripe (style='window') — a thin highlight strip down the center
-      if (this.style === 'window') {
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.lineWidth   = tubeR * 0.35;
-        ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * 0.55) + ')';
+      // ── Bright rim line on both edges ─────────────────────────────────────────
+      [edgeA, edgeB].forEach(function(edge) {
+        ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+        for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+        ctx.lineWidth   = style === 'solid' ? 2.2 : 1.4;
+        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.80)) + ')';
+        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.9)';
+        ctx.shadowBlur  = style === 'solid' ? 8 : 5;
+        ctx.stroke();
+        ctx.shadowBlur  = 0;
+      });
+
+      // ── Inner wall line (slightly inset — tube wall thickness illusion) ───────
+      if (style !== 'solid') {
+        var edgeAi = this._offsetPath(pts, -(tubeR * 0.72));
+        var edgeBi = this._offsetPath(pts,  (tubeR * 0.72));
+        [edgeAi, edgeBi].forEach(function(edge) {
+          ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+          for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+          ctx.lineWidth   = 0.8;
+          ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.30) + ')';
+          ctx.stroke();
+        });
+      }
+
+      // ── Specular gloss stripe (upper edge — sells the cylindrical glass look) ─
+      if (style === 'glass' || style === 'window') {
+        var glossEdge = this._offsetPath(pts, -(tubeR * 0.48));
+        ctx.beginPath(); ctx.moveTo(glossEdge[0].x, glossEdge[0].y);
+        for (var i = 1; i < glossEdge.length; i++) ctx.lineTo(glossEdge[i].x, glossEdge[i].y);
+        ctx.lineWidth   = style === 'glass' ? tubeR * 0.22 : tubeR * 0.10;
+        ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.38 : 0.18)) + ')';
+        ctx.stroke();
+        // Extra thin bright highlight at the very top
+        var glossThin = this._offsetPath(pts, -(tubeR * 0.60));
+        ctx.beginPath(); ctx.moveTo(glossThin[0].x, glossThin[0].y);
+        for (var i = 1; i < glossThin.length; i++) ctx.lineTo(glossThin[i].x, glossThin[i].y);
+        ctx.lineWidth   = 1.0;
+        ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.55) + ')';
         ctx.stroke();
       }
-      // Glass style: inner gloss
-      if (this.style === 'glass') {
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-        ctx.lineWidth   = tubeR * 0.5;
-        ctx.strokeStyle = 'rgba(200,235,255,' + (alpha * 0.30) + ')';
-        ctx.stroke();
+
+      // ── Window strip (semi-opaque frosted band down center) ───────────────────
+      if (style === 'window') {
+        var winEdgeA = this._offsetPath(pts, -(tubeR * 0.22));
+        var winEdgeB = this._offsetPath(pts,  (tubeR * 0.22));
+        ctx.beginPath(); ctx.moveTo(winEdgeA[0].x, winEdgeA[0].y);
+        for (var i = 1; i < winEdgeA.length; i++) ctx.lineTo(winEdgeA[i].x, winEdgeA[i].y);
+        for (var i = winEdgeB.length - 1; i >= 0; i--) ctx.lineTo(winEdgeB[i].x, winEdgeB[i].y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(180,210,255,' + (alpha * 0.14) + ')';
+        ctx.fill();
+      }
+
+      // ── End caps ──────────────────────────────────────────────────────────────
+      var sockA = this.socketA(), sockB = this.socketB();
+      // Cap faces outward — angle = socket angle + 90° (face of cap perpendicular to tube direction)
+      var capAngA = sockA.angle - Math.PI / 2;
+      var capAngB = sockB.angle - Math.PI / 2;
+      this._drawCap(ctx, sockA.x, sockA.y, capAngA, tubeR, cr, cg, cb, alpha, style);
+      this._drawCap(ctx, sockB.x, sockB.y, capAngB, tubeR, cr, cg, cb, alpha, style);
+    }
+
+    // ── Draw ball inside tube ─────────────────────────────────────────────────
+    if (this._ball) {
+      var ballPos = this._pointAtT(this._ballT);
+      var bs = window.BallSettings && BallSettings[this._ball.type] || {};
+      var bGlow = bs.glow || '#ffffff';
+      if (style === 'solid') {
+        // Solid: just a glow pulse at the exit end so you know it's coming
+        var exitPt = this._pointAtT(this._ballT > 0.5 ? 0.95 : 0.05);
+        ctx.beginPath(); ctx.arc(exitPt.x, exitPt.y, tubeR * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = bGlow + '44';
+        ctx.shadowColor = bGlow; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+      } else {
+        var bAlpha = style === 'glass' ? 0.92 : 0.65;
+        ctx.beginPath(); ctx.arc(ballPos.x, ballPos.y, this._ball.r * 0.80, 0, Math.PI * 2);
+        ctx.fillStyle = bGlow + Math.round(bAlpha * 255).toString(16).padStart(2,'0');
+        ctx.shadowColor = bGlow; ctx.shadowBlur = 10;
+        ctx.fill(); ctx.shadowBlur = 0;
+        // Small specular dot on ball
+        ctx.beginPath(); ctx.arc(ballPos.x - this._ball.r*0.25, ballPos.y - this._ball.r*0.28, this._ball.r*0.18, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();
       }
     }
 
-    // ── Draw ball inside (glass/window only) ──────────────────────────────────
-    if (this._ball && this.style !== 'solid') {
-      var ballPos = this._pointAtT(this._ballT);
-      var bs  = window.BallSettings && BallSettings[this._ball.type] || {};
-      var bAlpha = this.style === 'glass' ? 0.9 : 0.6;
-      ctx.beginPath();
-      ctx.arc(ballPos.x, ballPos.y, this._ball.r * 0.85, 0, Math.PI * 2);
-      ctx.fillStyle = (bs.glow || '#ffffff') + Math.round(bAlpha * 255).toString(16).padStart(2,'0');
-      ctx.shadowColor = bs.glow || '#ffffff'; ctx.shadowBlur = 8;
-      ctx.fill(); ctx.shadowBlur = 0;
+    // ── Behind-layer darkening overlay ────────────────────────────────────────
+    if (this.layer === 'behind' && this.type !== 'funnel') {
+      var eA2 = this._offsetPath(pts, -tubeR), eB2 = this._offsetPath(pts, tubeR);
+      ctx.beginPath(); ctx.moveTo(eA2[0].x, eA2[0].y);
+      for (var i = 1; i < eA2.length; i++) ctx.lineTo(eA2[i].x, eA2[i].y);
+      for (var i = eB2.length-1; i >= 0; i--) ctx.lineTo(eB2[i].x, eB2[i].y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(0,0,20,0.32)'; ctx.fill();
     }
 
     // ── Socket indicators in editor ───────────────────────────────────────────
     if (window._tubeEditorMode || isEditorSelected) {
+      var self2 = this;
       [this.socketA(), this.socketB()].forEach(function(sock) {
-        ctx.beginPath(); ctx.arc(sock.x, sock.y, 6, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(sock.x, sock.y, isEditorSelected ? 9 : 6, 0, Math.PI * 2);
         ctx.strokeStyle = isEditorSelected ? '#ffff44' : 'rgba(0,200,255,0.7)';
-        ctx.lineWidth = 1.5; ctx.stroke();
-        // Direction arrow
-        ctx.beginPath();
-        ctx.moveTo(sock.x, sock.y);
-        ctx.lineTo(sock.x + Math.cos(sock.angle + Math.PI) * 10, sock.y + Math.sin(sock.angle + Math.PI) * 10);
-        ctx.strokeStyle = 'rgba(0,200,255,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.lineWidth = 1.8; ctx.shadowColor = isEditorSelected ? '#ffff44' : '#00ccff';
+        ctx.shadowBlur = 4; ctx.stroke(); ctx.shadowBlur = 0;
+        // Arrow showing entry direction
+        var ax = sock.x + Math.cos(sock.angle + Math.PI) * 12;
+        var ay = sock.y + Math.sin(sock.angle + Math.PI) * 12;
+        ctx.beginPath(); ctx.moveTo(sock.x, sock.y); ctx.lineTo(ax, ay);
+        ctx.strokeStyle = 'rgba(0,220,255,0.6)'; ctx.lineWidth = 1.2; ctx.stroke();
       });
     }
 
     // ── Snap highlight ────────────────────────────────────────────────────────
     if (this._snapHighlight) {
-      ctx.beginPath(); ctx.arc(this._snapHighlight.x, this._snapHighlight.y, 10, 0, Math.PI * 2);
-      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2;
-      ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(this._snapHighlight.x, this._snapHighlight.y, 12, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10;
       ctx.stroke(); ctx.shadowBlur = 0;
     }
 
-    // ── Behind-layer darkening overlay ────────────────────────────────────────
-    if (this.layer === 'behind') {
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.lineWidth   = this.radius * 2 + 4;
-      ctx.strokeStyle = 'rgba(0,0,20,0.35)';
-      ctx.lineCap = 'round';
-      ctx.stroke();
-    }
-
     ctx.restore();
+  }
+
+  // ── Energy style (accelerator) — animated rings + sparks ─────────────────────
+  _drawEnergy(ctx, frame, cr, cg, cb, alpha, pts, tubeR) {
+    var eA = this._offsetPath(pts, -tubeR), eB = this._offsetPath(pts, tubeR);
+    // Body fill
+    ctx.beginPath(); ctx.moveTo(eA[0].x, eA[0].y);
+    for (var i=1;i<eA.length;i++) ctx.lineTo(eA[i].x, eA[i].y);
+    for (var i=eB.length-1;i>=0;i--) ctx.lineTo(eB[i].x, eB[i].y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.08) + ')'; ctx.fill();
+    // Edge glow
+    [eA, eB].forEach(function(edge) {
+      ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+      for (var i=1;i<edge.length;i++) ctx.lineTo(edge[i].x, edge[i].y);
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba('+cr+','+cg+','+cb+','+alpha+')';
+      ctx.shadowColor = 'rgba('+cr+','+cg+','+cb+',1)'; ctx.shadowBlur = 10;
+      ctx.stroke(); ctx.shadowBlur = 0;
+    });
+    // Animated cross rings spaced along path
+    var ringCount = Math.max(3, Math.floor(this._pathLen / 28));
+    for (var ri = 0; ri < ringCount; ri++) {
+      var tRing = ((ri / ringCount) + (frame * 0.008)) % 1.0;
+      var rpt = this._pointAtT(tRing);
+      var prevPt = this._pointAtT(Math.max(0, tRing - 0.02));
+      var tang = Math.atan2(rpt.y - prevPt.y, rpt.x - prevPt.x);
+      var pulse = 0.6 + 0.4 * Math.sin(frame * 0.15 + ri * 1.4);
+      ctx.save(); ctx.translate(rpt.x, rpt.y); ctx.rotate(tang + Math.PI/2);
+      ctx.beginPath(); ctx.ellipse(0, 0, tubeR * 0.32, tubeR, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba('+cr+','+cg+','+cb+','+(alpha * pulse * 0.85)+')';
+      ctx.lineWidth = 1.2; ctx.shadowColor = 'rgba('+cr+','+cg+','+cb+',0.8)';
+      ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.restore();
+    }
   }
 
   _drawFunnel(ctx, color, alpha) {
@@ -346,11 +485,11 @@ class TubePiece {
   }
 
   _tubeColor() {
-    // Color by speed modifier and user override
     if (this.color) return this.color;
-    if (this.speedMod > 1.3) return '#ff6600';   // accelerator = orange
-    if (this.speedMod < 0.7) return '#4466ff';   // decelerator = blue
-    return '#00ccff';                             // neutral = cyan
+    if (this.style === 'energy' || this.speedMod > 1.5) return '#ff8800';  // hot orange
+    if (this.speedMod > 1.15) return '#ff6600';   // accelerator
+    if (this.speedMod < 0.85) return '#4466ff';   // decelerator
+    return '#00ccff';                              // neutral
   }
 
   // ── Rebuild path after position/rotation change ───────────────────────────
