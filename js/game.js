@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1435;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1436;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -585,8 +585,20 @@ class Game {
           }
         }
         // Tab switching — ALWAYS checked first, before any panel content routing
-        // Tab checks — translate to editor coordinate space
+        // Quick-clear buttons
         var _tabY = pos.y - (self._viewScrollY || 0);
+        if (self._editorQuickClearBtns) {
+          for (var qci2=0;qci2<self._editorQuickClearBtns.length;qci2++) {
+            var qcb=self._editorQuickClearBtns[qci2];
+            if (pos.x>=qcb.x&&pos.x<=qcb.x+qcb.w&&_tabY>=qcb.y&&_tabY<=qcb.y+qcb.h) {
+              if (qcb.type===0) { self._undoPush(); self.bricks=[]; }
+              else if (qcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); }
+              else if (qcb.type===2) { self.tubes.tubes=[]; }
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
+            }
+          }
+        }
+        // Tab checks — translate to editor coordinate space
         if (self._editorBrickTab) {
           var bt = self._editorBrickTab;
           if (pos.x >= bt.x-6 && pos.x <= bt.x+bt.w+6 && _tabY >= bt.y-6 && _tabY <= bt.y+bt.h+10) {
@@ -749,8 +761,10 @@ class Game {
         }
         // Only place/select bricks in the play area (above floor)
         // Only interact with play area for brick placement when NOT in tube mode
-        if (!inPanel && !self._editorTubeMode) self._editorOnDown(pos);
-        else if (!inPanel && self._editorTubeMode) self._tubeEditorOnDown(pos);
+        // Convert screen pos to world pos (account for scroll)
+        var _worldPos = { x: pos.x, y: pos.y - (self._viewScrollY || 0) };
+        if (!inPanel && !self._editorTubeMode) self._editorOnDown(_worldPos);
+        else if (!inPanel && self._editorTubeMode) self._tubeEditorOnDown(_worldPos);
         return;
       }
 
@@ -789,6 +803,7 @@ class Game {
           var br = self._chuteButtonRects[bi];
           if (pos.x >= br.x && pos.x <= br.x + br.w &&
               pos.y >= br.y && pos.y <= br.y + br.h) {
+            self._btnPressFlash = { type: br.type, frame: self.frame };
             if (window.Sound && Sound.uiTap) Sound.uiTap(0.28);
             self._chuteDropBall(br.type);
             return;
@@ -800,6 +815,7 @@ class Game {
         if (pos.x >= dr.x && pos.x <= dr.x + dr.w &&
             pos.y >= dr.y && pos.y <= dr.y + dr.h) {
           self._toggleDeleteMode();
+          if (window.Sound && Sound.uiToggle) Sound.uiToggle(self._deleteMode);
           return;
         }
       }
@@ -2365,10 +2381,17 @@ class Game {
     var btnW   = CW - 6;
     var btnX   = leftX + 3;
     var curveTop  = floorY - turnR;
-    // DEL button goes right below the cap; ball buttons fill the rest of the shaft
-    var delBtnY   = topY + 4;   // just below the cap bottom = topY
-    var btnGap    = 16;          // visual gap between DEL and ball buttons
-    var btnStartY = delBtnY + btnH + btnGap;
+    // DEL button goes right below the cap
+    var delBtnY   = topY + 4;
+    var btnGap    = 12;
+    // Ball buttons: bottom of GRV (last ball button) should align with trapdoor pivot
+    // pivotY = this._tdPivotY (set each frame during trapdoor draw)
+    var pivotRef  = this._tdPivotY || (floorY - 60);
+    // 5 buttons of height btnH + 4px gap, starting at btnStartY, ending at btnStartY + 5*(btnH+4)
+    // We want btnStartY + 5*(btnH+4) = pivotRef, so:
+    var btnStartY = pivotRef - 5 * (btnH + 4);
+    // Clamp: DEL button must come before ball buttons
+    if (btnStartY < delBtnY + btnH + btnGap) btnStartY = delBtnY + btnH + btnGap;
 
     this._chuteButtonRects = [];
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
@@ -2384,6 +2407,8 @@ class Game {
       var bcol  = btnColors[bi];
       var alpha = atMax ? 0.28 : 1.0;
       var pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.055 + bi * 1.3);
+      var pressFlash = this._btnPressFlash && this._btnPressFlash.type === btype
+        ? Math.max(0, 1 - (this.frame - this._btnPressFlash.frame) / 12) : 0;
 
       this._chuteButtonRects.push({ x: btnX, y: by, w: btnW, h: btnH, type: btype });
 
@@ -2395,8 +2420,10 @@ class Game {
       // ── Background: 25% opacity with tube-wrap horizontal gradient ──────────
       // Tube-wrap: dark edges, brighter centre (simulates cylindrical depth)
       ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 8);
+      // Press flash: slightly inset + brighter on recent tap
+      var bxOff = pressFlash > 0 ? 1 : 0;
       var bgGrad = ctx.createLinearGradient(btnX, by, btnX + btnW, by);
-      bgGrad.addColorStop(0,    'rgba(0,4,14,' + (alpha * 0.25) + ')');
+      bgGrad.addColorStop(0,    'rgba(0,4,14,' + (alpha * (0.25 + pressFlash * 0.4)) + ')');
       bgGrad.addColorStop(0.15, 'rgba(' + Math.round(r*0.08)+','+Math.round(g*0.06)+','+Math.round(b*0.10)+',' + (alpha * 0.22) + ')');
       bgGrad.addColorStop(0.5,  'rgba(' + Math.round(r*0.18)+','+Math.round(g*0.15)+','+Math.round(b*0.22)+',' + (alpha * 0.18) + ')');
       bgGrad.addColorStop(0.85, 'rgba(' + Math.round(r*0.08)+','+Math.round(g*0.06)+','+Math.round(b*0.10)+',' + (alpha * 0.22) + ')');
@@ -2526,13 +2553,6 @@ class Game {
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(delActive ? 'TAP BALL' : 'DEL', delOrbX + 10, delOrbY);
 
-    // ── Balls in chute ───────────────────────────────────────────────────────
-    if (this._chuteActive) {
-      for (var ci = 0; ci < this._chuteActive.length; ci++) {
-        this._drawBall(this._chuteActive[ci]);
-      }
-    }
-
     ctx.restore();
   }
 
@@ -2568,6 +2588,8 @@ class Game {
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     // Behind-layer tubes drawn first (under everything)
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
+    // Chute balls drawn BEFORE buttons so they appear behind them
+    if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
     this._drawChute();
     if (this.barrier) this.barrier.draw(ctx);
     if (this.target) this.target.draw(ctx);
@@ -2587,10 +2609,13 @@ class Game {
     if (this.sling) this._drawSling();
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
-    // Restore transform before fixed-position overlays (speed slider + corner buttons stay fixed)
+    // Restore transform before fixed-position overlays
     if (vSY !== 0) ctx.restore();
-    this._drawSpeedSlider();
-    this._drawCornerButtons();
+    // Speed slider and corner buttons hidden when editor is open
+    if (!this._editorMode) {
+      this._drawSpeedSlider();
+      this._drawCornerButtons();
+    }
   }
 
   // ── Brick Editor (§4.3) ───────────────────────────────────────────────────
@@ -2751,46 +2776,74 @@ class Game {
   // Multi-touch: pinch to scale, two-finger rotate
   _editorHandleTouch(touches) {
     if (!this._editorMode || !this._editorSelected || touches.length < 2) return;
-    if (this._editorTubeMode) return;  // don't pinch bricks when in tube mode
+    if (this._editorTubeMode) return;
     var rect = this.canvas.getBoundingClientRect();
-    var t0   = touches[0], t1 = touches[1];
-    var p0   = { x: t0.clientX - rect.left, y: t0.clientY - rect.top };
-    var p1   = { x: t1.clientX - rect.left, y: t1.clientY - rect.top };
-    var midX = (p0.x + p1.x) / 2, midY = (p0.y + p1.y) / 2;
-    var dist = Math.hypot(p0.x - p1.x, p0.y - p1.y);
-    var angle= Math.atan2(p1.y - p0.y, p1.x - p0.x);
-
+    var vSY  = this._viewScrollY || 0;
+    var t0 = touches[0], t1 = touches[1];
+    var p0 = { x: t0.clientX - rect.left, y: t0.clientY - rect.top - vSY };
+    var p1 = { x: t1.clientX - rect.left, y: t1.clientY - rect.top - vSY };
     var sb = this._editorSelected;
 
-    if (this._editorPinchStart) {
-      var ds    = dist - this._editorPinchStart.dist;
-      var da    = angle - this._editorPinchStart.angle;
-
-      // Scale
-      if (sb instanceof CircularBrick) {
-        sb.r = Math.max(8, Math.min(200, (this._editorPinchStart.r || sb.r) + ds * 0.5));
-        sb.w = sb.h = sb.r * 2;
-      } else {
-        var newW = Math.max(10, Math.min(900, (this._editorPinchStart.w || sb.w) + ds));
-        sb.w = newW;
-      }
-
-      // Rotate with snap
-      var snapDeg = this._editorSnapDeg || 0;
-      var rawRot  = (this._editorPinchStart.rot || 0) + da;
-      if (snapDeg > 0) {
-        var snapRad = snapDeg * Math.PI / 180;
-        rawRot = Math.round(rawRot / snapRad) * snapRad;
-      }
-      sb._rotation = rawRot;
-    } else {
-      // First frame of pinch — store starting values
+    if (!this._editorPinchStart) {
+      // Store initial finger and brick state
       this._editorPinchStart = {
-        dist: dist, angle: angle,
-        w: sb.w, h: sb.h, r: sb instanceof CircularBrick ? sb.r : 0,
+        p0: { x: p0.x, y: p0.y }, p1: { x: p1.x, y: p1.y },
+        cx: sb.x, cy: sb.y,
+        w: sb.w || (sb.r||10)*2, h: sb.h || (sb.r||10)*2,
+        r: sb instanceof CircularBrick ? sb.r : 0,
         rot: sb._rotation || 0,
+        dist: Math.hypot(p1.x-p0.x, p1.y-p0.y),
+        angle: Math.atan2(p1.y-p0.y, p1.x-p0.x),
       };
+      return;
     }
+
+    var ps = this._editorPinchStart;
+    var d0 = Math.hypot(p0.x - ps.p0.x, p0.y - ps.p0.y);
+    var d1 = Math.hypot(p1.x - ps.p1.x, p1.y - ps.p1.y);
+    var ANCHOR_THRESH = 5;  // px — below this = stationary = pivot anchor
+
+    if (sb instanceof CircularBrick) {
+      // Circles: scale by distance change, rotate by angle change
+      var newDist  = Math.hypot(p1.x-p0.x, p1.y-p0.y);
+      var newAngle = Math.atan2(p1.y-p0.y, p1.x-p0.x);
+      sb.r = Math.max(8, Math.min(200, ps.r + (newDist - ps.dist) * 0.5));
+      sb.w = sb.h = sb.r * 2;
+      sb._rotation = ps.rot + (newAngle - ps.angle);
+      sb.x = (p0.x + p1.x) / 2;
+      sb.y = Math.min((p0.y + p1.y) / 2, this.floorY() - sb.r - 4);
+      return;
+    }
+
+    // Rectangular brick: fingers represent the two ends of the brick along its length axis
+    // New rotation = angle between the two fingers
+    var newAngle2 = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+    var snapDeg   = this._editorSnapDeg || 0;
+    if (snapDeg > 0) {
+      var snapRad = snapDeg * Math.PI / 180;
+      newAngle2 = Math.round(newAngle2 / snapRad) * snapRad;
+    }
+    sb._rotation = newAngle2;
+
+    // New length = distance between fingers
+    var newLen = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    sb.w = Math.max(10, Math.min(900, newLen));
+
+    if (d0 < ANCHOR_THRESH) {
+      // Finger 0 is anchored — that end stays at p0
+      // Brick center = p0 + (w/2) along rotation direction
+      sb.x = p0.x + Math.cos(newAngle2) * sb.w / 2;
+      sb.y = p0.y + Math.sin(newAngle2) * sb.w / 2;
+    } else if (d1 < ANCHOR_THRESH) {
+      // Finger 1 is anchored — that end stays at p1
+      sb.x = p1.x - Math.cos(newAngle2) * sb.w / 2;
+      sb.y = p1.y - Math.sin(newAngle2) * sb.w / 2;
+    } else {
+      // Both moving — center follows midpoint of fingers
+      sb.x = (p0.x + p1.x) / 2;
+      sb.y = (p0.y + p1.y) / 2;
+    }
+    sb.y = Math.min(sb.y, this.floorY() - (sb.h || 10) / 2 - 4);
   }
 
   _editorOnMove(pos) {
@@ -2820,7 +2873,7 @@ class Game {
     }
     if (!this._editorDragging) return;
     var nx = pos.x - (this._editorDragOffX || 0);
-    var ny = pos.y - (this._editorDragOffY || 0);
+    var ny = pos.y - (this._editorDragOffY || 0) - (this._viewScrollY || 0);
     // Snap to grid if enabled
     if (window._snapToGrid) {
       var gs = window._gridSize || 20;
@@ -2930,8 +2983,25 @@ class Game {
     ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(0, floorY + 1); ctx.lineTo(W, floorY + 1); ctx.stroke();
 
+    // ── Quick-clear row above tabs ─────────────────────────────────────────
+    var qcH = 20, qcY = panelY + 2;
+    var qcW = Math.floor((W - 16) / 3);
+    var qcLabels = ['CLR BRICKS','CLR BALLS','CLR TUBES'];
+    var qcColors = ['#ff6600','#ff4466','#00ffaa'];
+    this._editorQuickClearBtns = [];
+    for (var qci = 0; qci < 3; qci++) {
+      var qcx = 8 + qci * (qcW + 2);
+      ctx.fillStyle = 'rgba(20,5,0,0.75)';
+      ctx.beginPath(); ctx.roundRect(qcx, qcY, qcW, qcH, 3); ctx.fill();
+      ctx.strokeStyle = qcColors[qci] + '99'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(qcx, qcY, qcW, qcH, 3); ctx.stroke();
+      ctx.fillStyle = qcColors[qci]; ctx.font = "bold 6px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(qcLabels[qci], qcx + qcW/2, qcY + qcH/2);
+      this._editorQuickClearBtns.push({ x:qcx, y:qcY, w:qcW, h:qcH, type:qci });
+    }
     // Tab row: BRICKS | TUBES
-    var tabW = 80, tabH = 22, tabY = panelY;
+    var tabW = 80, tabH = 22, tabY = panelY + qcH + 4;
     var isBrickTab = !this._editorTubeMode;
     // Bricks tab
     ctx.fillStyle = isBrickTab ? 'rgba(0,180,255,0.25)' : 'rgba(0,10,30,0.5)';
