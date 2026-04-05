@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1400;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1401;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -376,7 +376,7 @@ class Game {
             { id:'dist',   key:'_maxTravel', defKey:'maxTravel', step:10,   min:0,    max:900,  invert:false },
             { id:'decel',  key:'_decel',     defKey:'decel',     step:0.01, min:0.50, max:0.99, invert:true  },
             { id:'rotspd', key:'_rotSpeed',  defKey:'rotSpeed',  step:0.05, min:0.0,  max:1.0,  invert:false },
-            { id:'rotdec', key:'_rotDecel',  defKey:'rotDecel',  step:0.01, min:0.50, max:0.99, invert:true  },
+            { id:'rotdec', key:'_rotDecel',  defKey:'rotDecel',  step:0.01, min:0.05, max:0.95, invert:true  },
             { id:'blen',   key:'_blen',      defKey:'rectW',     step:5,    min:5,    max:900,  invert:false, isDim:true },
             { id:'bwid',   key:'_bwid',      defKey:'rectH',     step:1,    min:2,    max:200,  invert:false, isDim:true },
             { id:'rot',    key:'_rotDeg',    defKey:null,        step:1,    min:-180, max:180,  invert:false, isRot:true },
@@ -959,25 +959,31 @@ class Game {
           }
         }
 
-        // Screen edge bounce — brick can never leave the play area
-        var bHWall = (mbrick.w || (mbrick.r || 10) * 2) / 2;
-        var bHHall = (mbrick.h || (mbrick.r || 10) * 2) / 2;
+        // Screen edge bounce — use rotated AABB extent so long rotated bricks can't clip
+        var bRot2 = mbrick._rotation || 0;
+        var bW2 = mbrick.w || (mbrick.r || 10) * 2;
+        var bH2 = mbrick.h || (mbrick.r || 10) * 2;
+        // Axis-aligned bounding radius of rotated rect
+        var bHWall = (Math.abs(Math.cos(bRot2)) * bW2 + Math.abs(Math.sin(bRot2)) * bH2) / 2;
+        var bHHall = (Math.abs(Math.sin(bRot2)) * bW2 + Math.abs(Math.cos(bRot2)) * bH2) / 2;
         var bFloor = this.floorY();
         if (mbrick.x - bHWall < 0) {
           mbrick.x = bHWall;
-          mbrick._vx = Math.abs(mbrick._vx || 0) * 0.5;
-          mbrick._angularV = (mbrick._angularV || 0) * -0.6;
+          mbrick._vx = Math.abs(mbrick._vx || 0) * 0.45;
+          mbrick._angularV = (mbrick._angularV || 0) * -0.55;
         } else if (mbrick.x + bHWall > this.W) {
           mbrick.x = this.W - bHWall;
-          mbrick._vx = -Math.abs(mbrick._vx || 0) * 0.5;
-          mbrick._angularV = (mbrick._angularV || 0) * -0.6;
+          mbrick._vx = -Math.abs(mbrick._vx || 0) * 0.45;
+          mbrick._angularV = (mbrick._angularV || 0) * -0.55;
         }
         if (mbrick.y - bHHall < 0) {
           mbrick.y = bHHall;
-          mbrick._vy = Math.abs(mbrick._vy || 0) * 0.5;
+          mbrick._vy = Math.abs(mbrick._vy || 0) * 0.45;
+          mbrick._angularV = (mbrick._angularV || 0) * -0.4;
         } else if (mbrick.y + bHHall > bFloor) {
           mbrick.y = bFloor - bHHall;
           mbrick._vy = -Math.abs(mbrick._vy || 0) * 0.4;
+          mbrick._angularV = (mbrick._angularV || 0) * -0.3;
         }
 
         // Brick-brick collision — check if this moving brick overlaps any other brick
@@ -1061,27 +1067,47 @@ class Game {
       }
     }
 
-    // ── Piston physics — knock balls sitting above the generator cap ──────────
+    // ── Cap + piston physics ─────────────────────────────────────────────────
     if (this._pistonCapY !== undefined) {
+      var capLeft2 = this.W - 46;  // leftX
+      var capRight2 = this.W;
       for (i = 0; i < this.objects.length; i++) {
         var pObj = this.objects[i];
-        if (pObj.dead || pObj.inFlight) continue;
-        // Check piston 1
+        if (pObj.dead) continue;
+
+        // Cap body wall — ball cannot enter the generator body
+        if (pObj.x + pObj.r > capLeft2 && pObj.x - pObj.r < capRight2) {
+          if (pObj.y - pObj.r < this._pistonCapY && pObj.y + pObj.r > this._pistonCapY - 54) {
+            // Ball overlapping cap — push it out downward
+            pObj.y = this._pistonCapY + pObj.r + 1;
+            if (pObj.vy < 0) pObj.vy = Math.abs(pObj.vy) * 0.5;
+          }
+        }
+
+        // Piston head collision — hit ball upward on rising stroke
+        var pistonPrevY1 = this._pistonPrevY1 || this._pistonY1;
+        var pistonPrevY2 = this._pistonPrevY2 || this._pistonY2;
         if (Math.abs(pObj.x - this._piston1X) < pObj.r + 4) {
           var pTip1 = this._pistonY1;
           if (pObj.y + pObj.r > pTip1 - 2 && pObj.y - pObj.r < this._pistonCapY) {
             pObj.y = pTip1 - pObj.r - 1;
-            if (pObj.vy > -1) { pObj.vy = -6; pObj.inFlight = true; }
+            // Only kick if piston is moving upward (rising stroke)
+            var pVel1 = pTip1 - pistonPrevY1;
+            if (pVel1 < 0) { pObj.vy = Math.min(pObj.vy, pVel1 * 6 - 2); pObj.inFlight = true; }
+            else if (pObj.vy > 0) pObj.vy = 0;
           }
         }
-        // Check piston 2
         if (Math.abs(pObj.x - this._piston2X) < pObj.r + 4) {
           var pTip2 = this._pistonY2;
           if (pObj.y + pObj.r > pTip2 - 2 && pObj.y - pObj.r < this._pistonCapY) {
             pObj.y = pTip2 - pObj.r - 1;
-            if (pObj.vy > -1) { pObj.vy = -6; pObj.inFlight = true; }
+            var pVel2 = pTip2 - pistonPrevY2;
+            if (pVel2 < 0) { pObj.vy = Math.min(pObj.vy, pVel2 * 6 - 2); pObj.inFlight = true; }
+            else if (pObj.vy > 0) pObj.vy = 0;
           }
         }
+        this._pistonPrevY1 = this._pistonY1;
+        this._pistonPrevY2 = this._pistonY2;
       }
     }
 
@@ -1369,7 +1395,7 @@ class Game {
           var hitPivX = hitOffXraw - pivotOff;
           var hitPivY = hitOffYraw;
           var torque  = (hitPivX * (-bny) - hitPivY * (-bnx)) * baseForce * 0.018 * rotateFrac;
-          var rspd = brick._rotSpeed !== undefined ? brick._rotSpeed * 2 : 1.0;
+          var rspd = brick._rotSpeed !== undefined ? brick._rotSpeed * 0.5 : 0.25;  // global spin /4
           brick._angularV = (brick._angularV || 0) + torque * rspd;
 
           if (brick._startX === undefined) { brick._startX = brick.x; brick._startY = brick.y; }
@@ -1699,13 +1725,12 @@ class Game {
           b._inChute = 'exit';
           b.x = p2x;
           b.y = p2y;
-          // Exit velocity: straight left along floor level
           var minV = (leftX * 0.25) / 28;
           var maxV = (leftX * 0.80) / 20;
           b.vx = -(minV + Math.random() * (maxV - minV));
           b.vy = -(0.5 + Math.random() * 1.0);
-          // Swing trapdoor open
-          this._trapdoorAngle = 1.1;  // ~63 degrees open
+          // Give trapdoor angular velocity to swing open (CCW)
+          this._trapdoorAngV = -0.18;
           if (window.Sound) Sound.chuteExit();
         }
 
@@ -1831,17 +1856,46 @@ class Game {
     // DEL button bottom
     var _tdDelY  = _tdBtnStartY + 5 * (_tdBtnH + _tdBtnGap) + _tdBtnGap + _tdBtnH;
     var pivotY   = _tdDelY + 4;  // 4px gap below DEL button
+    this._tdPivotY = pivotY;     // store for physics loop
 
-    // Trapdoor state
+    // Trapdoor angular physics
     if (this._trapdoorAngle === undefined) this._trapdoorAngle = 0;
-    if (this._trapdoorAngle > 0) {
-      this._trapdoorAngle = Math.max(0, this._trapdoorAngle - 0.055);
-    }
-    var tdA     = this._trapdoorAngle;
-    var doorLen = floorY - pivotY;   // just the short door segment
+    if (this._trapdoorAngV  === undefined) this._trapdoorAngV  = 0;
 
-    // Door tip: closed = (leftX, floorY); open = swings CCW (left/outward)
-    // CCW from straight-down = leftward, so tip moves left and up
+    // Ball–trapdoor interaction
+    var doorLen0 = floorY - pivotY;
+    var tdCos0 = Math.cos(this._trapdoorAngle), tdSin0 = Math.sin(this._trapdoorAngle);
+    for (var tdi = 0; tdi < this.objects.length; tdi++) {
+      var tBall = this.objects[tdi];
+      if (tBall.dead || tBall._inChute) continue;
+      // Closest point on door segment to ball
+      var tdRelX = tBall.x - leftX, tdRelY = tBall.y - pivotY;
+      var segX0 = -tdSin0 * doorLen0, segY0 = tdCos0 * doorLen0;
+      var proj0 = Math.max(0, Math.min(1, (tdRelX * segX0 + tdRelY * segY0) / (doorLen0 * doorLen0)));
+      var cpX0 = leftX + proj0 * segX0, cpY0 = pivotY + proj0 * segY0;
+      var dTD0 = Math.hypot(tBall.x - cpX0, tBall.y - cpY0);
+      if (dTD0 < tBall.r + 2.5) {
+        var tdNX0 = (tBall.x - cpX0) / (dTD0 || 1), tdNY0 = (tBall.y - cpY0) / (dTD0 || 1);
+        tBall.x += tdNX0 * (tBall.r + 2.5 - dTD0);
+        tBall.y += tdNY0 * (tBall.r + 2.5 - dTD0);
+        var relV0 = tBall.vx * (-tdNX0) + tBall.vy * (-tdNY0);
+        if (relV0 > 0) { tBall.vx += tdNX0 * relV0 * 1.3; tBall.vy += tdNY0 * relV0 * 1.3; }
+        // Angular impulse on door
+        var armX0 = cpX0 - leftX, armY0 = cpY0 - pivotY;
+        this._trapdoorAngV += (armX0 * (-tdNY0) - armY0 * (-tdNX0)) * (-relV0) * 0.05;
+      }
+    }
+    // Integrate
+    this._trapdoorAngV *= 0.85;
+    this._trapdoorAngV -= this._trapdoorAngle * 0.07;  // spring back
+    this._trapdoorAngle += this._trapdoorAngV;
+    // Clamp: 0 = closed (vertical), negative = swung open CCW
+    if (this._trapdoorAngle > 0.04) { this._trapdoorAngle = 0.04; this._trapdoorAngV *= -0.25; }
+    if (this._trapdoorAngle < -Math.PI * 0.52) { this._trapdoorAngle = -Math.PI * 0.52; this._trapdoorAngV *= -0.25; }
+    var tdA     = this._trapdoorAngle;
+    var doorLen = doorLen0;
+
+    // Door tip: closed = (leftX, floorY); open swings CCW (leftward)
     var tdTipX  = leftX  - Math.sin(tdA) * doorLen;
     var tdTipY  = pivotY + Math.cos(tdA) * doorLen;
 
@@ -1858,6 +1912,8 @@ class Game {
     ctx.lineTo(tdTipX, tdTipY);
     ctx.stroke();
 
+    // Store pivot Y for physics (read in _loop before _drawChute is called next frame)
+    this._tdPivotY = pivotY;
     // Permanent hinge dot at pivot
     ctx.beginPath(); ctx.arc(leftX, pivotY, 3.5, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,220,255,0.85)';
@@ -1900,35 +1956,45 @@ class Game {
     var stripeY = capY - 4;
     ctx.save();
     ctx.beginPath(); ctx.rect(W - stripeW, stripeY, stripeW, stripeH); ctx.clip();
-    var stripeSize = 10;
-    for (var si2 = -stripeH; si2 < stripeH * 2; si2 += stripeSize * 2) {
-      ctx.fillStyle = '#ffcc00'; ctx.fillRect(W - stripeW, stripeY + si2, stripeW, stripeSize);
-      ctx.fillStyle = '#111111'; ctx.fillRect(W - stripeW, stripeY + si2 + stripeSize, stripeW, stripeSize);
+    // 45° diagonal stripes on right wall
+    var ds2 = 10;
+    for (var si2 = -stripeH * 2; si2 < stripeH * 2; si2 += ds2 * 2) {
+      ctx.fillStyle = 'rgba(255,200,0,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(W - stripeW, stripeY + si2);
+      ctx.lineTo(W, stripeY + si2 - stripeW);
+      ctx.lineTo(W, stripeY + si2 - stripeW + ds2);
+      ctx.lineTo(W - stripeW, stripeY + si2 + ds2);
+      ctx.closePath(); ctx.fill();
     }
     ctx.restore();
     ctx.strokeStyle = 'rgba(0,180,255,0.4)'; ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.moveTo(W - stripeW, stripeY); ctx.lineTo(W - stripeW, stripeY + stripeH); ctx.stroke();
 
-    // ── Cap body — rounded top corners ───────────────────────────────────────
+    // ── Cap body — sharp corners flush to chute edges ────────────────────────
     ctx.fillStyle = 'rgba(4,14,34,0.96)';
-    ctx.beginPath(); ctx.roundRect(capX, capY, capW - stripeW, capH, [10, 10, 0, 0]); ctx.fill();
+    ctx.beginPath(); ctx.rect(capX, capY, capW - stripeW, capH); ctx.fill();
     ctx.strokeStyle = 'rgba(0,200,255,0.80)';
     ctx.lineWidth   = 1.8;
     ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 10;
-    ctx.beginPath(); ctx.roundRect(capX, capY, capW - stripeW, capH, [10, 10, 0, 0]); ctx.stroke();
+    ctx.beginPath(); ctx.rect(capX, capY, capW - stripeW, capH); ctx.stroke();
     ctx.shadowBlur = 0;
 
     // ── Horizontal hazard band (side-view gear zone) ──────────────────────────
-    var hazY  = capY + capH - 16;
     var hazH  = 10;
+    var hazY  = capY + capH - hazH;  // flush with cap/chute seam
     ctx.save();
     ctx.beginPath(); ctx.rect(capX + 1, hazY, capW - stripeW - 2, hazH); ctx.clip();
+    // 45° diagonal stripes on horizontal hazard band
     var hStripe = 8;
-    for (var hi = -hazH * 2; hi < capW; hi += hStripe * 2) {
-      ctx.fillStyle = 'rgba(255,200,0,0.55)';
-      ctx.fillRect(capX + hi, hazY, hStripe, hazH);
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(capX + hi + hStripe, hazY, hStripe, hazH);
+    for (var hi = -hazH * 2; hi < capW + hazH; hi += hStripe * 2) {
+      ctx.fillStyle = 'rgba(255,200,0,0.65)';
+      ctx.beginPath();
+      ctx.moveTo(capX + hi, hazY);
+      ctx.lineTo(capX + hi + hazH, hazY);
+      ctx.lineTo(capX + hi + hazH - hazH, hazY + hazH);
+      ctx.lineTo(capX + hi - hazH, hazY + hazH);
+      ctx.closePath(); ctx.fill();
     }
     ctx.restore();
     ctx.strokeStyle = 'rgba(0,200,255,0.45)'; ctx.lineWidth = 0.8;
@@ -2082,9 +2148,10 @@ class Game {
     var btnW   = CW - 6;
     var btnX   = leftX + 3;
     var curveTop  = floorY - turnR;
-    var btnBlockH = 5 * (btnH + 4) + btnH + 8;
-    var btnStartY = curveTop - btnBlockH - 10;
-    if (btnStartY < topY + 4) btnStartY = topY + 4;
+    // DEL button goes right below the cap; ball buttons fill the rest of the shaft
+    var delBtnY   = topY + 4;   // just below the cap bottom = topY
+    var btnGap    = 16;          // visual gap between DEL and ball buttons
+    var btnStartY = delBtnY + btnH + btnGap;
 
     this._chuteButtonRects = [];
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
@@ -2195,8 +2262,8 @@ class Game {
       ctx.fillText(lblText, dotX + dotR + 5, dotY);
     }
 
-    // Delete button — rich style matching the ball buttons
-    var delY      = btnStartY + 5 * (btnH + 4) + 4;
+    // Delete button — directly below cap, above ball buttons
+    var delY      = delBtnY;
     var delActive = this._deleteMode;
     var delPulse  = 0.5 + 0.5 * Math.sin(this.frame * 0.08);
     this._chuteDeleteRect = { x: btnX, y: delY, w: btnW, h: btnH };
@@ -2731,10 +2798,24 @@ class Game {
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      // Value text right of thumb
-      var valText = isInf && infActive ? '∞' : (label === 'REGEN' ? (valRaw ? (valRaw/1000).toFixed(0)+'s' : 'OFF') :
-                    label === 'DENS' ? parseFloat(valRaw).toFixed(1) :
-                    label === 'DIST' ? valRaw+'px' : String(valRaw));
+      // Value text right of thumb — clean formatting, max 2dp
+      var valText;
+      if (isInf && infActive) {
+        valText = '∞';
+      } else if (label === 'REGEN') {
+        valText = valRaw ? (valRaw/1000).toFixed(1)+'s' : 'OFF';
+      } else if (label === 'ROT') {
+        valText = Math.round(valRaw) + '°';
+      } else if (label === 'HP' || label === 'DIST' || label === 'LEN' || label === 'WID') {
+        valText = Math.round(valRaw) + (label === 'DIST' || label === 'LEN' || label === 'WID' ? 'px' : '');
+      } else if (label === 'DENS') {
+        valText = parseFloat(valRaw).toFixed(1);
+      } else if (label === 'STOP' || label === 'RSTOP' || label === 'RSPIN' || label === 'DECEL') {
+        valText = parseFloat(valRaw).toFixed(2);
+      } else {
+        var numVal = parseFloat(valRaw);
+        valText = isNaN(numVal) ? String(valRaw) : (Number.isInteger(numVal) ? String(numVal) : numVal.toFixed(2));
+      }
       ctx.fillStyle = grayed ? '#445566' : '#ccddff';
       ctx.font = "7px 'Share Tech Mono',monospace";
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -2775,7 +2856,7 @@ class Game {
     var DENSval  = (sb2 && sb2._density    !== undefined) ? sb2._density    : (bd2.density   || 1.0);
     var DISTval  = (sb2 && sb2._maxTravel  !== undefined) ? sb2._maxTravel  : (bd2.maxTravel || 60);
     var DECELval = (sb2 && sb2._decel      !== undefined) ? sb2._decel      : (bd2.decel     || 0.88);
-    var ROTSPDval= (sb2 && sb2._rotSpeed   !== undefined) ? sb2._rotSpeed   : (bd2.rotSpeed  || 0.5);
+    var ROTSPDval= (sb2 && sb2._rotSpeed   !== undefined) ? sb2._rotSpeed   : (bd2.rotSpeed  || 0.3);
     var ROTDECval= (sb2 && sb2._rotDecel   !== undefined) ? sb2._rotDecel   : (bd2.rotDecel  || 0.88);
     var HPinf    = (sb2 && sb2._invincible) || false;
     var noRegen  = (sb2 && sb2._noRegen)    || false;
@@ -2909,7 +2990,7 @@ class Game {
     this._editorSliders.decel = drawSlider('STOP',  1-DECELval,   0.01,0.5,  false, false, !movActive2, padding + thirdW * 2, row4Y, thirdW);
     // Row 5: RSPIN | RSTOP — grayed when STAT
     this._editorSliders.rotspd = drawSlider('RSPIN', ROTSPDval,    0.0, 1.0, false, false, !movActive2, padding,              row5Y, halfW2);
-    this._editorSliders.rotdec = drawSlider('RSTOP', 1-ROTDECval,  0.01,0.5, false, false, !movActive2, padding + halfW2,     row5Y, halfW2);
+    this._editorSliders.rotdec = drawSlider('RSTOP', 1-ROTDECval,  0.05,0.95, false, false, !movActive2, padding + halfW2,     row5Y, halfW2);
     // Row 6: LENGTH | WIDTH
     this._editorSliders.blen  = drawSlider('LEN',   LENval,       5,   900,  false, false, false,       padding,              row6Y, halfW);
     this._editorSliders.bwid  = drawSlider('WID',   WIDval,       2,   200,  false, false, false,       padding + halfW,      row6Y, halfW);

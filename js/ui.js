@@ -199,7 +199,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v14.00</b>';
+        vRow.innerHTML = '<b>PuzzBalls v14.01</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -222,10 +222,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v14.00 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v14.01 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1400) {
-            verEl.textContent = 'v14.00 ✓';
+          } else if (loaded === 1401) {
+            verEl.textContent = 'v14.01 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
