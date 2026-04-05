@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1437;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1438;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -326,6 +326,18 @@ class Game {
         }
       }
 
+      // ── HUD clear buttons (work at all times) ──────────────────────────────
+      if (self._hudClearBtns) {
+        for (var hci=0;hci<self._hudClearBtns.length;hci++) {
+          var hcb=self._hudClearBtns[hci];
+          if (pos.x>=hcb.x&&pos.x<=hcb.x+hcb.w&&pos.y>=hcb.y&&pos.y<=hcb.y+hcb.h) {
+            if (hcb.type===0) { self._undoPush && self._undoPush(); self.bricks=[]; }
+            else if (hcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); }
+            else if (hcb.type===2) { self.tubes.tubes=[]; }
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
+          }
+        }
+      }
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
         // Taps in the chute column (right strip) always start a scroll — never build there
@@ -942,6 +954,10 @@ class Game {
         return;
       }
       // Tube piece drag
+      // Two-finger tube manipulation
+      if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
+        // handled below via _tubeHandleTouch
+      }
       if (self._tubeDragging) {
         var td = self._tubeDragging;
         var conn = td.connectedA || td.connectedB;
@@ -957,12 +973,17 @@ class Game {
         return;
       }
       if (self._editorMode) {
-        // Multi-touch: pinch/rotate
+        // Multi-touch: pinch/rotate bricks (or tubes if tube selected)
         if (e.touches && e.touches.length >= 2) {
-          self._editorHandleTouch(e.touches);
+          if (self._editorTubeMode && self._tubeDragging) {
+            self._tubeHandleTouch(e.touches);
+          } else if (!self._editorTubeMode) {
+            self._editorHandleTouch(e.touches);
+          }
           return;
         }
         self._editorPinchStart = null;
+        self._tubePinchStart = null;
         // Universal scroll — promote pending to active after 6px, then scroll
         if (self._editorScrollPending || self._editorScrollDragging) {
           var dragDelta = pos.y - self._editorScrollDragY;
@@ -1048,6 +1069,7 @@ class Game {
         self._editorScrollDragging = false;
         self._editorScrollPending  = false;
         self._editorScrollStart    = undefined;
+        self._tubePinchStart = null;
         self._editorOnUp();
         return;
       }
@@ -2619,6 +2641,8 @@ class Game {
     if (this._editorMode) this._drawEditor();
     // Restore transform before fixed-position overlays
     if (vSY !== 0) ctx.restore();
+    // CLR buttons always shown in top bar
+    this._drawHudClearButtons();
     // Speed slider and corner buttons hidden when editor is open
     if (!this._editorMode) {
       this._drawSpeedSlider();
@@ -2856,6 +2880,53 @@ class Game {
     sb.y = Math.min(sb.y, this.floorY() - (sb.h || 10) / 2 - 4);
   }
 
+  _tubeHandleTouch(touches) {
+    if (!this._tubeDragging) return;
+    var rect = this.canvas.getBoundingClientRect();
+    var vSY  = this._viewScrollY || 0;
+    var t0 = touches[0], t1 = touches[1];
+    var p0 = { x: t0.clientX - rect.left, y: t0.clientY - rect.top - vSY };
+    var p1 = { x: t1.clientX - rect.left, y: t1.clientY - rect.top - vSY };
+    var td = this._tubeDragging;
+
+    if (!this._tubePinchStart) {
+      this._tubePinchStart = {
+        p0:{x:p0.x,y:p0.y}, p1:{x:p1.x,y:p1.y},
+        x:td.x, y:td.y, rot:td.rotation, len:td.length,
+        dist: Math.hypot(p1.x-p0.x, p1.y-p0.y),
+        angle: Math.atan2(p1.y-p0.y, p1.x-p0.x),
+      };
+      return;
+    }
+    var ps = this._tubePinchStart;
+    var d0 = Math.hypot(p0.x-ps.p0.x, p0.y-ps.p0.y);
+    var d1 = Math.hypot(p1.x-ps.p1.x, p1.y-ps.p1.y);
+    var ANCHOR = 6;
+
+    // New angle and length from finger positions
+    var newAngle = Math.atan2(p1.y-p0.y, p1.x-p0.x);
+    var snapDeg = this._editorSnapDeg || 0;
+    if (snapDeg > 0) { var sr = snapDeg*Math.PI/180; newAngle = Math.round(newAngle/sr)*sr; }
+    td.rotation = newAngle;
+
+    if (td.type === 'straight') {
+      td.length = Math.max(20, Math.min(600, Math.hypot(p1.x-p0.x, p1.y-p0.y)));
+    }
+
+    if (d0 < ANCHOR) {
+      // Finger 0 anchors at p0 — that end stays
+      td.x = p0.x + Math.cos(newAngle) * td.length / 2;
+      td.y = p0.y + Math.sin(newAngle) * td.length / 2;
+    } else if (d1 < ANCHOR) {
+      td.x = p1.x - Math.cos(newAngle) * td.length / 2;
+      td.y = p1.y - Math.sin(newAngle) * td.length / 2;
+    } else {
+      td.x = (p0.x + p1.x) / 2;
+      td.y = (p0.y + p1.y) / 2;
+    }
+    td.rebuild();
+  }
+
   _editorOnMove(pos) {
     // Slider drag in panel area
     if (this._editorDragSlider) {
@@ -3033,7 +3104,7 @@ class Game {
 
     // Branch to tube editor content if in tube mode
     if (this._editorTubeMode) {
-      this._drawTubeEditor(ctx, panelY + tabH + 2);
+      this._drawTubeEditor(ctx, panelY + 26 + 2 + tabH + 2);  // below qcRow + tabs
       ctx.restore();
       return;
     }
@@ -3999,6 +4070,30 @@ class Game {
       ctx.strokeStyle = 'rgba(255,200,60,'+(0.35+power*0.5)+')'; ctx.lineWidth=2; ctx.stroke();
     }
     ctx.restore();
+  }
+
+  _drawHudClearButtons() {
+    // Three compact clear buttons in top-right area of HUD (below title bar)
+    var ctx = this.ctx, W = this.W;
+    var btnW = 56, btnH = 20, gap = 4;
+    var totalW = 3 * btnW + 2 * gap;
+    var startX = W - totalW - 8;
+    var btnY2 = 44;  // below the title/back button row
+    var labels = ['CLR ⧬','CLR ◎','CLR 空'];
+    var labels2 = ['BRICKS','BALLS','TUBES'];
+    var colors = ['#ff6600','#ff4466','#00ffaa'];
+    this._hudClearBtns = [];
+    for (var ci = 0; ci < 3; ci++) {
+      var bx2 = startX + ci * (btnW + gap);
+      ctx.fillStyle = 'rgba(0,5,18,0.80)';
+      ctx.beginPath(); ctx.roundRect(bx2, btnY2, btnW, btnH, 3); ctx.fill();
+      ctx.strokeStyle = colors[ci] + 'aa'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(bx2, btnY2, btnW, btnH, 3); ctx.stroke();
+      ctx.fillStyle = colors[ci]; ctx.font = "bold 6px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(labels2[ci], bx2 + btnW/2, btnY2 + btnH/2);
+      this._hudClearBtns.push({ x:bx2, y:btnY2, w:btnW, h:btnH, type:ci });
+    }
   }
 
   _drawSpeedSlider() {

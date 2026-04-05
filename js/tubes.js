@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1437;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1438;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -161,9 +161,9 @@ class TubePiece {
       var ball = this._ball;
       this._ball = null;
       var exitSocket = exitA ? this.socketA() : this.socketB();
-      // Apply speed modifier — minimum exit speed so ball doesn't dribble
+      // Apply speed modifier — only for energy tubes; others preserve entry speed
       var spd  = Math.max(3, Math.hypot(ball.vx, ball.vy));
-      var newSpd = Math.max(3, spd * this.speedMod);
+      var newSpd = (this.style === 'energy') ? Math.max(3, spd * this.speedMod) : spd;
       var exitAngle = exitSocket.angle + (exitA ? Math.PI : 0);
       ball.vx = Math.cos(exitAngle) * newSpd;
       ball.vy = Math.sin(exitAngle) * newSpd;
@@ -171,8 +171,9 @@ class TubePiece {
       // Nudge ball well outside tube to prevent immediate re-capture
       ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 6);
       ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 6);
-      // Short cooldown before this ball can re-enter any tube
-      ball._tubeExitCooldown = 20;  // frames
+      // Short cooldown before this ball can re-enter THE SAME tube
+      ball._tubeExitFrom = this.id;  // track which tube it just left
+      ball._tubeExitCooldown = 15;  // frames before it can re-enter same tube
       return { ball: ball, socket: exitSocket };
     }
     // Update ball position to follow path
@@ -186,22 +187,37 @@ class TubePiece {
   tryCapture(ball) {
     if (this._ball) return false;
     if (ball._inTube) return false;
-    if (ball._tubeExitCooldown && ball._tubeExitCooldown > 0) return false;  // recently exited
+    if (ball._tubeExitCooldown && ball._tubeExitCooldown > 0 && ball._tubeExitFrom === this.id) return false;
     for (var s = 0; s <= 1; s++) {
       var sock = s === 0 ? this.socketA() : this.socketB();
       var dist = Math.hypot(ball.x - sock.x, ball.y - sock.y);
-      var threshold = (this.type === 'funnel') ? this.radius * 3 : this.radius + ball.r + 2;
+      var threshold = (this.type === 'funnel') ? this.radius * 3 : this.radius + ball.r + 4;
       if (dist < threshold) {
-        // Check ball is roughly heading into the socket
-        var relAngle = Math.atan2(ball.y - sock.y, ball.x - sock.x);
-        var diff     = Math.abs(((relAngle - sock.angle) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-        if (diff < Math.PI * 0.65 || this.type === 'funnel') {
+        // Energy tubes: one-way only — entry from socket A only
+        // If ball hits socket B of energy tube, repel it
+        if (this.style === 'energy' && s === 1) {
+          // Repel ball away from socket B
+          var repelAngle = sock.angle;  // outward from B
+          var repelSpd = Math.hypot(ball.vx, ball.vy);
+          ball.vx = Math.cos(repelAngle) * repelSpd * 1.2;
+          ball.vy = Math.sin(repelAngle) * repelSpd * 1.2;
+          ball.x += Math.cos(repelAngle) * (threshold - dist + 2);
+          ball.y += Math.sin(repelAngle) * (threshold - dist + 2);
+          return false;
+        }
+        // For non-energy tubes: accept from either end (wide cone)
+        // Just check ball is moving roughly toward the tube interior
+        var inwardAngle = sock.angle + Math.PI;  // direction INTO the tube
+        var ballAngle   = Math.atan2(ball.vy, ball.vx);
+        var diff = Math.abs(((ballAngle - inwardAngle) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
+        if (diff < Math.PI * 0.80 || this.type === 'funnel') {
           this._ball    = ball;
           this._ballT   = s === 0 ? 0 : 1;
           this._ballDir = s === 0 ? 1 : -1;
+          // For non-energy tubes: preserve ball speed (no modifier)
           this._ballV   = Math.hypot(ball.vx, ball.vy);
           ball._inTube  = this;
-          ball.pinned   = true;  // remove from normal physics
+          ball.pinned   = true;
           return true;
         }
       }
