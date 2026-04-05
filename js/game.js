@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1441;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1442;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -351,14 +351,12 @@ class Game {
           self._editorScrollDragY    = pos.y;
           return;
         }
-        // Panel boundary in screen space = floorY shifted by viewScrollY
-        var _screenFloorY = self.floorY() + (self._viewScrollY || 0);
-        var inPanel = _py >= _screenFloorY;
-
-        // All panel button rects are in translated (world) space.
-        // Convert tap Y to panel space for ALL panel checks.
+        // Convert tap to panel/world coordinate space first
         var _py = pos.y - (self._viewScrollY || 0);
         var _px = pos.x;
+        // Panel boundary: floorY in translated space
+        var _screenFloorY = self.floorY();  // panel rects stored in translated coords, so just floorY
+        var inPanel = _py >= _screenFloorY;
 
         // Always check panel buttons regardless of Y position (buttons are below floor)
         if (self._editorModeBtn) {
@@ -605,11 +603,11 @@ class Game {
         }
         // Tab switching — ALWAYS checked first, before any panel content routing
         // Quick-clear buttons
-        var _tabY = pos.y - (self._viewScrollY || 0);
+        // _py same as _py (defined above)
         if (self._editorQuickClearBtns) {
           for (var qci2=0;qci2<self._editorQuickClearBtns.length;qci2++) {
             var qcb=self._editorQuickClearBtns[qci2];
-            if (pos.x>=qcb.x&&pos.x<=qcb.x+qcb.w&&_tabY>=qcb.y&&_tabY<=qcb.y+qcb.h) {
+            if (pos.x>=qcb.x&&pos.x<=qcb.x+qcb.w&&_py>=qcb.y&&_py<=qcb.y+qcb.h) {
               if (qcb.type===0) { self._undoPush(); self.bricks=[]; }
               else if (qcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); }
               else if (qcb.type===2) { self.tubes.tubes=[]; }
@@ -620,14 +618,14 @@ class Game {
         // Tab checks — translate to editor coordinate space
         if (self._editorBrickTab) {
           var bt = self._editorBrickTab;
-          if (pos.x >= bt.x-6 && pos.x <= bt.x+bt.w+6 && _tabY >= bt.y-6 && _tabY <= bt.y+bt.h+10) {
+          if (pos.x >= bt.x-6 && pos.x <= bt.x+bt.w+6 && _py >= bt.y-6 && _py <= bt.y+bt.h+10) {
             self._editorTubeMode = false; window._tubeEditorMode = false;
             if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
           }
         }
         if (self._editorTubeTab) {
           var tt = self._editorTubeTab;
-          if (pos.x >= tt.x-6 && pos.x <= tt.x+tt.w+6 && _tabY >= tt.y-6 && _tabY <= tt.y+tt.h+10) {
+          if (pos.x >= tt.x-6 && pos.x <= tt.x+tt.w+6 && _py >= tt.y-6 && _py <= tt.y+tt.h+10) {
             self._editorTubeMode = true; window._tubeEditorMode = true;
             if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
           }
@@ -635,7 +633,7 @@ class Game {
         // Done button — in both brick and tube modes
         if (self._editorDoneBtn) {
           var dnb2 = self._editorDoneBtn;
-          if (pos.x >= dnb2.x-4 && pos.x <= dnb2.x+dnb2.w+4 && _tabY >= dnb2.y-4 && _tabY <= dnb2.y+dnb2.h+4) {
+          if (pos.x >= dnb2.x-4 && pos.x <= dnb2.x+dnb2.w+4 && _py >= dnb2.y-4 && _py <= dnb2.y+dnb2.h+4) {
             self.toggleEditor(); return;
           }
         }
