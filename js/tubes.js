@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1438;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1448;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -169,11 +169,11 @@ class TubePiece {
       ball.vy = Math.sin(exitAngle) * newSpd;
       ball.inFlight = true;
       // Nudge ball well outside tube to prevent immediate re-capture
-      ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 6);
-      ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 6);
-      // Short cooldown before this ball can re-enter THE SAME tube
-      ball._tubeExitFrom = this.id;  // track which tube it just left
-      ball._tubeExitCooldown = 15;  // frames before it can re-enter same tube
+      ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 14);
+      ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 14);
+      // Cooldown — 30 frames before ball can re-enter this same tube
+      ball._tubeExitFrom = this.id;
+      ball._tubeExitCooldown = 30;
       return { ball: ball, socket: exitSocket };
     }
     // Update ball position to follow path
@@ -191,30 +191,27 @@ class TubePiece {
     for (var s = 0; s <= 1; s++) {
       var sock = s === 0 ? this.socketA() : this.socketB();
       var dist = Math.hypot(ball.x - sock.x, ball.y - sock.y);
-      var threshold = (this.type === 'funnel') ? this.radius * 3 : this.radius + ball.r + 4;
+      var threshold = (this.type === 'funnel') ? this.radius * 3 : this.radius + ball.r + 2;
       if (dist < threshold) {
         // Energy tubes: one-way only — entry from socket A only
-        // If ball hits socket B of energy tube, repel it
         if (this.style === 'energy' && s === 1) {
-          // Repel ball away from socket B
-          var repelAngle = sock.angle;  // outward from B
+          var repelAngle = sock.angle;
           var repelSpd = Math.hypot(ball.vx, ball.vy);
           ball.vx = Math.cos(repelAngle) * repelSpd * 1.2;
           ball.vy = Math.sin(repelAngle) * repelSpd * 1.2;
-          ball.x += Math.cos(repelAngle) * (threshold - dist + 2);
-          ball.y += Math.sin(repelAngle) * (threshold - dist + 2);
+          ball.x += Math.cos(repelAngle) * (threshold - dist + 4);
+          ball.y += Math.sin(repelAngle) * (threshold - dist + 4);
           return false;
         }
-        // For non-energy tubes: accept from either end (wide cone)
-        // Just check ball is moving roughly toward the tube interior
-        var inwardAngle = sock.angle + Math.PI;  // direction INTO the tube
+        // For non-energy tubes: check ball is moving INTO the tube (strict 60% cone)
+        // inwardAngle = direction pointing INTO the tube from this socket
+        var inwardAngle = sock.angle + Math.PI;
         var ballAngle   = Math.atan2(ball.vy, ball.vx);
         var diff = Math.abs(((ballAngle - inwardAngle) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-        if (diff < Math.PI * 0.80 || this.type === 'funnel') {
+        if (diff < Math.PI * 0.60 || this.type === 'funnel') {
           this._ball    = ball;
           this._ballT   = s === 0 ? 0 : 1;
           this._ballDir = s === 0 ? 1 : -1;
-          // For non-energy tubes: preserve ball speed (no modifier)
           this._ballV   = Math.hypot(ball.vx, ball.vy);
           ball._inTube  = this;
           ball.pinned   = true;

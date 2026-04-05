@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1447;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1448;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -830,8 +830,8 @@ class Game {
       if (!self._editorMode) {
       if (self._zoneSliderRect) {
         var zsr = self._zoneSliderRect;
-        if (_py >= zsr.y - 10 && _py <= zsr.y + zsr.h + 10 &&
-            _px >= zsr.x - 15  && _px <= zsr.x + zsr.w + 15) {
+        if (pos.y >= zsr.y - 10 && pos.y <= zsr.y + zsr.h + 10 &&
+            pos.x >= zsr.x - 15  && pos.x <= zsr.x + zsr.w + 15) {
           self._draggingZoneSlider = true;
           var zt = Math.max(0, Math.min(1, (pos.x - zsr.x) / zsr.w));
           self._slingZoneH = Math.round(40 + zt * 260);
@@ -841,7 +841,7 @@ class Game {
       if (self._brickSliderRect) {
         var bsr = self._brickSliderRect;
         if (pos.y >= bsr.y - 10 && pos.y <= bsr.y + bsr.h + 10 &&
-            _px >= bsr.x - 15  && _px <= bsr.x + bsr.w + 15) {
+            pos.x >= bsr.x - 15  && pos.x <= bsr.x + bsr.w + 15) {
           self._draggingBrickSlider = true;
           self.brickSpeedMult = Math.max(0, Math.min(1, (pos.x - bsr.x) / bsr.w));
           return;
@@ -850,7 +850,7 @@ class Game {
       if (self._sliderRect) {
         var sr = self._sliderRect;
         if (pos.y >= sr.y - 10 && pos.y <= sr.y + sr.h + 10 &&
-            _px >= sr.x - 15  && _px <= sr.x + sr.w + 15) {
+            pos.x >= sr.x - 15  && pos.x <= sr.x + sr.w + 15) {
           self._draggingSlider = true;
           var t = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
           self.speedMult = 0.125 + t * 0.875;
@@ -1004,10 +1004,11 @@ class Game {
         var conn = td.connectedA || td.connectedB;
         if (conn) {
           // Pivot around joint
-          self.tubes.dragConnected(td, pos, self._tubeDragOffX || 0, self._tubeDragOffY || 0);
+          var _connPos = { x: pos.x, y: pos.y - (self._viewScrollY || 0) };
+          self.tubes.dragConnected(td, _connPos, self._tubeDragOffX || 0, self._tubeDragOffY || 0);
         } else {
           td.x = pos.x - (self._tubeDragOffX || 0);
-          td.y = pos.y - (self._tubeDragOffY || 0);
+          td.y = (pos.y - (self._viewScrollY || 0)) - (self._tubeDragOffY || 0);
           td.rebuild();
           self.tubes.checkSnap(td);
         }
@@ -3144,7 +3145,7 @@ class Game {
       ctx.beginPath(); ctx.roundRect(qcx, qcY, qcW, qcH, 3); ctx.fill();
       ctx.strokeStyle = qcColors[qci] + '99'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.roundRect(qcx, qcY, qcW, qcH, 3); ctx.stroke();
-      ctx.fillStyle = qcColors[qci]; ctx.font = "bold 6px 'Share Tech Mono',monospace";
+      ctx.fillStyle = qcColors[qci]; ctx.font = "bold 9px 'Share Tech Mono',monospace";
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(qcLabels[qci], qcx + qcW/2, qcY + qcH/2);
       this._editorQuickClearBtns.push({ x:qcx, y:qcY, w:qcW, h:qcH, type:qci });
