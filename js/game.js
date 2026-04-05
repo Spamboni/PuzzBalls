@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1438;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1439;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -353,10 +353,15 @@ class Game {
         var _screenFloorY = self.floorY() + (self._viewScrollY || 0);
         var inPanel = pos.y >= _screenFloorY;
 
+        // All panel button rects are in translated (world) space.
+        // Convert tap Y to panel space for ALL panel checks.
+        var _py = pos.y - (self._viewScrollY || 0);
+        var _px = pos.x;
+
         // Always check panel buttons regardless of Y position (buttons are below floor)
         if (self._editorModeBtn) {
           var mb2 = self._editorModeBtn;
-          if (pos.x >= mb2.x && pos.x <= mb2.x + mb2.w && pos.y >= mb2.y && pos.y <= mb2.y + mb2.h) {
+          if (_px >= mb2.x && _px <= mb2.x + mb2.w && _py >= mb2.y && _py <= mb2.y + mb2.h) {
             self._editorSelectMode = !self._editorSelectMode;
             self._editorSelected   = null;
             return;
@@ -365,7 +370,7 @@ class Game {
         // Clear all bricks
         if (self._editorResetDefBtn) {
           var rdb = self._editorResetDefBtn;
-          if (pos.x >= rdb.x && pos.x <= rdb.x+rdb.w && pos.y >= rdb.y && pos.y <= rdb.y+rdb.h) {
+          if (_px >= rdb.x && _px <= rdb.x+rdb.w && pos.y >= rdb.y && pos.y <= rdb.y+rdb.h) {
             self._editorLastSettings = null;  // clear last-used template
             if (self._editorSelected) {
               // Reset selected brick to factory defaults
@@ -385,7 +390,7 @@ class Game {
         }
         if (self._editorClearBtn) {
           var cb = self._editorClearBtn;
-          if (pos.x >= cb.x && pos.x <= cb.x + cb.w && pos.y >= cb.y && pos.y <= cb.y + cb.h) {
+          if (_px >= cb.x && _px <= cb.x + cb.w && pos.y >= cb.y && pos.y <= cb.y + cb.h) {
             self.bricks = [];
             self._editorSelected = null;
             return;
@@ -395,7 +400,7 @@ class Game {
         if (self._editorTypeBtns) {
           for (var ti = 0; ti < self._editorTypeBtns.length; ti++) {
             var tb = self._editorTypeBtns[ti];
-            if (pos.x >= tb.x && pos.x <= tb.x + tb.w && pos.y >= tb.y && pos.y <= tb.y + tb.h) {
+            if (_px >= tb.x && _px <= tb.x + tb.w && pos.y >= tb.y && pos.y <= tb.y + tb.h) {
               self._editorBrickType = tb.type; return;
             }
           }
@@ -422,12 +427,12 @@ class Game {
             if (!sl2) continue;
             // Skip DENS/DIST if not movable
             if ((sd.id === 'dens' || sd.id === 'dist') && !movNow) continue;
-            if (pos.x >= sl2.trackX - 8 && pos.x <= sl2.trackX + sl2.trackW + (sl2.infRect ? sl2.infRect.w + 10 : 8) &&
-                pos.y >= sl2.y + 2 && pos.y <= sl2.y + sl2.h - 2) {
+            if (_px >= sl2.trackX - 8 && _px <= sl2.trackX + sl2.trackW + (sl2.infRect ? sl2.infRect.w + 10 : 8) &&
+                _py >= sl2.y + 2 && _py <= sl2.y + sl2.h - 2) {
               // Check ∞ button on HP (invincible) and REGEN (no regen)
               if (sl2.infRect) {
                 var ir = sl2.infRect;
-                if (pos.x >= ir.x && pos.x <= ir.x + ir.w && pos.y >= ir.y && pos.y <= ir.y + ir.h) {
+                if (_px >= ir.x && _px <= ir.x + ir.w && pos.y >= ir.y && pos.y <= ir.y + ir.h) {
                   if (sd.id === 'hp') {
                     if (self._editorSelected) {
                       var sb_inv = self._editorSelected;
@@ -476,7 +481,7 @@ class Game {
         // Inline movable toggle
         if (self._editorMovInlineRect) {
           var mr2 = self._editorMovInlineRect;
-          if (pos.x >= mr2.x && pos.x <= mr2.x + mr2.w && pos.y >= mr2.y && pos.y <= mr2.y + mr2.h) {
+          if (_px >= mr2.x && _px <= mr2.x + mr2.w && pos.y >= mr2.y && pos.y <= mr2.y + mr2.h) {
             if (self._editorSelected) {
               self._editorSelected._movable = !self._editorSelected._movable;
               self._editorMovable = self._editorSelected._movable;
@@ -491,7 +496,7 @@ class Game {
           for (var piv = 0; piv < self._editorPivotRects.length; piv++) {
             var pr = self._editorPivotRects[piv];
             if (!pr.enabled) continue;  // greyed out — ignore tap
-            if (pos.x >= pr.x && pos.x <= pr.x + pr.w && pos.y >= pr.y && pos.y <= pr.y + pr.h) {
+            if (_px >= pr.x && _px <= pr.x + pr.w && pos.y >= pr.y && pos.y <= pr.y + pr.h) {
               if (self._editorSelected) self._editorSelected._pivot = pr.val;
               self._editorPivot = pr.val;
               return;
@@ -501,7 +506,7 @@ class Game {
         // Translate toggle
         if (self._editorTransRect) {
           var tr2 = self._editorTransRect;
-          if (pos.x >= tr2.x && pos.x <= tr2.x + tr2.w && pos.y >= tr2.y && pos.y <= tr2.y + tr2.h) {
+          if (_px >= tr2.x && _px <= tr2.x + tr2.w && pos.y >= tr2.y && pos.y <= tr2.y + tr2.h) {
             if (self._editorSelected) {
               self._editorSelected._translateOnRotate = !(self._editorSelected._translateOnRotate !== false);
               self._editorTranslate = self._editorSelected._translateOnRotate;
@@ -517,7 +522,7 @@ class Game {
           // Close button
           if (self._notePopupClose) {
             var nc2 = self._notePopupClose;
-            if (pos.x >= nc2.x && pos.x <= nc2.x + nc2.w && pos.y >= nc2.y && pos.y <= nc2.y + nc2.h) {
+            if (_px >= nc2.x && _px <= nc2.x + nc2.w && pos.y >= nc2.y && pos.y <= nc2.y + nc2.h) {
               self._editorNotePopup = false; return;
             }
           }
@@ -525,7 +530,7 @@ class Game {
           if (self._notePopupNoteRects) {
             for (var nni = 0; nni < self._notePopupNoteRects.length; nni++) {
               var nnr = self._notePopupNoteRects[nni];
-              if (pos.x >= nnr.x && pos.x <= nnr.x+nnr.w && pos.y >= nnr.y && pos.y <= nnr.y+nnr.h) {
+              if (_px >= nnr.x && _px <= nnr.x+nnr.w && pos.y >= nnr.y && pos.y <= nnr.y+nnr.h) {
                 sb3._noteConfig = sb3._noteConfig || {};
                 sb3._noteConfig.note = nnr.val;
                 // Auto-preview
@@ -538,7 +543,7 @@ class Game {
           if (self._notePopupOctaveRects) {
             for (var noi = 0; noi < self._notePopupOctaveRects.length; noi++) {
               var nor2 = self._notePopupOctaveRects[noi];
-              if (pos.x >= nor2.x && pos.x <= nor2.x+nor2.w && pos.y >= nor2.y && pos.y <= nor2.y+nor2.h) {
+              if (_px >= nor2.x && _px <= nor2.x+nor2.w && pos.y >= nor2.y && pos.y <= nor2.y+nor2.h) {
                 sb3._noteConfig = sb3._noteConfig || {};
                 sb3._noteConfig.octave = nor2.val;
                 if (window.BrickNote) window.BrickNote.playNote(sb3._noteConfig.note||'C', nor2.val, sb3._noteConfig.timbre||'marimba', (sb3._noteConfig.vol||0.6));
@@ -550,7 +555,7 @@ class Game {
           if (self._notePopupTimbreRects) {
             for (var nti4 = 0; nti4 < self._notePopupTimbreRects.length; nti4++) {
               var ntr = self._notePopupTimbreRects[nti4];
-              if (pos.x >= ntr.x && pos.x <= ntr.x+ntr.w && pos.y >= ntr.y && pos.y <= ntr.y+ntr.h) {
+              if (_px >= ntr.x && _px <= ntr.x+ntr.w && pos.y >= ntr.y && pos.y <= ntr.y+ntr.h) {
                 sb3._noteConfig = sb3._noteConfig || {};
                 sb3._noteConfig.timbre = ntr.val;
                 // Preview the sound
@@ -562,7 +567,7 @@ class Game {
           // Preview button
           if (self._notePopupPreviewBtn) {
             var pb = self._notePopupPreviewBtn;
-            if (pos.x >= pb.x && pos.x <= pb.x+pb.w && pos.y >= pb.y && pos.y <= pb.y+pb.h) {
+            if (_px >= pb.x && _px <= pb.x+pb.w && pos.y >= pb.y && pos.y <= pb.y+pb.h) {
               var cfg2 = sb3._noteConfig || {};
               if (window.BrickNote) window.BrickNote.playNote(cfg2.note||'C', cfg2.octave||4, cfg2.timbre||'marimba', 0.6);
               return;
@@ -571,14 +576,14 @@ class Game {
           // Clear button
           if (self._notePopupClearBtn) {
             var clb = self._notePopupClearBtn;
-            if (pos.x >= clb.x && pos.x <= clb.x+clb.w && pos.y >= clb.y && pos.y <= clb.y+clb.h) {
+            if (_px >= clb.x && _px <= clb.x+clb.w && pos.y >= clb.y && pos.y <= clb.y+clb.h) {
               sb3._noteConfig = null; self._editorNotePopup = false; return;
             }
           }
           // Volume slider drag
           if (self._notePopupVolSlider) {
             var vs = self._notePopupVolSlider;
-            if (pos.x >= vs.x && pos.x <= vs.x + vs.w && pos.y >= vs.y && pos.y <= vs.y + vs.h) {
+            if (_px >= vs.x && _px <= vs.x + vs.w && pos.y >= vs.y && pos.y <= vs.y + vs.h) {
               var t2 = Math.max(0, Math.min(1, (pos.x - vs.trackX) / vs.trackW));
               sb3._noteConfig = sb3._noteConfig || {};
               sb3._noteConfig.vol = parseFloat((0.05 + t2 * 1.15).toFixed(2));
@@ -590,7 +595,7 @@ class Game {
         // Note button tap
         if (self._editorNoteBtn && self._editorSelected) {
           var nb = self._editorNoteBtn;
-          if (pos.x >= nb.x && pos.x <= nb.x+nb.w && pos.y >= nb.y && pos.y <= nb.y+nb.h) {
+          if (_px >= nb.x && _px <= nb.x+nb.w && pos.y >= nb.y && pos.y <= nb.y+nb.h) {
             self._editorNotePopup = !self._editorNotePopup;
             if (!self._editorSelected._noteConfig) self._editorSelected._noteConfig = { note:'C', octave:4, timbre:'marimba' };
             return;
@@ -704,13 +709,13 @@ class Game {
         // GRID toggle
         if (self._editorGridBtn) {
           var gb = self._editorGridBtn;
-          if (pos.x >= gb.x && pos.x <= gb.x+gb.w && pos.y >= gb.y && pos.y <= gb.y+gb.h) {
+          if (_px >= gb.x && _px <= gb.x+gb.w && pos.y >= gb.y && pos.y <= gb.y+gb.h) {
             window._showEditorGrid = !window._showEditorGrid; return;
           }
         }
         if (self._editorGridSizeBtn) {
           var gsb = self._editorGridSizeBtn;
-          if (pos.x >= gsb.x && pos.x <= gsb.x+gsb.w && pos.y >= gsb.y && pos.y <= gsb.y+gsb.h) {
+          if (_px >= gsb.x && _px <= gsb.x+gsb.w && pos.y >= gsb.y && pos.y <= gsb.y+gsb.h) {
             var gv = prompt('Grid size (5-100px):', String(window._gridSize||20));
             if (gv !== null) { var gn = parseInt(gv); if (!isNaN(gn) && gn >= 5 && gn <= 100) window._gridSize = gn; }
             return;
@@ -719,14 +724,14 @@ class Game {
         // SNAP-GRID toggle
         if (self._editorSnapGridBtn) {
           var sgb = self._editorSnapGridBtn;
-          if (pos.x >= sgb.x && pos.x <= sgb.x+sgb.w && pos.y >= sgb.y && pos.y <= sgb.y+sgb.h) {
+          if (_px >= sgb.x && _px <= sgb.x+sgb.w && pos.y >= sgb.y && pos.y <= sgb.y+sgb.h) {
             window._snapToGrid = !window._snapToGrid; return;
           }
         }
         // Snap selector cycle
         if (self._editorSnapBtn) {
           var sb = self._editorSnapBtn;
-          if (pos.x >= sb.x && pos.x <= sb.x + sb.w && pos.y >= sb.y && pos.y <= sb.y + sb.h) {
+          if (_px >= sb.x && _px <= sb.x + sb.w && pos.y >= sb.y && pos.y <= sb.y + sb.h) {
             var snaps = [0, 15, 30, 45];
             var cur = snaps.indexOf(self._editorSnapDeg || 0);
             self._editorSnapDeg = snaps[(cur + 1) % snaps.length];
@@ -736,7 +741,7 @@ class Game {
         // Movable toggle
         if (self._editorMovBtn) {
           var mb = self._editorMovBtn;
-          if (pos.x >= mb.x && pos.x <= mb.x + mb.w && pos.y >= mb.y && pos.y <= mb.y + mb.h) {
+          if (_px >= mb.x && _px <= mb.x + mb.w && pos.y >= mb.y && pos.y <= mb.y + mb.h) {
             self._editorMovable = !self._editorMovable;
             if (self._editorSelected) {
               self._editorSelected._movable = self._editorMovable;
@@ -746,13 +751,13 @@ class Game {
         }
         if (self._editorDelBtn) {
           var db = self._editorDelBtn;
-          if (pos.x >= db.x && pos.x <= db.x + db.w && pos.y >= db.y && pos.y <= db.y + db.h) {
+          if (_px >= db.x && _px <= db.x + db.w && pos.y >= db.y && pos.y <= db.y + db.h) {
             self._editorDeleteSelected(); return;
           }
         }
         if (self._editorUndoBtn) {
           var ub = self._editorUndoBtn;
-          if (pos.x >= ub.x && pos.x <= ub.x+ub.w && pos.y >= ub.y && pos.y <= ub.y+ub.h) {
+          if (_px >= ub.x && _px <= ub.x+ub.w && pos.y >= ub.y && pos.y <= ub.y+ub.h) {
             if (self._undoHistory && self._undoHistory.length > 0) {
               self._redoHistory.push(self._undoHistory.pop());
               var snap = self._undoHistory[self._undoHistory.length-1];
@@ -764,7 +769,7 @@ class Game {
         }
         if (self._editorRedoBtn) {
           var rb = self._editorRedoBtn;
-          if (pos.x >= rb.x && pos.x <= rb.x+rb.w && pos.y >= rb.y && pos.y <= rb.y+rb.h) {
+          if (_px >= rb.x && _px <= rb.x+rb.w && pos.y >= rb.y && pos.y <= rb.y+rb.h) {
             if (self._redoHistory && self._redoHistory.length > 0) {
               var rSnap = self._redoHistory.pop();
               self._undoHistory.push(rSnap);
@@ -775,7 +780,7 @@ class Game {
         }
         if (self._editorDoneBtn) {
           var dnb = self._editorDoneBtn;
-          if (pos.x >= dnb.x && pos.x <= dnb.x + dnb.w && pos.y >= dnb.y && pos.y <= dnb.y + dnb.h) {
+          if (_px >= dnb.x && _px <= dnb.x + dnb.w && pos.y >= dnb.y && pos.y <= dnb.y + dnb.h) {
             self.toggleEditor(); return;
           }
         }
@@ -791,8 +796,8 @@ class Game {
       // ── Speed slider ─────────────────────────────────────────────────────
       if (self._zoneSliderRect) {
         var zsr = self._zoneSliderRect;
-        if (pos.y >= zsr.y - 10 && pos.y <= zsr.y + zsr.h + 10 &&
-            pos.x >= zsr.x - 15  && pos.x <= zsr.x + zsr.w + 15) {
+        if (_py >= zsr.y - 10 && _py <= zsr.y + zsr.h + 10 &&
+            _px >= zsr.x - 15  && _px <= zsr.x + zsr.w + 15) {
           self._draggingZoneSlider = true;
           var zt = Math.max(0, Math.min(1, (pos.x - zsr.x) / zsr.w));
           self._slingZoneH = Math.round(40 + zt * 260);
@@ -3137,25 +3142,27 @@ class Game {
     ctx.fillStyle = '#88bbff'; ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('RST DEF', rstX + 25, btnY + btnH/2);
     // UNDO button
-    var undoX = rstX - 36;
+    var undoW = 40;
+    var undoX = rstX - undoW - 4;
     var canUndo = this._undoHistory && this._undoHistory.length > 0;
-    this._editorUndoBtn = { x: undoX, y: btnY, w: 32, h: btnH };
+    this._editorUndoBtn = { x: undoX, y: btnY, w: undoW, h: btnH };
     ctx.fillStyle = canUndo ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
-    ctx.beginPath(); ctx.roundRect(undoX, btnY, 32, btnH, 4); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(undoX, btnY, undoW, btnH, 4); ctx.fill();
     ctx.strokeStyle = canUndo ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(undoX, btnY, 32, btnH, 4); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(undoX, btnY, undoW, btnH, 4); ctx.stroke();
     ctx.fillStyle = canUndo ? '#44aaff' : '#334455';
-    ctx.fillText('↩', undoX + 16, btnY + btnH/2);
+    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('↩UNDO', undoX + undoW/2, btnY + btnH/2);
     // REDO button
-    var redoX = undoX - 36;
+    var redoX = undoX - undoW - 4;
     var canRedo = this._redoHistory && this._redoHistory.length > 0;
-    this._editorRedoBtn = { x: redoX, y: btnY, w: 32, h: btnH };
+    this._editorRedoBtn = { x: redoX, y: btnY, w: undoW, h: btnH };
     ctx.fillStyle = canRedo ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
-    ctx.beginPath(); ctx.roundRect(redoX, btnY, 32, btnH, 4); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(redoX, btnY, undoW, btnH, 4); ctx.fill();
     ctx.strokeStyle = canRedo ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(redoX, btnY, 32, btnH, 4); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(redoX, btnY, undoW, btnH, 4); ctx.stroke();
     ctx.fillStyle = canRedo ? '#44aaff' : '#334455';
-    ctx.fillText('↪', redoX + 16, btnY + btnH/2);
+    ctx.fillText('REDO↪', redoX + undoW/2, btnY + btnH/2);
 
     // Left side: SELECT/BUILD + type-specific
     var modeW = 52;
@@ -3189,24 +3196,12 @@ class Game {
         this._editorTypeBtns.push({ x: curX, y: btnY, w: tW, h: btnH, type: bTypes[ti] });
         curX += tW + 4;
       }
-      // Snap moved to row 2 — still set to null here so the tap handler in row 1 can't fire
+      // Snap and MOV both moved to row 2 — nullify here
       this._editorSnapBtn = null;
-      // MOV
-      var movW2 = 40, isMovable = this._editorMovable || false;
-      if (curX + movW2 < clearX - 8) {
-        this._editorMovBtn = { x: curX, y: btnY, w: movW2, h: btnH };
-        ctx.fillStyle = isMovable ? 'rgba(255,150,0,0.22)' : 'rgba(0,15,40,0.8)';
-        ctx.beginPath(); ctx.roundRect(curX, btnY, movW2, btnH, 4); ctx.fill();
-        ctx.strokeStyle = isMovable ? '#ffaa00' : '#666688'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.roundRect(curX, btnY, movW2, btnH, 4); ctx.stroke();
-        ctx.fillStyle = isMovable ? '#ffaa00' : '#668899';
-        ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(isMovable ? '●MOV' : '■STA', curX + movW2/2, btnY + btnH/2);
-        curX += movW2 + 4;
-      } else { this._editorMovBtn = null; }
     } else {
-      this._editorSnapBtn = null; this._editorMovBtn = null;
+      this._editorSnapBtn = null;
     }
+    this._editorMovBtn = null;  // MOV is in row 2
 
     // DEL — always shown after other buttons, before CLR ALL
     var delW2 = 36;
