@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1314;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['sound.js'] = 1431;
 // sound.js — Web Audio API synthesized sound effects
 // No external files. All sounds generated procedurally.
 
@@ -661,4 +661,146 @@ window.BrickNote = (function() {
   var noteDisplay = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 
   return { playNote, timbreList, timbreLabels, noteNames, noteDisplay };
+})();
+
+// ── UI Sounds ─────────────────────────────────────────────────────────────────
+(function() {
+  var S = window.Sound;
+  if (!S) return;
+
+  // Button tap — short bright click
+  S.uiTap = function(vol) {
+    var c = S.getCtx(); if (!c) return;
+    vol = (vol || 0.35) * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var now = c.currentTime;
+    var o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(880, now); o.frequency.exponentialRampToValueAtTime(440, now + 0.06);
+    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+    o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.07);
+    // Bright transient tick
+    var o2 = c.createOscillator(), g2 = c.createGain();
+    o2.type = 'square'; o2.frequency.value = 2200;
+    g2.gain.setValueAtTime(vol * 0.2, now); g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+    o2.connect(g2); g2.connect(c.destination); o2.start(now); o2.stop(now + 0.025);
+  };
+
+  // Slider tick — very soft blip, not annoying
+  S.uiSlider = function() {
+    var c = S.getCtx(); if (!c) return;
+    var vol = 0.08 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var now = c.currentTime;
+    var o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine'; o.frequency.value = 1200 + Math.random() * 400;
+    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+    o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.03);
+  };
+
+  // Toggle on/off — two-tone
+  S.uiToggle = function(on) {
+    var c = S.getCtx(); if (!c) return;
+    var vol = 0.25 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var now = c.currentTime;
+    var freqs = on ? [660, 880] : [880, 550];
+    freqs.forEach(function(f, i) {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = 'triangle'; o.frequency.value = f;
+      var t = now + i * 0.06;
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.08);
+    });
+  };
+
+  // Editor open — mechanical whoosh + settle
+  S.editorOpen = function() {
+    var c = S.getCtx(); if (!c) return;
+    var vol = 0.3 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var now = c.currentTime;
+    var o = c.createOscillator(), g = c.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(120, now); o.frequency.exponentialRampToValueAtTime(280, now + 0.12);
+    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    var flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 800;
+    o.connect(flt); flt.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.18);
+  };
+
+  // Editor close
+  S.editorClose = function() {
+    var c = S.getCtx(); if (!c) return;
+    var vol = 0.25 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var now = c.currentTime;
+    var o = c.createOscillator(), g = c.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(280, now); o.frequency.exponentialRampToValueAtTime(100, now + 0.14);
+    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    var flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 600;
+    o.connect(flt); flt.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.16);
+  };
+
+  // Reset button — descending arpeggio
+  S.uiReset = function() {
+    var c = S.getCtx(); if (!c) return;
+    var vol = 0.28 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var now = c.currentTime;
+    [880, 660, 440].forEach(function(f, i) {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = 'square'; o.frequency.value = f;
+      var t = now + i * 0.07;
+      g.gain.setValueAtTime(vol * 0.5, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.09);
+    });
+  };
+
+  // Intro jingle — 8-bit Nintendo style, plays on game/menu load
+  S.introJingle = function() {
+    var c = S.getCtx(); if (!c) return;
+    var vol = 0.22 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var now = c.currentTime + 0.1;
+    // Main melody — square wave, C major feel with a little jump
+    var melody = [
+      [523.25, 0.10], [659.25, 0.10], [783.99, 0.10], [1046.5, 0.18],
+      [880.00, 0.10], [1046.5, 0.10], [1174.7, 0.10], [1318.5, 0.22],
+      [1174.7, 0.10], [1046.5, 0.10], [880.00, 0.10], [783.99, 0.28],
+      [659.25, 0.10], [783.99, 0.10], [880.00, 0.10], [1046.5, 0.35],
+    ];
+    var t = now;
+    melody.forEach(function(note) {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = 'square'; o.frequency.value = note[0];
+      var dur = note[1];
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.01);
+      g.gain.setValueAtTime(vol, t + dur - 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.01);
+      t += dur;
+    });
+    // Bass line — triangle wave, every other beat
+    var bass = [
+      [130.81, 0.20], [196.00, 0.20], [164.81, 0.20], [174.61, 0.20],
+      [130.81, 0.20], [130.81, 0.20], [196.00, 0.40],
+    ];
+    var bt = now;
+    bass.forEach(function(note) {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = 'triangle'; o.frequency.value = note[0];
+      var dur = note[1];
+      g.gain.setValueAtTime(vol * 0.55, bt);
+      g.gain.exponentialRampToValueAtTime(0.0001, bt + dur * 0.85);
+      o.connect(g); g.connect(c.destination); o.start(bt); o.stop(bt + dur);
+      bt += dur;
+    });
+    // Percussion — noise bursts on beat
+    [0, 0.20, 0.40, 0.60, 0.80, 1.00, 1.20, 1.40].forEach(function(offset) {
+      var bufLen = Math.ceil(c.sampleRate * 0.04);
+      var buf = c.createBuffer(1, bufLen, c.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < bufLen; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufLen * 0.2));
+      var src = c.createBufferSource(); src.buffer = buf;
+      var flt = c.createBiquadFilter(); flt.type = 'highpass'; flt.frequency.value = 4000;
+      var g = c.createGain(); g.gain.setValueAtTime(vol * 0.4, now + offset);
+      src.connect(flt); flt.connect(g); g.connect(c.destination);
+      src.start(now + offset);
+    });
+  };
+
 })();

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1430;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1431;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -104,6 +104,10 @@ class Game {
   // ── Level setup ────────────────────────────────────────────────────────────
 
   _spawnLevel() {
+    if (window.Sound && Sound.introJingle && !this._jinglePlayed) {
+      this._jinglePlayed = true;
+      Sound.introJingle();
+    }
     var self = this;
     var W    = this.W;
     var ld   = this.levelData;
@@ -291,6 +295,7 @@ class Game {
         for (var cbi = 0; cbi < self._cornerBrickBtns.length; cbi++) {
           var cbr = self._cornerBrickBtns[cbi];
           if (pos.x >= cbr.x && pos.x <= cbr.x + cbr.w && pos.y >= cbr.y && pos.y <= cbr.y + cbr.h) {
+            if (window.Sound && Sound.uiToggle) Sound.uiToggle(!window[cbr.key]);
             window[cbr.key] = !window[cbr.key]; return;
           }
         }
@@ -299,6 +304,7 @@ class Game {
         for (var cli = 0; cli < self._cornerLeftRects.length; cli++) {
           var cr = self._cornerLeftRects[cli];
           if (pos.x >= cr.x && pos.x <= cr.x + cr.w && pos.y >= cr.y && pos.y <= cr.y + cr.h) {
+            if (window.Sound && Sound.uiToggle) Sound.uiToggle(!window[cr.key]);
             window[cr.key] = !window[cr.key];
             return;
           }
@@ -313,6 +319,7 @@ class Game {
       if (self._cornerAimBtn) {
         var cab = self._cornerAimBtn;
         if (pos.x >= cab.x && pos.x <= cab.x + cab.w && pos.y >= cab.y && pos.y <= cab.y + cab.h) {
+          if (window.Sound && Sound.uiToggle) Sound.uiToggle(self._aimMode !== 'pull');
           self._aimMode = self._aimMode === 'pull' ? 'push' : 'pull';
           return;
         }
@@ -731,6 +738,7 @@ class Game {
           var br = self._chuteButtonRects[bi];
           if (pos.x >= br.x && pos.x <= br.x + br.w &&
               pos.y >= br.y && pos.y <= br.y + br.h) {
+            if (window.Sound && Sound.uiTap) Sound.uiTap(0.28);
             self._chuteDropBall(br.type);
             return;
           }
@@ -1241,12 +1249,12 @@ class Game {
     }
 
     // Update tube routing
-    this.tubes.update(this.objects);
+    if (this.tubes) this.tubes.update(this.objects);
 
     // Enforce chute left wall as physics boundary
     this._enforceChuteWall();
 
-    this.target.update();
+    if (this.target) this.target.update();
     Physics.stepSparks(this.sparks);
 
     // Collisions
@@ -1611,7 +1619,7 @@ class Game {
           var ball = this.objects[j];
           if (ball.type !== obj.ballType || ball.dead) continue;
           var dx = ball.x - this.target.x, dy = ball.y - this.target.y;
-          if (Math.hypot(dx, dy) < this.target.r + ball.r) {
+          if (this.target && Math.hypot(dx, dy) < this.target.r + ball.r) {
             obj.met = true;
             this.ui.setObjectives(this.objectives);
           }
@@ -2482,8 +2490,8 @@ class Game {
     // Behind-layer tubes drawn first (under everything)
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
     this._drawChute();
-    this.barrier.draw(ctx);
-    this.target.draw(ctx);
+    if (this.barrier) this.barrier.draw(ctx);
+    if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
     // Main-layer tubes under bricks
     this.tubes.draw(ctx, 'main', this.frame, this._tubeSelected);
@@ -2545,9 +2553,11 @@ class Game {
       this._editorDragging    = null;
       this._editorSelected    = null;
       if (!this._undoHistory) { this._undoHistory = []; this._redoHistory = []; }
-      if (this._editorTranslate === undefined) this._editorTranslate = false;  // default ⊕ROT
+      if (this._editorTranslate === undefined) this._editorTranslate = false;
+      if (window.Sound && Sound.editorOpen) Sound.editorOpen();  // default ⊕ROT
     } else {
       this._editorNotePopup = false;
+      if (window.Sound && Sound.editorClose) Sound.editorClose();
       // Lock in current position/rotation as spawn point for all bricks
       for (var bi = 0; bi < this.bricks.length; bi++) {
         var bk = this.bricks[bi];
@@ -2708,6 +2718,11 @@ class Game {
       var rawVal = sl.min + t * (sl.max - sl.min);
       rawVal = Math.round(rawVal / (sl.step || 0.001)) * (sl.step || 0.001);
       rawVal = Math.max(sl.min, Math.min(sl.max, rawVal));
+      // Tick sound — throttled so it doesn't fire every frame
+      if (!this._sliderTickFrame || this.frame - this._sliderTickFrame > 3) {
+        if (window.Sound && Sound.uiSlider) Sound.uiSlider();
+        this._sliderTickFrame = this.frame;
+      }
       // Inverted sliders: display range [0.01, 0.5] represents actual [0.99, 0.5]
       // actual = 1 - displayRawVal; do NOT clamp actual to display range
       var val;
