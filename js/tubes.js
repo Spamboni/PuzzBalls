@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1435;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1437;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -161,16 +161,18 @@ class TubePiece {
       var ball = this._ball;
       this._ball = null;
       var exitSocket = exitA ? this.socketA() : this.socketB();
-      // Apply speed modifier
-      var spd  = Math.hypot(ball.vx, ball.vy);
-      var newSpd = Math.max(2, spd * this.speedMod);
+      // Apply speed modifier — minimum exit speed so ball doesn't dribble
+      var spd  = Math.max(3, Math.hypot(ball.vx, ball.vy));
+      var newSpd = Math.max(3, spd * this.speedMod);
       var exitAngle = exitSocket.angle + (exitA ? Math.PI : 0);
       ball.vx = Math.cos(exitAngle) * newSpd;
       ball.vy = Math.sin(exitAngle) * newSpd;
       ball.inFlight = true;
-      // Position at exit
-      ball.x = exitSocket.x;
-      ball.y = exitSocket.y;
+      // Nudge ball well outside tube to prevent immediate re-capture
+      ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 6);
+      ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 6);
+      // Short cooldown before this ball can re-enter any tube
+      ball._tubeExitCooldown = 20;  // frames
       return { ball: ball, socket: exitSocket };
     }
     // Update ball position to follow path
@@ -184,6 +186,7 @@ class TubePiece {
   tryCapture(ball) {
     if (this._ball) return false;
     if (ball._inTube) return false;
+    if (ball._tubeExitCooldown && ball._tubeExitCooldown > 0) return false;  // recently exited
     for (var s = 0; s <= 1; s++) {
       var sock = s === 0 ? this.socketA() : this.socketB();
       var dist = Math.hypot(ball.x - sock.x, ball.y - sock.y);
@@ -522,6 +525,10 @@ class TubeManager {
   // ── Update all tubes + handle captures + exterior collisions ─────────────
   update(balls) {
     var self = this;
+    // Tick exit cooldowns
+    for (var bi2 = 0; bi2 < balls.length; bi2++) {
+      if (balls[bi2]._tubeExitCooldown > 0) balls[bi2]._tubeExitCooldown--;
+    }
     // Try to capture free balls into tube ends
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var tube = this.tubes[ti];

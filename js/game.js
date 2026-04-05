@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1436;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1437;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -694,6 +694,14 @@ class Game {
           var gb = self._editorGridBtn;
           if (pos.x >= gb.x && pos.x <= gb.x+gb.w && pos.y >= gb.y && pos.y <= gb.y+gb.h) {
             window._showEditorGrid = !window._showEditorGrid; return;
+          }
+        }
+        if (self._editorGridSizeBtn) {
+          var gsb = self._editorGridSizeBtn;
+          if (pos.x >= gsb.x && pos.x <= gsb.x+gsb.w && pos.y >= gsb.y && pos.y <= gsb.y+gsb.h) {
+            var gv = prompt('Grid size (5-100px):', String(window._gridSize||20));
+            if (gv !== null) { var gn = parseInt(gv); if (!isNaN(gn) && gn >= 5 && gn <= 100) window._gridSize = gn; }
+            return;
           }
         }
         // SNAP-GRID toggle
@@ -2664,6 +2672,8 @@ class Game {
     } else {
       this._editorNotePopup = false;
       this._viewScrollY = 0;
+      this._tubeSelected = null;   // clear so bounding box doesn't persist
+      this._tubeDragging = null;
       if (window.Sound && Sound.editorClose) Sound.editorClose();
       // Lock in current position/rotation as spawn point for all bricks
       for (var bi = 0; bi < this.bricks.length; bi++) {
@@ -3001,7 +3011,7 @@ class Game {
       this._editorQuickClearBtns.push({ x:qcx, y:qcY, w:qcW, h:qcH, type:qci });
     }
     // Tab row: BRICKS | TUBES
-    var tabW = 80, tabH = 22, tabY = panelY + qcH + 4;
+    var tabW = 80, tabH = 22, tabY = panelY + 26 + 2;  // below quick-clear row
     var isBrickTab = !this._editorTubeMode;
     // Bricks tab
     ctx.fillStyle = isBrickTab ? 'rgba(0,180,255,0.25)' : 'rgba(0,10,30,0.5)';
@@ -3028,7 +3038,8 @@ class Game {
       return;
     }
 
-    var btnH = 26, btnY = panelY + tabH + 4, startX = 8;
+    var qcRowH = 26;  // quick-clear row height + gap
+    var btnH = 26, btnY = panelY + qcRowH + tabH + 4, startX = 8;
     var isSelect = this._editorSelectMode || false;
 
     // ── ROW 1 — left side: mode + build options, right side: CLR ALL + DONE ──────
@@ -3107,17 +3118,8 @@ class Game {
         this._editorTypeBtns.push({ x: curX, y: btnY, w: tW, h: btnH, type: bTypes[ti] });
         curX += tW + 4;
       }
-      // Snap
-      var snapW2 = 40, snaps2 = [0,15,30,45], sLabels2 = ['FREE','15°','30°','45°'];
-      var sIdx = snaps2.indexOf(this._editorSnapDeg || 0);
-      if (curX + snapW2 < clearX - 8) {
-        this._editorSnapBtn = { x: curX, y: btnY, w: snapW2, h: btnH };
-        ctx.fillStyle = 'rgba(0,15,40,0.8)'; ctx.beginPath(); ctx.roundRect(curX, btnY, snapW2, btnH, 4); ctx.fill();
-        ctx.strokeStyle = '#aaccff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(curX, btnY, snapW2, btnH, 4); ctx.stroke();
-        ctx.fillStyle = '#aaccff'; ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(sLabels2[sIdx < 0 ? 0 : sIdx], curX + snapW2/2, btnY + btnH/2);
-        curX += snapW2 + 4;
-      } else { this._editorSnapBtn = null; }
+      // Snap moved to row 2 — still set to null here so the tap handler in row 1 can't fire
+      this._editorSnapBtn = null;
       // MOV
       var movW2 = 40, isMovable = this._editorMovable || false;
       if (curX + movW2 < clearX - 8) {
@@ -3367,6 +3369,33 @@ class Game {
     ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('SNAP', snapGX + 17, row2Y + rH2/2 - 3);
     ctx.fillText('GRID', snapGX + 17, row2Y + rH2/2 + 4);
+
+    // ROT SNAP button (always visible, row 2, after SNAP-GRID)
+    var rotSnapX = snapGX + 38;
+    var snaps3 = [0, 15, 30, 45]; var sLabels3 = ['ROT:FREE','ROT:15°','ROT:30°','ROT:45°'];
+    var sIdx3 = snaps3.indexOf(this._editorSnapDeg || 0);
+    var rotSnapW = 52;
+    this._editorSnapBtn = { x: rotSnapX, y: row2Y, w: rotSnapW, h: rH2 };
+    ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? 'rgba(255,170,0,0.20)' : 'rgba(0,10,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(rotSnapX, row2Y, rotSnapW, rH2, 3); ctx.fill();
+    ctx.strokeStyle = (this._editorSnapDeg||0) > 0 ? '#ffaa00' : '#334455'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(rotSnapX, row2Y, rotSnapW, rH2, 3); ctx.stroke();
+    ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? '#ffcc44' : '#556677';
+    ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(sLabels3[sIdx3], rotSnapX + rotSnapW/2, row2Y + rH2/2);
+
+    // Grid size value display (tap to edit) — beside SNAP-GRID
+    var gSizeX = rotSnapX + rotSnapW + 4;
+    var gSizeW = 36;
+    var gSizeVal = window._gridSize || 20;
+    this._editorGridSizeBtn = { x: gSizeX, y: row2Y, w: gSizeW, h: rH2 };
+    ctx.fillStyle = 'rgba(0,10,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(gSizeX, row2Y, gSizeW, rH2, 3); ctx.fill();
+    ctx.strokeStyle = '#334466'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(gSizeX, row2Y, gSizeW, rH2, 3); ctx.stroke();
+    ctx.fillStyle = '#88aabb'; ctx.font = "bold 6px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('GR:' + gSizeVal, gSizeX + gSizeW/2, row2Y + rH2/2);
 
     // ── ROWS 3–7: sliders ────────────────────────────────────────────────────
     var sliderRowH = 22;

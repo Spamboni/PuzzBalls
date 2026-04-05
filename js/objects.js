@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1410;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['objects.js'] = 1437;
 /**
  * objects.js
  * Game entity classes.  Each class knows how to draw itself and nothing else.
@@ -698,29 +698,58 @@ class BreakableBrick {
       }
     }
 
-    // Health bar — on longest edge, at the bottom (most visible side)
-    // Bar runs along the full width, positioned at the outer bottom edge
+    // Health bar — always on the edge with the lowest world-space Y (most visible)
+    // Compute world Y of midpoints of all 4 edges, pick the maximum (lowest on screen)
     var barH    = 4;
     var barFrac = this.health / this.maxHealth;
-    // Full bar background (dark red crosshatch)
+    // Half-extents in local space
+    var hw2 = this.w / 2, hh2 = this.h / 2;
+    var cosR = Math.cos(this._rotation || 0), sinR = Math.sin(this._rotation || 0);
+    // World Y of each edge midpoint (using rotation applied at this.x/y)
+    var edgeYs = [
+      this.y + (-hh2) * cosR,  // top edge midpoint
+      this.y + ( hh2) * cosR,  // bottom edge midpoint
+      this.y + (-hw2) * sinR,  // left edge midpoint (rotated)
+      this.y + ( hw2) * sinR,  // right edge midpoint (rotated)
+    ];
+    var lowestEdge = edgeYs.indexOf(Math.max(...edgeYs));
+    // Draw bar on the correct local-space edge
+    var barEdges = [
+      { x: bx,           y: by,              w: this.w, axis: 'top' },    // top
+      { x: bx,           y: by + this.h - barH, w: this.w, axis: 'bottom' }, // bottom
+      { x: bx,           y: by,              w: barH,   axis: 'left', h: this.h },  // left
+      { x: bx + this.w - barH, y: by,        w: barH,   axis: 'right', h: this.h }, // right
+    ];
+    var barEdge = barEdges[lowestEdge] || barEdges[1];
+    var isVertical = (lowestEdge === 2 || lowestEdge === 3);
+    var barW2 = isVertical ? this.h : this.w;
+    var barBX = isVertical ? barEdge.x : bx;
+    var barBY = barEdge.y;
+    var barBW = isVertical ? barH : this.w;
+    var barBH = isVertical ? this.h : barH;
     ctx.save();
-    ctx.beginPath(); ctx.roundRect(bx, by + this.h - barH, this.w, barH, [0,0,2,2]); ctx.clip();
-    // Dark base
-    ctx.fillStyle = 'rgba(40,0,0,0.7)'; ctx.fillRect(bx, by + this.h - barH, this.w, barH);
+    ctx.beginPath(); ctx.roundRect(barBX, barBY, barBW, barBH, isVertical ? [0,2,2,0] : [0,0,2,2]); ctx.clip();
+    ctx.fillStyle = 'rgba(40,0,0,0.7)'; ctx.fillRect(barBX, barBY, barBW, barBH);
     // Crosshatch in damaged area
-    var hatchX = bx + this.w * barFrac;
-    if (hatchX < bx + this.w) {
+    var hatchStart = isVertical ? barBY + barBH * barFrac : barBX + barBW * barFrac;
+    if (barFrac < 1) {
       ctx.strokeStyle = 'rgba(120,0,0,0.55)'; ctx.lineWidth = 1.5;
-      for (var hx = hatchX - barH; hx < bx + this.w + barH; hx += 5) {
-        ctx.beginPath(); ctx.moveTo(hx, by + this.h - barH); ctx.lineTo(hx + barH, by + this.h); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(hx, by + this.h); ctx.lineTo(hx + barH, by + this.h - barH); ctx.stroke();
+      for (var hx = hatchStart - barH; hx < (isVertical ? barBY+barBH+barH : barBX+barBW+barH); hx += 5) {
+        if (isVertical) {
+          ctx.beginPath(); ctx.moveTo(barBX, hx); ctx.lineTo(barBX+barBW, hx+barBW); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(barBX+barBW, hx); ctx.lineTo(barBX, hx+barBW); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.moveTo(hx, barBY); ctx.lineTo(hx+barH, barBY+barH); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(hx, barBY+barH); ctx.lineTo(hx+barH, barBY); ctx.stroke();
+        }
       }
     }
-    // Health fill
     if (barFrac > 0) {
+      var bfW = isVertical ? barBW : barBW * barFrac;
+      var bfH = isVertical ? barBH * barFrac : barBH;
       ctx.fillStyle = barFrac > 0.5 ? glow + 'cc' : (barFrac > 0.25 ? '#ffaa00cc' : '#ff2200cc');
       ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 4;
-      ctx.fillRect(bx, by + this.h - barH, this.w * barFrac, barH);
+      ctx.fillRect(barBX, barBY, bfW, bfH);
       ctx.shadowBlur = 0;
     }
     ctx.restore();
