@@ -39,6 +39,14 @@ button, input, select { touch-action:manipulation; -webkit-tap-highlight-color:t
   font-size:11px; letter-spacing:4px; color:#334466; text-transform:uppercase;
 }
 
+.menu-version {
+  font-family:'Share Tech Mono', monospace;
+  font-size:13px; letter-spacing:3px;
+  color:#ffee00;
+  text-shadow: 0 0 8px #ffee00, 0 0 20px #ffee0088;
+  margin-top:6px;
+}
+
 /* Preset bar */
 .menu-preset-bar {
   display:flex; align-items:center; gap:10px;
