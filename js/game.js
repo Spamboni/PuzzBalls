@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1439;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1440;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -793,7 +793,8 @@ class Game {
         return;
       }
 
-      // ── Speed slider ─────────────────────────────────────────────────────
+      // ── Speed slider + chute buttons — only when editor is CLOSED ─────────
+      if (!self._editorMode) {
       if (self._zoneSliderRect) {
         var zsr = self._zoneSliderRect;
         if (_py >= zsr.y - 10 && _py <= zsr.y + zsr.h + 10 &&
@@ -807,7 +808,7 @@ class Game {
       if (self._brickSliderRect) {
         var bsr = self._brickSliderRect;
         if (pos.y >= bsr.y - 10 && pos.y <= bsr.y + bsr.h + 10 &&
-            pos.x >= bsr.x - 15  && pos.x <= bsr.x + bsr.w + 15) {
+            _px >= bsr.x - 15  && _px <= bsr.x + bsr.w + 15) {
           self._draggingBrickSlider = true;
           self.brickSpeedMult = Math.max(0, Math.min(1, (pos.x - bsr.x) / bsr.w));
           return;
@@ -816,7 +817,7 @@ class Game {
       if (self._sliderRect) {
         var sr = self._sliderRect;
         if (pos.y >= sr.y - 10 && pos.y <= sr.y + sr.h + 10 &&
-            pos.x >= sr.x - 15  && pos.x <= sr.x + sr.w + 15) {
+            _px >= sr.x - 15  && _px <= sr.x + sr.w + 15) {
           self._draggingSlider = true;
           var t = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
           self.speedMult = 0.125 + t * 0.875;
@@ -853,6 +854,8 @@ class Game {
           return;
         }
       }
+
+      } // end !editorMode speed/chute block
 
       // ── Delete mode: tap a ball to remove it ─────────────────────────────
       if (self._deleteMode) {
@@ -3142,27 +3145,9 @@ class Game {
     ctx.fillStyle = '#88bbff'; ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('RST DEF', rstX + 25, btnY + btnH/2);
     // UNDO button
-    var undoW = 40;
-    var undoX = rstX - undoW - 4;
-    var canUndo = this._undoHistory && this._undoHistory.length > 0;
-    this._editorUndoBtn = { x: undoX, y: btnY, w: undoW, h: btnH };
-    ctx.fillStyle = canUndo ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
-    ctx.beginPath(); ctx.roundRect(undoX, btnY, undoW, btnH, 4); ctx.fill();
-    ctx.strokeStyle = canUndo ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(undoX, btnY, undoW, btnH, 4); ctx.stroke();
-    ctx.fillStyle = canUndo ? '#44aaff' : '#334455';
-    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('↩UNDO', undoX + undoW/2, btnY + btnH/2);
-    // REDO button
-    var redoX = undoX - undoW - 4;
-    var canRedo = this._redoHistory && this._redoHistory.length > 0;
-    this._editorRedoBtn = { x: redoX, y: btnY, w: undoW, h: btnH };
-    ctx.fillStyle = canRedo ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
-    ctx.beginPath(); ctx.roundRect(redoX, btnY, undoW, btnH, 4); ctx.fill();
-    ctx.strokeStyle = canRedo ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(redoX, btnY, undoW, btnH, 4); ctx.stroke();
-    ctx.fillStyle = canRedo ? '#44aaff' : '#334455';
-    ctx.fillText('REDO↪', redoX + undoW/2, btnY + btnH/2);
+    // UNDO/REDO moved to row 2 to avoid row 1 overflow
+    this._editorUndoBtn = null;
+    this._editorRedoBtn = null;
 
     // Left side: SELECT/BUILD + type-specific
     var modeW = 52;
@@ -3338,13 +3323,12 @@ class Game {
 
     var transOn3 = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
 
-    // ── ROW 2: MOV | ↔ROT | PIVOT 3×3 | 🎵 | GRID | SNAP-GRID ─────────────
+    // ── ROW 2: UNDO/REDO | MOV | ↔ROT | PIVOT 3×3 | 🎵 | GRID | SNAP-GRID ───
     var row2Y = btnY + btnH + 8;
     var rH2   = 22;
-
-    // MOV
-    var movInX = padding, movW3 = 46;
-    this._editorMovInlineRect = { x: movInX, y: row2Y, w: movW3, h: rH2 };
+    // MOV offset: after undo(38) + redo(38) + gaps
+    var movW3 = 46;
+    var movInX = padding + 38 + 3 + 38 + 6;  // after undo + redo buttons
     ctx.fillStyle = movActive2 ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
     ctx.beginPath(); ctx.roundRect(movInX, row2Y, movW3, rH2, 3); ctx.fill();
     ctx.strokeStyle = movActive2 ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
@@ -3436,7 +3420,28 @@ class Game {
     ctx.fillText('SNAP', snapGX + 17, row2Y + rH2/2 - 3);
     ctx.fillText('GRID', snapGX + 17, row2Y + rH2/2 + 4);
 
-    // ROT SNAP button (always visible, row 2, after SNAP-GRID)
+    // UNDO/REDO buttons at start of row 2
+    var undoW2 = 38;
+    var canUndo2 = this._undoHistory && this._undoHistory.length > 0;
+    this._editorUndoBtn = { x: padding, y: row2Y, w: undoW2, h: rH2 };
+    ctx.fillStyle = canUndo2 ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
+    ctx.beginPath(); ctx.roundRect(padding, row2Y, undoW2, rH2, 3); ctx.fill();
+    ctx.strokeStyle = canUndo2 ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(padding, row2Y, undoW2, rH2, 3); ctx.stroke();
+    ctx.fillStyle = canUndo2 ? '#44aaff' : '#334455';
+    ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('↩UNDO', padding + undoW2/2, row2Y + rH2/2);
+    var canRedo2 = this._redoHistory && this._redoHistory.length > 0;
+    this._editorRedoBtn = { x: padding + undoW2 + 3, y: row2Y, w: undoW2, h: rH2 };
+    ctx.fillStyle = canRedo2 ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
+    ctx.beginPath(); ctx.roundRect(padding + undoW2 + 3, row2Y, undoW2, rH2, 3); ctx.fill();
+    ctx.strokeStyle = canRedo2 ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(padding + undoW2 + 3, row2Y, undoW2, rH2, 3); ctx.stroke();
+    ctx.fillStyle = canRedo2 ? '#44aaff' : '#334455';
+    ctx.fillText('REDO↪', padding + undoW2 + 3 + undoW2/2, row2Y + rH2/2);
+
+    // MOV inline rect (position already defined above)
+    this._editorMovInlineRect = { x: movInX, y: row2Y, w: movW3, h: rH2 };
     var rotSnapX = snapGX + 38;
     var snaps3 = [0, 15, 30, 45]; var sLabels3 = ['ROT:FREE','ROT:15°','ROT:30°','ROT:45°'];
     var sIdx3 = snaps3.indexOf(this._editorSnapDeg || 0);
