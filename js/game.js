@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1450;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1451;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -358,8 +358,8 @@ class Game {
           var hcb=self._hudClearBtns[hci];
           if (pos.x>=hcb.x&&pos.x<=hcb.x+hcb.w&&pos.y>=hcb.y&&pos.y<=hcb.y+hcb.h) {
             if (hcb.type===0) { self._undoPush && self._undoPush(); self.bricks=[]; }
-            else if (hcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); }
-            else if (hcb.type===2) { self.tubes.tubes=[]; }
+            else if (hcb.type===1) { self._undoPush && self._undoPush(); self.objects.forEach(function(o){o.dead=true;}); }
+            else if (hcb.type===2) { self._undoPush && self._undoPush(); self.tubes.tubes=[]; }
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
           }
         }
@@ -633,8 +633,8 @@ class Game {
             var qcb=self._editorQuickClearBtns[qci2];
             if (pos.x>=qcb.x&&pos.x<=qcb.x+qcb.w&&_py>=qcb.y&&_py<=qcb.y+qcb.h) {
               if (qcb.type===0) { self._undoPush(); self.bricks=[]; }
-              else if (qcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); }
-              else if (qcb.type===2) { self.tubes.tubes=[]; }
+              else if (qcb.type===1) { self._undoPush(); self.objects.forEach(function(o){o.dead=true;}); }
+              else if (qcb.type===2) { self._undoPush(); self.tubes.tubes=[]; }
               else if (qcb.type===3) { self._saveCustomLevel(); return; }
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
             }
@@ -2719,14 +2719,19 @@ class Game {
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
-    this._undoHistory.push(snap);
+    // Also snapshot tubes
+    var tubeSnap = this.tubes ? this.tubes.toJSON() : [];
+    this._undoHistory.push({ bricks: snap, tubes: tubeSnap });
     if (this._undoHistory.length > 50) this._undoHistory.shift();
     this._redoHistory = [];
   }
 
   _undoApply(snap) {
+    // Support both old format (array) and new format ({bricks, tubes})
+    var brickSnap = Array.isArray(snap) ? snap : snap.bricks;
+    var tubeSnap  = Array.isArray(snap) ? null : snap.tubes;
     // Restore brick list to snapshot
-    this.bricks = snap.map(function(s) {
+    this.bricks = brickSnap.map(function(s) {
       var b = s._ref;
       if (!b) return null;
       b.x=s.x; b.y=s.y; b.w=s.w; b.h=s.h; if(s.r)b.r=s.r;
@@ -2738,6 +2743,8 @@ class Game {
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
     }).filter(Boolean);
+    // Restore tubes if snapshot includes them
+    if (tubeSnap && this.tubes) this.tubes.fromJSON(tubeSnap);
   }
 
   toggleEditor() {

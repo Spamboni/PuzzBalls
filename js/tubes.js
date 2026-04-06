@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1450;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1451;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -161,21 +161,18 @@ class TubePiece {
       var ball = this._ball;
       this._ball = null;
       var exitSocket = exitA ? this.socketA() : this.socketB();
-      // Apply speed modifier — only for energy tubes; others preserve entry speed
-      var spd  = Math.max(3, Math.hypot(ball.vx, ball.vy));
-      var newSpd = (this.style === 'energy') ? Math.max(3, spd * this.speedMod) : spd;
-      // exitSocket.angle already points OUTWARD from each end — use it directly
+      // Apply speed modifier — only for energy tubes; others preserve ball speed
+      var newSpd = (this.style === 'energy') ? Math.max(3, this._ballV * this.speedMod) : this._ballV;
       var exitAngle = exitSocket.angle;
       ball.vx = Math.cos(exitAngle) * newSpd;
       ball.vy = Math.sin(exitAngle) * newSpd;
       ball.inFlight = true;
-      // Nudge ball well outside tube to prevent immediate re-capture
-      ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 14);
-      ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 14);
-      // Cooldown — 30 frames before ball can re-enter this same tube
+      // Position ball at socket — chaining logic will move it if needed
+      ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 6);
+      ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 6);
       ball._tubeExitFrom = this.id;
-      ball._tubeExitCooldown = 30;
-      return { ball: ball, socket: exitSocket };
+      ball._tubeExitCooldown = 20;
+      return { ball: ball, socket: exitSocket, exitA: exitA };
     }
     // Update ball position to follow path
     var pos = this._pointAtT(this._ballT);
@@ -558,25 +555,33 @@ class TubeManager {
       var result = this.tubes[ti].update();
       if (result) {
         var exitedBall = result.ball;
+        var exitedTube = this.tubes[ti];
         exitedBall._inTube  = null;
         exitedBall.pinned   = false;
         exitedBall.inFlight = true;
-        // Immediately try to chain into a connected tube
-        var exitedTube = this.tubes[ti];
-        var conn = exitedTube.connectedA || exitedTube.connectedB;
-        if (conn) {
-          var connTube = conn.tube;
-          if (!connTube._ball && !exitedBall._inTube) {
-            // Temporarily clear cooldown for the connected tube specifically
-            var savedFrom = exitedBall._tubeExitFrom;
-            var savedCooldown = exitedBall._tubeExitCooldown;
-            exitedBall._tubeExitCooldown = 0;
-            if (!connTube.tryCapture(exitedBall)) {
-              // Restore cooldown if chaining failed
-              exitedBall._tubeExitFrom = savedFrom;
-              exitedBall._tubeExitCooldown = savedCooldown;
-            }
-          }
+
+        // Socket-aware chaining: find the connected tube on the exit socket
+        var exitSide = result.exitA ? 'A' : 'B';
+        var connSlot = exitSide === 'A' ? exitedTube.connectedA : exitedTube.connectedB;
+
+        if (connSlot && !connSlot.tube._ball) {
+          var nextTube = connSlot.tube;
+          var enterSide = connSlot.side;  // which socket of nextTube to enter
+
+          // Directly inject ball into next tube from the correct socket
+          nextTube._ball   = exitedBall;
+          nextTube._ballT  = enterSide === 'A' ? 0 : 1;
+          nextTube._ballDir = enterSide === 'A' ? 1 : -1;
+          nextTube._ballV  = exitedBall._inTubeSpeed || Math.hypot(exitedBall.vx, exitedBall.vy);
+          exitedBall._inTube = nextTube;
+          exitedBall.pinned  = true;
+          exitedBall.inFlight = false;
+          exitedBall._tubeExitFrom = null;
+          exitedBall._tubeExitCooldown = 0;
+          // Place ball at entry socket position
+          var entrySock = enterSide === 'A' ? nextTube.socketA() : nextTube.socketB();
+          exitedBall.x = entrySock.x;
+          exitedBall.y = entrySock.y;
         }
       }
     }
