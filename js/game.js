@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1476;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1477;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -53,7 +53,6 @@ class Game {
     this._tubeDragging  = null;
     this._editorTubeMode = false;
     this._viewScrollY     = 0;   // px the whole view is shifted up
-    this._viewZoom       = 1.0;  // 1.0 = normal, 0.5 = zoomed out 2x
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
@@ -315,15 +314,7 @@ class Game {
     function getPos(e) {
       var rect = canvas.getBoundingClientRect();
       var src  = e.touches ? e.touches[0] : e;
-      var sx = src.clientX - rect.left;
-      var sy = src.clientY - rect.top;
-      var z  = self._viewZoom || 1.0;
-      var fY = self.floorY();
-      // Convert screen coords to world coords using the zoom transform:
-      // world = (screen - anchor) / z + anchor, where anchor = (W, floorY)
-      var wx = (sx - canvas.width) / z + canvas.width;
-      var wy = (sy - fY) / z + fY;
-      return { x: sx, y: sy, wx: wx, wy: wy };
+      return { x: src.clientX - rect.left, y: src.clientY - rect.top };
     }
 
     function isUI(t) {
@@ -340,12 +331,7 @@ class Game {
         self._lastPinchAngle = undefined;
         self._editorPinchStart = null;
         self._tubePinchStart = null;
-        if (!self._editorMode) {
-          // Play area pinch-to-zoom
-          var pp0b = e.touches[0], pp1b = e.touches[1];
-          self._playPinchStartDist = Math.hypot(pp1b.clientX-pp0b.clientX, pp1b.clientY-pp0b.clientY);
-          self._playPinchStartZoom = self._viewZoom || 1.0;
-        }
+
         if (self._editorTubeMode) {
           var rect2 = self.canvas.getBoundingClientRect();
           var z5 = self._viewZoom || 1.0;
@@ -399,7 +385,7 @@ class Game {
 
       var pos = getPos(e);
       // World position (zoom-adjusted) for game interactions
-      var _worldPos = { x: pos.wx || pos.x, y: pos.wy || pos.y };
+      var _worldPos = { x: pos.x, y: pos.y };
 
       // ── Corner HUD buttons — only when editor is closed ─────────────────────
       if (!self._editorMode) {
@@ -454,7 +440,7 @@ class Game {
       if (self._editorMode) {
         // Taps in the chute column (right strip) always start a scroll — never build there
         var chuteX = self.W - 50;
-        if (pos.x >= chuteX && pos.y < self.floorY()) {
+        if (pos.x >= chuteX && pos.y < self.floorY() + (self._viewScrollY || 0)) {
           self._editorScrollPending  = true;
           self._editorScrollDragging = false;
           self._editorScrollStart    = self._viewScrollY || 0;
@@ -1219,7 +1205,7 @@ class Game {
       }
       if (!self.sling) return;
       var pos = getPos(e);
-      self.sling.pullX = pos.wx; self.sling.pullY = pos.wy;
+      self.sling.pullX = pos.x; self.sling.pullY = pos.y;
       var dx = self.sling.anchorX - pos.x, dy = self.sling.anchorY - pos.y;
       var dist = Math.hypot(dx, dy);
       if (dist > SLING_MIN_OFFSET && window.Sound) Sound.stretch(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
@@ -1457,8 +1443,7 @@ class Game {
           mbrick._angularV = (mbrick._angularV || 0) * -0.3;
         }
         // Bounce off chute left wall
-        var _z5 = this._viewZoom||1.0;
-        var chuteLeftX = this.W - 46/_z5;
+        var chuteLeftX = this.W - 46;
         if (mbrick.x + bHWall > chuteLeftX) {
           mbrick.x = chuteLeftX - bHWall;
           mbrick._vx = -Math.abs(mbrick._vx || 0) * bWallBounce;
@@ -1516,13 +1501,11 @@ class Game {
         var bs = BallSettings[obj.type] || BallSettings.bouncer;
         // Run multiple sub-steps at reduced scale for slow-mo accuracy
         var steps = sm < 0.3 ? 1 : 1;
-        var z3 = this._viewZoom || 1.0;
-        Physics.stepObject(obj, this.W / z3, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
+        Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
           var touchingFloor  = obj.y + obj.r >= floorY - 1;
-          var _wz = this._viewZoom || 1.0;
-          var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W / _wz - 1;
+          var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
           var touchingTop    = obj.y - obj.r <= 1;
           var touchingChute  = obj.y >= g2.TOP_Y && obj.x + obj.r >= g2.LEFT_X - 1;
           if ((touchingWall || touchingTop || touchingChute) && !touchingFloor) {
@@ -1550,8 +1533,7 @@ class Game {
 
     // ── Cap + piston physics ─────────────────────────────────────────────────
     if (this._pistonCapY !== undefined) {
-      var _z6 = this._viewZoom||1.0;
-      var capLeft2 = this.W - 46/_z6;
+      var capLeft2 = this.W - 46;
       // Store prev positions BEFORE iterating so delta is valid for all balls
       var _pistonPrevY1 = this._pistonPrevY1 !== undefined ? this._pistonPrevY1 : this._pistonY1;
       var _pistonPrevY2 = this._pistonPrevY2 !== undefined ? this._pistonPrevY2 : this._pistonY2;
@@ -2033,7 +2015,7 @@ class Game {
       var g3 = this._chuteGeom();
       if (obj.x + obj.r >= g3.LEFT_X - 2)   { nx = -1; ny =  0; } // chute left wall → launch left
       else if (obj.x - obj.r <= 2)           { nx =  1; ny =  0; } // left wall → launch right
-      else if (obj.x + obj.r >= this.W/(this._viewZoom||1.0) - 2)  { nx = -1; ny =  0; } // right wall → launch left
+      else if (obj.x + obj.r >= this.W - 2)  { nx = -1; ny =  0; } // right wall → launch left → launch left
       else if (obj.y - obj.r <= 2)            { nx =  0; ny =  1; } // ceiling → launch down
       else                                    { nx =  0; ny = -1; } // default → launch up
       obj._stickNx = nx;
@@ -2137,7 +2119,7 @@ class Game {
   //   Control point: (leftX, floorY)  ← corner of the J
 
   _chuteGeom() {
-    var W        = this.W;   // screen width — chute is drawn outside zoom transform
+    var W        = this.W;
     var floorY   = this.floorY();
     var CHUTE_W  = 46;
     var TURN_R   = 30;
@@ -2857,30 +2839,22 @@ class Game {
   // ── Rendering ──────────────────────────────────────────────────────────────
 
   _draw() {
-    var ctx = this.ctx, W = this.W, H = this.H;
-    var z       = this._viewZoom || 1.0;
-    var vSY     = this._editorMode ? 0 : (this._viewScrollY || 0);  // editor scroll is separate
-    var floorY  = this.floorY();
+    var ctx = this.ctx, W = this.W, H = this.H, floorY = this.floorY();
+    var vSY = this._viewScrollY || 0;
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
-
-    // ── Background — always full screen, outside zoom transform ──────────────
+    if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
-
-    // ── Zoom transform: clip to play area, anchor bottom-right ───────────────
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, W, floorY); ctx.clip();
-    ctx.translate(W, floorY);
-    ctx.scale(z, z);
-    ctx.translate(-W, -floorY);
-    if (vSY !== 0) ctx.translate(0, vSY);
 
     for (var g = 0; g < this.objects.length; g++) {
       if (this.objects[g].type === BALL_TYPES.GRAVITY && this.objects[g].gravActive) this._drawGravityRange(this.objects[g]);
     }
 
+    this._drawFloor(floorY);
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
+    if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
+    this._drawChute();
     if (this.barrier) this.barrier.draw(ctx);
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
@@ -2894,22 +2868,10 @@ class Game {
     this.tubes.draw(ctx, 'above', this.frame, this._tubeSelected);
     if (this.sling) this._drawSling();
     this._drawSparks();
-    ctx.restore();  // restore zoom+clip
-
-    // ── Fixed screen-space UI ─────────────────────────────────────────────────
-    // Chute drawn AFTER restore — always at fixed right-side screen position
-    if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
-    this._drawChute();
-    this._drawFloor(floorY);
     if (this._editorMode) this._drawEditor();
+    if (vSY !== 0) ctx.restore();
     this._drawHudClearButtons();
     if (!this._editorMode) {
-      if (z < 0.99) {
-        ctx.fillStyle = 'rgba(0,200,255,0.5)';
-        ctx.font = "bold 9px 'Share Tech Mono',monospace";
-        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-        ctx.fillText('ZOOM ' + Math.round(z * 100) + '%', 8, floorY - 14);
-      }
       this._drawSpeedSlider();
       this._drawCornerButtons();
     }
