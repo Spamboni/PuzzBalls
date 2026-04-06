@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1463;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1464;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -998,7 +998,9 @@ class Game {
         if (obj.stuckTo === '_wall_') continue;
         // Allow: resting balls OR in-flight balls that are within the sling zone
         var inZone = obj.y >= zoneTop - obj.r;
-        if (obj.inFlight && !inZone) continue;
+        // Hard cap: never grab balls that drifted way above the floor line
+        var hardCap = self.floorY() - (self._slingZoneH || 100) - 60;
+        if (obj.inFlight && (!inZone || obj.y < hardCap)) continue;
         var dx = pos.x - obj.x, dy = pos.y - obj.y;
         var hit = false;
         if (self._aimMode === 'push') {
@@ -3825,30 +3827,32 @@ class Game {
       ctx.fillText((nc.note||'C')+(nc.octave||4), noteX+1, row2Y+1);
     }
 
+    // ── Row 2b: GRID | SNAP | ROT SNAP | GR SIZE | ADV ─────────────────────
+    var row2bY = row2Y + rH2 + 4;
     // GRID toggle
-    var gridX = noteX + 30;
+    var gridX = padding;
     var gridOn = window._showEditorGrid || false;
-    this._editorGridBtn = { x: gridX, y: row2Y, w: 32, h: rH2 };
+    this._editorGridBtn = { x: gridX, y: row2bY, w: 32, h: rH2 };
     ctx.fillStyle = gridOn ? 'rgba(0,180,100,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(gridX, row2Y, 32, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(gridX, row2bY, 32, rH2, 3); ctx.fill();
     ctx.strokeStyle = gridOn ? '#00cc66' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(gridX, row2Y, 32, rH2, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(gridX, row2bY, 32, rH2, 3); ctx.stroke();
     ctx.fillStyle = gridOn ? '#00ff88' : '#446655';
     ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('GRID', gridX + 16, row2Y + rH2/2);
+    ctx.fillText('GRID', gridX + 16, row2bY + rH2/2);
 
     // SNAP-GRID toggle
     var snapGX = gridX + 36;
     var snapGOn = window._snapToGrid || false;
-    this._editorSnapGridBtn = { x: snapGX, y: row2Y, w: 34, h: rH2 };
+    this._editorSnapGridBtn = { x: snapGX, y: row2bY, w: 34, h: rH2 };
     ctx.fillStyle = snapGOn ? 'rgba(0,150,255,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(snapGX, row2Y, 34, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(snapGX, row2bY, 34, rH2, 3); ctx.fill();
     ctx.strokeStyle = snapGOn ? '#00aaff' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(snapGX, row2Y, 34, rH2, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(snapGX, row2bY, 34, rH2, 3); ctx.stroke();
     ctx.fillStyle = snapGOn ? '#44ccff' : '#445566';
     ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('SNAP', snapGX + 17, row2Y + rH2/2 - 3);
-    ctx.fillText('GRID', snapGX + 17, row2Y + rH2/2 + 4);
+    ctx.fillText('SNAP', snapGX + 17, row2bY + rH2/2 - 3);
+    ctx.fillText('GRID', snapGX + 17, row2bY + rH2/2 + 4);
 
     // UNDO/REDO buttons at start of row 2
     var undoW2 = 38;
@@ -3878,40 +3882,40 @@ class Game {
     var snaps3 = [0, 15, 30, 45]; var sLabels3 = ['ROT:FREE','ROT:15°','ROT:30°','ROT:45°'];
     var sIdx3 = snaps3.indexOf(this._editorSnapDeg || 0);
     var rotSnapW = 52;
-    this._editorSnapBtn = { x: rotSnapX, y: row2Y, w: rotSnapW, h: rH2 };
+    this._editorSnapBtn = { x: rotSnapX, y: row2bY, w: rotSnapW, h: rH2 };
     ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? 'rgba(255,170,0,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(rotSnapX, row2Y, rotSnapW, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(rotSnapX, row2bY, rotSnapW, rH2, 3); ctx.fill();
     ctx.strokeStyle = (this._editorSnapDeg||0) > 0 ? '#ffaa00' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(rotSnapX, row2Y, rotSnapW, rH2, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(rotSnapX, row2bY, rotSnapW, rH2, 3); ctx.stroke();
     ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? '#ffcc44' : '#556677';
     ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(sLabels3[sIdx3], rotSnapX + rotSnapW/2, row2Y + rH2/2);
+    ctx.fillText(sLabels3[sIdx3], rotSnapX + rotSnapW/2, row2bY + rH2/2);
 
     // Grid size value display (tap to edit) — beside SNAP-GRID
     var gSizeX = rotSnapX + rotSnapW + 4;
     var gSizeW = 36;
     var gSizeVal = window._gridSize || 20;
-    this._editorGridSizeBtn = { x: gSizeX, y: row2Y, w: gSizeW, h: rH2 };
+    this._editorGridSizeBtn = { x: gSizeX, y: row2bY, w: gSizeW, h: rH2 };
     ctx.fillStyle = 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(gSizeX, row2Y, gSizeW, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(gSizeX, row2bY, gSizeW, rH2, 3); ctx.fill();
     ctx.strokeStyle = '#334466'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(gSizeX, row2Y, gSizeW, rH2, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(gSizeX, row2bY, gSizeW, rH2, 3); ctx.stroke();
     ctx.fillStyle = '#88aabb'; ctx.font = "bold 6px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('GR:' + gSizeVal, gSizeX + gSizeW/2, row2Y + rH2/2);
+    ctx.fillText('GR:' + gSizeVal, gSizeX + gSizeW/2, row2bY + rH2/2);
 
     // ADV/BASIC toggle — end of row 2
     var advOn = (window._editorAdvanced !== false);  // default true
     var advX = W - 44, advW = 40;
-    this._editorAdvBtn = { x: advX, y: row2Y, w: advW, h: rH2 };
+    this._editorAdvBtn = { x: advX, y: row2bY, w: advW, h: rH2 };
     ctx.fillStyle = advOn ? 'rgba(255,100,0,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(advX, row2Y, advW, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(advX, row2bY, advW, rH2, 3); ctx.fill();
     ctx.strokeStyle = advOn ? '#ff8800' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(advX, row2Y, advW, rH2, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(advX, row2bY, advW, rH2, 3); ctx.stroke();
     ctx.fillStyle = advOn ? '#ffaa44' : '#556677';
     ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(advOn ? 'ADV' : 'BASIC', advX + advW/2, row2Y + rH2/2 - 3);
-    ctx.fillText(advOn ? '▲' : '▼', advX + advW/2, row2Y + rH2/2 + 4);
+    ctx.fillText(advOn ? 'ADV' : 'BASIC', advX + advW/2, row2bY + rH2/2 - 3);
+    ctx.fillText(advOn ? '▲' : '▼', advX + advW/2, row2bY + rH2/2 + 4);
 
     // ── ROWS 3–7: sliders ────────────────────────────────────────────────────
     var sliderRowH = 22;
@@ -3921,7 +3925,7 @@ class Game {
     var halfW2     = Math.floor((W - 16) / 2);
 
     var advOn2 = (window._editorAdvanced !== false);
-    var row3Y = row2Y + rH2 + 7;
+    var row3Y = row2bY + rH2 + 6;  // below row2b
     var row4Y = row3Y + (advOn2 ? sliderRowH + 5 : 0);
     var row5Y = row4Y + sliderRowH + 5;
     var row6Y = row5Y + (advOn2 ? sliderRowH + 5 : 0);
