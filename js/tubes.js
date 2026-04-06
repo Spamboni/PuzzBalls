@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1471;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1472;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -308,22 +308,27 @@ class TubePiece {
       ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
       ctx.fill();
 
-      // ── Ball inside tube — drawn under all edges using destination-over ───────
+      // ── Ball inside tube — clipped to tube body so edges always show on top ────
       if (this._ball && style !== 'solid') {
         var ballPos0 = this._pointAtT(this._ballT);
         var bs0 = window.BallSettings && BallSettings[this._ball.type] || {};
         var bGlow0 = bs0.glow || '#ffffff';
-        var bAlpha0 = style === 'glass' ? 0.82 : 0.58;
-        // destination-over: new content draws BEHIND existing content
+        var bAlpha0 = style === 'glass' ? 0.85 : 0.65;
+        // Clip to tube body polygon so ball never bleeds past the tube walls
         ctx.save();
-        ctx.globalCompositeOperation = 'destination-over';
+        ctx.beginPath();
+        ctx.moveTo(edgeA[0].x, edgeA[0].y);
+        for (var bi2 = 1; bi2 < edgeA.length; bi2++) ctx.lineTo(edgeA[bi2].x, edgeA[bi2].y);
+        for (var bi2 = edgeB.length-1; bi2 >= 0; bi2--) ctx.lineTo(edgeB[bi2].x, edgeB[bi2].y);
+        ctx.closePath();
+        ctx.clip();
         ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
         ctx.fillStyle = bGlow0 + Math.round(bAlpha0 * 255).toString(16).padStart(2,'0');
         ctx.fill();
         var bgr = ctx.createRadialGradient(
           ballPos0.x - this._ball.r*0.2, ballPos0.y - this._ball.r*0.2, 0,
           ballPos0.x, ballPos0.y, this._ball.r * 0.78);
-        bgr.addColorStop(0, 'rgba(255,255,255,0.45)');
+        bgr.addColorStop(0, 'rgba(255,255,255,0.5)');
         bgr.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
         ctx.fillStyle = bgr; ctx.fill();
