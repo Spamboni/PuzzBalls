@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1474;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1475;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -357,14 +357,14 @@ class TubePiece {
         ctx.restore();
       }
 
-      // ── Bright rim line on both edges ─────────────────────────────────────────
+      // ── Bright rim line on both edges — thicker to show over ball ─────────────
       [edgeA, edgeB].forEach(function(edge) {
         ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
         for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
-        ctx.lineWidth   = style === 'solid' ? 2.2 : 1.4;
-        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.80)) + ')';
-        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.9)';
-        ctx.shadowBlur  = style === 'solid' ? 8 : 5;
+        ctx.lineWidth   = style === 'solid' ? 3.0 : 2.5;
+        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.98 : 0.92)) + ')';
+        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
+        ctx.shadowBlur  = style === 'solid' ? 10 : 7;
         ctx.stroke();
         ctx.shadowBlur  = 0;
       });
