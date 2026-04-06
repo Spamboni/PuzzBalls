@@ -576,6 +576,20 @@ async function getFileSHA(token, repo, branch, path) {
   return j.sha || null;
 }
 
+// Compute Git blob SHA (sha1 of "blob <size>\0<content>")
+// This matches what GitHub stores, so we can skip unchanged files
+async function computeGitBlobSHA(arrayBuffer) {
+  var bytes = new Uint8Array(arrayBuffer);
+  var header = 'blob ' + bytes.length + '\0';
+  var headerBytes = new TextEncoder().encode(header);
+  var combined = new Uint8Array(headerBytes.length + bytes.length);
+  combined.set(headerBytes, 0);
+  combined.set(bytes, headerBytes.length);
+  var hashBuffer = await crypto.subtle.digest('SHA-1', combined);
+  var hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(function(b) { return b.toString(16).padStart(2,'0'); }).join('');
+}
+
 async function pushFile(token, repo, branch, path, content, sha, commitMsg) {
   var body = {
     message: commitMsg,
@@ -673,10 +687,20 @@ async function deploy() {
         var buf = await f.entry.async('arraybuffer');
         var b64 = arrayBufferToBase64(buf);
 
-        // Get current SHA (needed to update existing files)
-        var sha = await getFileSHA(token, repo, branch, repoPath);
+        // Get current SHA from GitHub
+        var remoteSHA = await getFileSHA(token, repo, branch, repoPath);
 
-        var ok = await pushFile(token, repo, branch, repoPath, b64, sha, commitMsg);
+        // Compute local Git blob SHA and compare — skip if identical
+        if (remoteSHA) {
+          var localSHA = await computeGitBlobSHA(buf);
+          if (localSHA === remoteSHA) {
+            skipped++;
+            log('  = ' + repoPath + ' (unchanged)', 'dim');
+            continue;
+          }
+        }
+
+        var ok = await pushFile(token, repo, branch, repoPath, b64, remoteSHA, commitMsg);
         if (ok) {
           pushed++;
           log('  ✓ ' + repoPath, 'ok');
