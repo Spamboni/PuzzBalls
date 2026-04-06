@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1467;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1468;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -326,15 +326,30 @@ class Game {
 
     function onDown(e) {
       if (isUI(e.target)) return;
-      // Two-finger = start pinch
+      // Two-finger = start pinch — init state immediately
       if (e.touches && e.touches.length >= 2) {
         self._lastPinchAngle = undefined;
         self._editorPinchStart = null;
         self._tubePinchStart = null;
-        // In tube editor: make sure selected tube is set as dragging for pinch
         if (self._editorTubeMode && self._tubeSelected) {
           self._tubeDragging = self._tubeSelected;
           self._tubeDragOffX = 0; self._tubeDragOffY = 0;
+          // Pre-compute pinch start state immediately so first move works
+          var rect2 = self.canvas.getBoundingClientRect();
+          var vSY2 = self._viewScrollY || 0;
+          var pt0 = e.touches[0], pt1 = e.touches[1];
+          var pp0 = { x: pt0.clientX - rect2.left, y: pt0.clientY - rect2.top - vSY2 };
+          var pp1 = { x: pt1.clientX - rect2.left, y: pt1.clientY - rect2.top - vSY2 };
+          var td2 = self._tubeDragging;
+          self._tubePinchStart = {
+            p0:pp0, p1:pp1, x:td2.x, y:td2.y,
+            rot:td2.rotation, len:td2.length,
+            dist: Math.hypot(pp1.x-pp0.x, pp1.y-pp0.y),
+            angle: Math.atan2(pp1.y-pp0.y, pp1.x-pp0.x),
+          };
+        } else if (!self._editorTubeMode && self._editorSelected) {
+          // Pre-init brick pinch too
+          self._editorPinchStart = null;
         }
         return;
       }
@@ -3083,8 +3098,8 @@ class Game {
     var rect = this.canvas.getBoundingClientRect();
     var vSY  = this._viewScrollY || 0;
     var t0 = touches[0], t1 = touches[1];
-    var p0 = { x: t0.clientX - rect.left, y: t0.clientY - rect.top - vSY };
-    var p1 = { x: t1.clientX - rect.left, y: t1.clientY - rect.top - vSY };
+    var p0 = { x: t0.clientX - rect.left, y: t0.clientY - rect.top };
+    var p1 = { x: t1.clientX - rect.left, y: t1.clientY - rect.top };
     var sb = this._editorSelected;
 
     if (!this._editorPinchStart) {
@@ -3763,7 +3778,9 @@ class Game {
     var transOn3 = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
 
     // ── ROW 2: UNDO/REDO | MOV | ↔ROT | PIVOT 3×3 | 🎵 | GRID | SNAP-GRID ───
-    var row2Y = btnY + btnH + 8;
+    // row2Y must be below the type sub-row (typeRowY + typeRowH + gap)
+    var _typeRowEnd = btnY + btnH + 4 + 26 + 5;  // matches typeRowY + typeRowH + gap
+    var row2Y = _typeRowEnd + 4;
     var rH2   = 22;
     // MOV offset: after undo(38) + redo(38) + gaps
     var movW3 = 46;
@@ -4328,7 +4345,7 @@ class Game {
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       var dispVal = label === 'ROT' ? Math.round(val) + '°' : label === 'SPD' ? val.toFixed(1) + 'x' : Math.round(val) + 'px';
       ctx.fillText(dispVal, thX + 7, sy + rH/2);
-      return { x: sx + lblW, y: sy + 2, w: trW, h: rH - 4, trackX: sx+lblW, trackW: trW, min, max, label };
+      return { x: sx + lblW - 10, y: sy - 6, w: trW + 20, h: rH + 12, trackX: sx+lblW, trackW: trW, min: min, max: max, label: label };
     };
 
     this._tubeSliderLen = drawTS('LEN', lenVal, 30, 300, padding, row3Y, halfW);
