@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1475;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1476;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -454,7 +454,7 @@ class Game {
       if (self._editorMode) {
         // Taps in the chute column (right strip) always start a scroll — never build there
         var chuteX = self.W - 50;
-        if (pos.x >= chuteX && pos.y < self.floorY() + (self._viewScrollY || 0)) {
+        if (pos.x >= chuteX && pos.y < self.floorY()) {
           self._editorScrollPending  = true;
           self._editorScrollDragging = false;
           self._editorScrollStart    = self._viewScrollY || 0;
@@ -1517,7 +1517,7 @@ class Game {
         // Run multiple sub-steps at reduced scale for slow-mo accuracy
         var steps = sm < 0.3 ? 1 : 1;
         var z3 = this._viewZoom || 1.0;
-        Physics.stepObject(obj, this.W / z3, floorY / z3, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
+        Physics.stepObject(obj, this.W / z3, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
           var touchingFloor  = obj.y + obj.r >= floorY - 1;
@@ -2881,8 +2881,6 @@ class Game {
 
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
-    if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
-    this._drawChute();
     if (this.barrier) this.barrier.draw(ctx);
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
