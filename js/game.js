@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1474;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1475;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -347,11 +347,18 @@ class Game {
           self._playPinchStartZoom = self._viewZoom || 1.0;
         }
         if (self._editorTubeMode) {
-          // Hit-test at first finger to find tube (handles simultaneous two-finger touch)
           var rect2 = self.canvas.getBoundingClientRect();
+          var z5 = self._viewZoom || 1.0;
+          var fY2 = self.floorY();
+          var W2 = self.W;
+          function toWorld2(t) {
+            var sx = t.clientX - rect2.left;
+            var sy = t.clientY - rect2.top;
+            return { x: (sx - W2) / z5 + W2, y: (sy - fY2) / z5 + fY2 };
+          }
           var pt0 = e.touches[0], pt1 = e.touches[1];
-          var pp0 = { x: pt0.clientX - rect2.left, y: pt0.clientY - rect2.top };
-          var pp1 = { x: pt1.clientX - rect2.left, y: pt1.clientY - rect2.top };
+          var pp0 = toWorld2(pt0);
+          var pp1 = toWorld2(pt1);
           // Find tube under first finger if none selected
           if (!self._tubeSelected) {
             var tubes2 = self.tubes.tubes;
@@ -1450,7 +1457,8 @@ class Game {
           mbrick._angularV = (mbrick._angularV || 0) * -0.3;
         }
         // Bounce off chute left wall
-        var chuteLeftX = (this.W / (this._viewZoom||1.0)) - 46;
+        var _z5 = this._viewZoom||1.0;
+        var chuteLeftX = this.W - 46/_z5;
         if (mbrick.x + bHWall > chuteLeftX) {
           mbrick.x = chuteLeftX - bHWall;
           mbrick._vx = -Math.abs(mbrick._vx || 0) * bWallBounce;
@@ -1542,7 +1550,8 @@ class Game {
 
     // ── Cap + piston physics ─────────────────────────────────────────────────
     if (this._pistonCapY !== undefined) {
-      var capLeft2 = (this.W / (this._viewZoom||1.0)) - 46;
+      var _z6 = this._viewZoom||1.0;
+      var capLeft2 = this.W - 46/_z6;
       // Store prev positions BEFORE iterating so delta is valid for all balls
       var _pistonPrevY1 = this._pistonPrevY1 !== undefined ? this._pistonPrevY1 : this._pistonY1;
       var _pistonPrevY2 = this._pistonPrevY2 !== undefined ? this._pistonPrevY2 : this._pistonY2;
@@ -2128,17 +2137,14 @@ class Game {
   //   Control point: (leftX, floorY)  ← corner of the J
 
   _chuteGeom() {
-    var z4 = this._viewZoom || 1.0;
-    var W        = this.W / z4;
+    var W        = this.W;   // screen width — chute is drawn outside zoom transform
     var floorY   = this.floorY();
     var CHUTE_W  = 46;
     var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 200;   // lowered — PULL/PUSH moved to corner
-    // The left wall goes straight down from TOP_Y to DIAG_Y,
-    // then angles 45° right up to screen top-right corner.
-    var DIAG_Y   = TOP_Y;  // diagonal starts right at the top of the button area
+    var TOP_Y    = 200;
+    var DIAG_Y   = TOP_Y;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, DIAG_Y };
   }
 
@@ -2892,9 +2898,12 @@ class Game {
     this._drawSparks();
     ctx.restore();  // restore zoom+clip
 
-    // ── Fixed screen-space UI (drawn after restore, no zoom/clip) ─────────────
+    // ── Fixed screen-space UI ─────────────────────────────────────────────────
+    // Chute drawn AFTER restore — always at fixed right-side screen position
+    if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
+    this._drawChute();
     this._drawFloor(floorY);
-    if (this._editorMode) this._drawEditor();  // editor panel always below floor
+    if (this._editorMode) this._drawEditor();
     this._drawHudClearButtons();
     if (!this._editorMode) {
       if (z < 0.99) {
@@ -3221,10 +3230,18 @@ class Game {
   _tubeHandleTouch(touches) {
     if (!this._tubeDragging) return;
     var rect = this.canvas.getBoundingClientRect();
-    var vSY  = this._viewScrollY || 0;
+    var z    = this._viewZoom || 1.0;
+    var fY   = this.floorY();
+    var W    = this.W;
     var t0 = touches[0], t1 = touches[1];
-    var p0 = { x: t0.clientX - rect.left, y: t0.clientY - rect.top - vSY };
-    var p1 = { x: t1.clientX - rect.left, y: t1.clientY - rect.top - vSY };
+    // Convert screen coords to world coords using zoom transform inverse
+    function toWorld(t) {
+      var sx = t.clientX - rect.left;
+      var sy = t.clientY - rect.top;
+      return { x: (sx - W) / z + W, y: (sy - fY) / z + fY };
+    }
+    var p0 = toWorld(t0);
+    var p1 = toWorld(t1);
     var td = this._tubeDragging;
 
     if (!this._tubePinchStart) {
