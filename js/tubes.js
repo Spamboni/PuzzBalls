@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1470;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1471;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -308,17 +308,18 @@ class TubePiece {
       ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
       ctx.fill();
 
-      // ── Ball inside tube — drawn early so tube edges overlay it ─────────────
+      // ── Ball inside tube — drawn under all edges using destination-over ───────
       if (this._ball && style !== 'solid') {
         var ballPos0 = this._pointAtT(this._ballT);
         var bs0 = window.BallSettings && BallSettings[this._ball.type] || {};
         var bGlow0 = bs0.glow || '#ffffff';
         var bAlpha0 = style === 'glass' ? 0.82 : 0.58;
-        // No shadow — shadow bleeds above the rim lines drawn over this
+        // destination-over: new content draws BEHIND existing content
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-over';
         ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
         ctx.fillStyle = bGlow0 + Math.round(bAlpha0 * 255).toString(16).padStart(2,'0');
         ctx.fill();
-        // Inner gradient — slightly lighter center
         var bgr = ctx.createRadialGradient(
           ballPos0.x - this._ball.r*0.2, ballPos0.y - this._ball.r*0.2, 0,
           ballPos0.x, ballPos0.y, this._ball.r * 0.78);
@@ -326,6 +327,7 @@ class TubePiece {
         bgr.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
         ctx.fillStyle = bgr; ctx.fill();
+        ctx.restore();
       }
 
       // ── Outer glow (wide soft halo along both edges) ──────────────────────────
