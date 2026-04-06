@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1478;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1479;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -308,22 +308,40 @@ class TubePiece {
       ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
       ctx.fill();
 
-      // ── Ball inside tube — small and dim, drawn first ────────────────────────
+      // ── Ball inside tube — drawn UNDER walls/highlights for 3D depth ─────────
       if (this._ball && style !== 'solid') {
         var ballPos0 = this._pointAtT(this._ballT);
         var bs0 = window.BallSettings && BallSettings[this._ball.type] || {};
-        var bGlow0 = bs0.glow || '#ffffff';
+        var bColor0 = bs0.color || '#4488ff';
+        var bGlow0  = bs0.glow  || '#ffffff';
+        var bR0 = this._ball.r * 0.85;
         ctx.save();
+        // Clip to tube body so ball is masked by tube edges
         ctx.beginPath();
         ctx.moveTo(edgeA[0].x, edgeA[0].y);
         for (var bi2 = 1; bi2 < edgeA.length; bi2++) ctx.lineTo(edgeA[bi2].x, edgeA[bi2].y);
         for (var bi2 = edgeB.length-1; bi2 >= 0; bi2--) ctx.lineTo(edgeB[bi2].x, edgeB[bi2].y);
         ctx.closePath();
         ctx.clip();
-        // Draw ball small and dim — tube walls will cover outer edges
-        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.55, 0, Math.PI * 2);
-        ctx.fillStyle = bGlow0 + '88';
-        ctx.fill();
+        // Soft glow behind ball
+        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, bR0 + 4, 0, Math.PI * 2);
+        ctx.fillStyle = bGlow0 + '33';
+        ctx.shadowColor = bGlow0; ctx.shadowBlur = 10;
+        ctx.fill(); ctx.shadowBlur = 0;
+        // Main ball body
+        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, bR0, 0, Math.PI * 2);
+        ctx.fillStyle = bColor0; ctx.fill();
+        // Inner glow
+        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, bR0 * 0.7, 0, Math.PI * 2);
+        ctx.fillStyle = bGlow0 + '55'; ctx.fill();
+        // Label
+        var lbl0 = bs0.label ? bs0.label.slice(0,3).toUpperCase() : '';
+        if (lbl0) {
+          ctx.font = 'bold ' + Math.max(6, Math.round(bR0 * 0.85)) + 'px monospace';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(lbl0, ballPos0.x, ballPos0.y);
+        }
         ctx.restore();
       }
 
