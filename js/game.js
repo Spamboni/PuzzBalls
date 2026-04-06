@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1480;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1500;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -751,9 +751,10 @@ class Game {
             }
           }
         }
-        // Scroll in chute area
+        // Scroll in chute area — only when tap is ABOVE the floor line
         var chuteX=self.W-50;
-        if (pos.x>=chuteX&&pos.y<self.floorY()+(self._viewScrollY||0)) {
+        var _scrollFloorY = self.floorY() + (self._viewScrollY||0);
+        if (pos.x>=chuteX && pos.y < self.floorY()) {
           self._editorScrollPending=true; self._editorScrollDragging=false;
           self._editorScrollStart=self._viewScrollY||0;
           self._editorScrollDragY=pos.y; return;
@@ -765,6 +766,31 @@ class Game {
       }
 
 
+      // SAVE/LOAD level taps (outside editor)
+      if (!self._editorMode) {
+        if (self._hudSaveLevelBtn) {
+          var slb=self._hudSaveLevelBtn;
+          if (pos.x>=slb.x&&pos.x<=slb.x+slb.w&&pos.y>=slb.y&&pos.y<=slb.y+slb.h) {
+            // Save current level to localStorage with prompt
+            var lname = window.prompt('Save level as:');
+            if (lname && lname.trim()) {
+              var levels = JSON.parse(localStorage.getItem('_pb_saved_levels')||'{}');
+              levels[lname.trim()] = self._serializeLevel ? self._serializeLevel() : {};
+              localStorage.setItem('_pb_saved_levels', JSON.stringify(levels));
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
+            }
+            return;
+          }
+        }
+        if (self._hudLoadLevelBtn) {
+          var llb=self._hudLoadLevelBtn;
+          if (pos.x>=llb.x&&pos.x<=llb.x+llb.w&&pos.y>=llb.y&&pos.y<=llb.y+llb.h) {
+            // TODO phase 2: show level list overlay
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+            return;
+          }
+        }
+      }
       // ── Ball selection: resting balls + balls within sling zone ────────────
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
       var zoneTop  = self.floorY() - zoneH2;
@@ -3352,21 +3378,21 @@ class Game {
     // Space intentionally empty in position 4
     this._editorDoneBtn       = btn('DONE',  W - padding - btnW1,        r1Y, btnW1, r1H, '#00ff88', false);
 
-    cY = r1Y + r1H + 3;
+    cY = r1Y + r1H + 6;
 
     // ── ROW 2: CLR BRICKS | CLR TUBES | CLR AFFECTORS | CLR RAMPS | CLR MOTORS
-    var r2H = 18;
+    var r2H = 20;
     var clrLabels = ['CLR BRICKS','CLR TUBES','CLR AFFECT','CLR RAMPS','CLR MOTORS'];
     var clrCols   = ['#ff6600','#00ffaa','#ff44cc','#ffcc00','#4488ff'];
-    var clrW = Math.floor((W - 16 - 4*2) / 5);
+    var clrW = Math.floor((W - 16 - 4*3) / 5);
     this._editorClrBtns = [];
     for (var ci2 = 0; ci2 < clrLabels.length; ci2++) {
-      var cbx = padding + ci2 * (clrW + 2);
+      var cbx = padding + ci2 * (clrW + 3);
       this._editorClrBtns.push(btn(clrLabels[ci2], cbx, cY, clrW, r2H, clrCols[ci2], false, {fs:7}));
       this._editorClrBtns[ci2].type = ci2;
       this._editorClrBtns[ci2]._needsLongPress = true;
     }
-    cY += r2H + 3;
+    cY += r2H + 5;
 
     // ── ROW 3: Tab bar — BRICKS | TUBES | AFFECTORS | RAMPS | MOTORS ─────────
     var tabH = 22, tabLabels = ['🧱 BRICKS','🔧 TUBES','⚡ AFFECT','📐 RAMPS','⚙ MOTORS'];
@@ -3482,7 +3508,8 @@ class Game {
       { id:'triangle_brick',   label:'TRI',    icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.moveTo(0,-8);c.lineTo(9,6);c.lineTo(-9,6);c.closePath(); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.stroke(); }},
       { id:'custom_brick',     label:'CUSTOM', icon: function(c,col){ c.strokeStyle=col; c.lineWidth=1.2; c.setLineDash([2,2]); c.beginPath(); c.roundRect(-9,-6,18,12,2); c.stroke(); c.setLineDash([]); c.fillStyle=col; c.font="bold 6px monospace"; c.textAlign='center'; c.textBaseline='middle'; c.fillText('+',0,0); }},
     ];
-    var stW = Math.floor((W - 16 - 3*3) / 4);
+    // Sub-type buttons only span left half of screen — snap controls stay right
+    var stW = Math.floor((W/2 - 16 - 3*3) / 4);
     var curType = this._editorBrickType || 'breakable_brick';
     this._editorTypeBtns = [];
     for (var sti = 0; sti < subTypes.length; sti++) {
@@ -3528,7 +3555,7 @@ class Game {
     // 3x3 pivot grid
     var pivX3  = padding + 4;
     var pivY3  = bRow1Y + bRowH + 4;
-    var pW9=18, pG9=2;
+    var pW9=22, pG9=3;
     var pivCols=['L','C','R'], pivRows2=['T','M','B'];
     var pivColors3=['#ffcc44','#44ccff','#ff8844'];
     var curPiv3 = sb2?(sb2._pivot||'CM'):(this._editorPivot||'CM');
@@ -3537,14 +3564,14 @@ class Game {
     for (var pc=0; pc<3; pc++) {
       for (var pr=0; pr<3; pr++) {
         var pivKey=pivCols[pc]+pivRows2[pr];
-        var px9=pivX3+pc*(pW9+pG9), py9=pivY3+pr*(pW9*0.6+pG9);
+        var px9=pivX3+pc*(pW9+pG9), py9=pivY3+pr*(pW9*0.7+pG9);
         var pAct9=pivEnabled2&&curPiv3===pivKey;
         ctx.globalAlpha=pivEnabled2?1.0:0.28;
         ctx.fillStyle=pAct9?pivColors3[pc]+'44':'rgba(0,10,30,0.6)';
-        ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.6,2); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.7,2); ctx.fill();
         ctx.strokeStyle=pAct9?pivColors3[pc]:'#334455'; ctx.lineWidth=pAct9?1.5:0.6;
-        ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.6,2); ctx.stroke();
-        if(pAct9){ctx.fillStyle=pivColors3[pc];ctx.beginPath();ctx.arc(px9+pW9/2,py9+pW9*0.3,2,0,Math.PI*2);ctx.fill();}
+        ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.7,2); ctx.stroke();
+        if(pAct9){ctx.fillStyle=pivColors3[pc];ctx.beginPath();ctx.arc(px9+pW9/2,py9+pW9*0.35,2.5,0,Math.PI*2);ctx.fill();}
         ctx.globalAlpha=1.0;
         this._editorPivotRects.push({x:px9,y:py9,w:pW9,h:pW9*0.6,val:pivKey,enabled:pivEnabled2});
       }
@@ -4443,11 +4470,11 @@ class Game {
       ctx.fillText(labels2[ci], bx2 + btnW/2, btnY2 + btnH/2);
       this._hudClearBtns.push({ x:bx2, y:btnY2, w:btnW, h:btnH, type:ci });
     }
-    // SAVE/LOAD level buttons — visible outside editor, left of settings gear
+    // SAVE/LOAD level buttons — left of center in top bar, avoids ⟳ and ⚙ HTML buttons
     if (!this._editorMode) {
       var slBtnW = 44, slBtnH = 20, slY = 10, slGap = 4;
-      // Gear icon is drawn by UI at roughly W-36; place these left of it
-      var saveLX = W - 36 - (slBtnW + slGap) * 2;
+      // Place centered-left: after the back arrow (~60px) with some gap
+      var saveLX = 70;
       var loadLX = saveLX + slBtnW + slGap;
       ctx.fillStyle = 'rgba(0,8,22,0.85)';
       ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.fill();
