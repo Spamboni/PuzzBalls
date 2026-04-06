@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1459;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1460;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -852,6 +852,16 @@ class Game {
 
       // ── Speed slider + chute buttons — only when editor is CLOSED ─────────
       if (!self._editorMode) {
+      if (self._tubeSliderRect) {
+        var tsr2 = self._tubeSliderRect;
+        if (pos.y >= tsr2.y - 10 && pos.y <= tsr2.y + tsr2.h + 10 &&
+            pos.x >= tsr2.x - 15  && pos.x <= tsr2.x + tsr2.w + 15) {
+          self._draggingTubeSlider = true;
+          var tt2 = Math.max(0, Math.min(1, (pos.x - tsr2.x) / tsr2.w));
+          window._tubeSpeedMult = 0.1 + tt2 * 1.9;
+          return;
+        }
+      }
       if (self._zoneSliderRect) {
         var zsr = self._zoneSliderRect;
         if (pos.y >= zsr.y - 10 && pos.y <= zsr.y + zsr.h + 10 &&
@@ -1072,6 +1082,12 @@ class Game {
           self._pendingFloorBall = null;  // committed to sling drag
         }
       }
+      if (self._draggingTubeSlider && self._tubeSliderRect) {
+        var tsr3 = self._tubeSliderRect;
+        var tt3 = Math.max(0, Math.min(1, (pos.x - tsr3.x) / tsr3.w));
+        window._tubeSpeedMult = 0.1 + tt3 * 1.9;
+        return;
+      }
       if (self._draggingZoneSlider && self._zoneSliderRect) {
         var zr2 = self._zoneSliderRect;
         var zt2 = Math.max(0, Math.min(1, (pos.x - zr2.x) / zr2.w));
@@ -1102,6 +1118,7 @@ class Game {
       self._draggingSlider = false;
       self._draggingBrickSlider = false;
       self._draggingZoneSlider = false;
+      self._draggingTubeSlider = false;
       // Release tube drag — apply snap if close enough
       if (self._tubeDragging) {
         var snapResult = self.tubes.checkSnap(self._tubeDragging);
@@ -4414,8 +4431,33 @@ class Game {
 
     ctx.restore();
 
-    // ── Sling zone height slider (above brick slider) ─────────────────────────
-    var zsy    = bsy - 28;
+    // ── Tube speed multiplier slider (above brick slider) ──────────────────────
+    var tsy    = bsy - 28;
+    var ttrackY = tsy + sliderH / 2;
+    this._tubeSliderRect = { x: sx, y: tsy, w: sliderW, h: sliderH, trackY: ttrackY };
+    var tubeMult = window._tubeSpeedMult !== undefined ? window._tubeSpeedMult : 1.0;
+    // Range 0.1 to 2.0; default 1.0 maps to t=0.45 (roughly middle)
+    var tubeT = Math.max(0, Math.min(1, (tubeMult - 0.1) / 1.9));
+    var tThX  = sx + tubeT * sliderW;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,10,28,0.55)';
+    ctx.beginPath(); ctx.roundRect(sx - 8, tsy - 2, sliderW + 16, sliderH + 4, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,180,255,0.20)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, ttrackY); ctx.lineTo(sx + sliderW, ttrackY); ctx.stroke();
+    var tColor = tubeMult >= 1.0 ? '#00aaff' : '#ff6633';
+    ctx.strokeStyle = tColor + 'aa'; ctx.shadowColor = tColor; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.moveTo(sx, ttrackY); ctx.lineTo(tThX, ttrackY); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(tThX, ttrackY, 7, 0, Math.PI * 2);
+    ctx.fillStyle = tColor; ctx.shadowColor = tColor; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = tColor + 'cc'; ctx.font = "bold 8px 'Share Tech Mono', monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('TUBES ' + Math.round(tubeMult * 100) + '%', sx + sliderW / 2, tsy - 1);
+    ctx.restore();
+
+    // ── Sling zone height slider (above tube slider) ─────────────────────────
+    var zsy    = tsy - 28;
     var ztrackY = zsy + sliderH / 2;
     this._zoneSliderRect = { x: sx, y: zsy, w: sliderW, h: sliderH, trackY: ztrackY };
     ctx.save();
