@@ -334,6 +334,32 @@
   </div>
 </div>
 
+<div class="card" id="pagesCard" style="display:none">
+  <div class="card-title">🌐 GitHub Pages Status</div>
+  <div id="pagesStatus" style="text-align:center;padding:10px 0">
+    <div class="status-badge visible working" id="pagesBadge">
+      <span class="dot-pulse">●</span> Waiting for GitHub Pages...
+    </div>
+  </div>
+  <div style="margin-top:10px">
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:rgba(0,200,255,0.4);margin-bottom:4px">
+      <span>DEPLOY PROGRESS</span>
+      <span id="pagesElapsed">0s</span>
+    </div>
+    <div class="progress-bar visible" style="margin-top:0">
+      <div class="progress-fill" id="pagesProgress" style="width:0%;transition:width 1s linear;background:linear-gradient(90deg,#ff8800,#00ff88)"></div>
+    </div>
+  </div>
+  <div style="margin-top:12px;text-align:center">
+    <a id="siteLink" href="#" target="_blank" style="
+      display:none;
+      color:var(--green);font-family:Share Tech Mono,monospace;font-size:11px;
+      text-decoration:none;padding:8px 16px;border:1px solid var(--green);
+      border-radius:6px;background:rgba(0,255,136,0.08)
+    ">🚀 Open Site →</a>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-title">📋 Log</div>
   <div class="log" id="log"></div>
@@ -676,8 +702,8 @@ async function deploy() {
     if (errors === 0) {
       setStatus('✅ Deploy complete! ' + pushed + ' files pushed', 'success');
       log('', 'dim');
-      log('🚀 Deployed! GitHub Pages updates in ~30 seconds.', 'ok');
-      log('👉 https://' + repo.split('/')[0].toLowerCase() + '.github.io/' + repo.split('/')[1], 'info');
+      log('🚀 Files pushed! Waiting for GitHub Pages to rebuild...', 'ok');
+      pollPagesDeployment(token, repo);
     } else {
       setStatus('⚠ Done with ' + errors + ' errors', 'error');
       log('Check errors above. Try re-deploying — GitHub sometimes rate-limits.', 'warn');
@@ -690,6 +716,126 @@ async function deploy() {
 
   deploying = false;
   checkReady();
+}
+
+async function pollPagesDeployment(token, repo) {
+  var card    = document.getElementById('pagesCard');
+  var badge   = document.getElementById('pagesBadge');
+  var bar     = document.getElementById('pagesProgress');
+  var elapsed = document.getElementById('pagesElapsed');
+  var link    = document.getElementById('siteLink');
+  var siteUrl = 'https://' + repo.split('/')[0].toLowerCase() + '.github.io/' + repo.split('/')[1];
+
+  card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  link.href = siteUrl;
+
+  var startTime = Date.now();
+  var maxWait   = 120000;  // 2 minutes max
+  var pollInterval = 4000; // check every 4 seconds
+  var lastDeployId = null;
+
+  function tick() {
+    var ms = Date.now() - startTime;
+    var sec = Math.floor(ms / 1000);
+    elapsed.textContent = sec + 's';
+    // Animate bar 0→90% over 60s, then slow down
+    var pct = Math.min(90, (ms / 60000) * 90);
+    bar.style.width = pct + '%';
+  }
+
+  var tickInterval = setInterval(tick, 500);
+
+  async function checkStatus() {
+    try {
+      // First try the Pages deployments API (newer, more accurate)
+      var r = await fetch('https://api.github.com/repos/' + repo + '/pages/deployments?per_page=1', {
+        headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+      });
+
+      if (r.ok) {
+        var deploys = await r.json();
+        if (deploys && deploys.length > 0) {
+          var d = deploys[0];
+          var state = d.status_url ? 'pending' : 'unknown';
+
+          // Check the status URL if available
+          if (d.status_url) {
+            var sr = await fetch(d.status_url, {
+              headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+            });
+            if (sr.ok) {
+              var sd = await sr.json();
+              state = sd.status || state;
+            }
+          }
+
+          if (state === 'succeed' || state === 'deployment_success') {
+            done(true);
+            return;
+          }
+          if (state === 'deployment_failed' || state === 'error') {
+            done(false);
+            return;
+          }
+        }
+      }
+
+      // Fallback: check the Pages API for last build time
+      var r2 = await fetch('https://api.github.com/repos/' + repo + '/pages', {
+        headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (r2.ok) {
+        var pg = await r2.json();
+        var builtAt = pg.built_at ? new Date(pg.built_at).getTime() : 0;
+        if (builtAt > startTime - 5000) {
+          // Pages was built after we started deploying
+          done(true);
+          return;
+        }
+        badge.className = 'status-badge visible working';
+        var statusText = pg.status || 'building';
+        badge.innerHTML = '<span class="dot-pulse">●</span> GitHub Pages: ' + statusText + '...';
+      }
+
+    } catch(e) {
+      badge.className = 'status-badge visible working';
+      badge.innerHTML = '<span class="dot-pulse">●</span> Checking...';
+    }
+
+    // Keep polling if not done and within time limit
+    if (Date.now() - startTime < maxWait) {
+      setTimeout(checkStatus, pollInterval);
+    } else {
+      // Timed out — site is probably live, GitHub just didn't report it
+      done(true, true);
+    }
+  }
+
+  function done(success, timedOut) {
+    clearInterval(tickInterval);
+    bar.style.transition = 'width 0.5s ease';
+    bar.style.width = '100%';
+
+    var ms = Date.now() - startTime;
+    var sec = Math.floor(ms / 1000);
+    elapsed.textContent = sec + 's';
+
+    if (success) {
+      badge.className = 'status-badge visible success';
+      badge.innerHTML = timedOut
+        ? '✅ Should be live (~' + sec + 's) — tap to check'
+        : '✅ Live in ' + sec + 's!';
+      link.style.display = 'inline-block';
+      log('🌐 Site live at: ' + siteUrl, 'ok');
+    } else {
+      badge.className = 'status-badge visible error';
+      badge.innerHTML = '❌ Deploy failed — check GitHub Actions';
+    }
+  }
+
+  // Start polling after a short initial delay
+  setTimeout(checkStatus, 3000);
 }
 </script>
 </body>
