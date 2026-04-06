@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1473;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1474;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1117,6 +1117,11 @@ class Game {
       if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
         // handled below
       }
+      // Two-finger tube pinch — must check BEFORE single-finger drag handler
+      if (self._editorMode && self._editorTubeMode && self._tubeDragging && e.touches && e.touches.length >= 2) {
+        self._tubeHandleTouch(e.touches);
+        return;
+      }
       if (self._tubeRotateState) {
         var trs = self._tubeRotateState;
         var curAngleT = Math.atan2(pos.y - trs.tube.y, pos.x - trs.tube.x);
@@ -1445,7 +1450,7 @@ class Game {
           mbrick._angularV = (mbrick._angularV || 0) * -0.3;
         }
         // Bounce off chute left wall
-        var chuteLeftX = this.W - 46;
+        var chuteLeftX = (this.W / (this._viewZoom||1.0)) - 46;
         if (mbrick.x + bHWall > chuteLeftX) {
           mbrick.x = chuteLeftX - bHWall;
           mbrick._vx = -Math.abs(mbrick._vx || 0) * bWallBounce;
@@ -1503,11 +1508,13 @@ class Game {
         var bs = BallSettings[obj.type] || BallSettings.bouncer;
         // Run multiple sub-steps at reduced scale for slow-mo accuracy
         var steps = sm < 0.3 ? 1 : 1;
-        Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
+        var z3 = this._viewZoom || 1.0;
+        Physics.stepObject(obj, this.W / z3, floorY / z3, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
           var touchingFloor  = obj.y + obj.r >= floorY - 1;
-          var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
+          var _wz = this._viewZoom || 1.0;
+          var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W / _wz - 1;
           var touchingTop    = obj.y - obj.r <= 1;
           var touchingChute  = obj.y >= g2.TOP_Y && obj.x + obj.r >= g2.LEFT_X - 1;
           if ((touchingWall || touchingTop || touchingChute) && !touchingFloor) {
@@ -1535,7 +1542,7 @@ class Game {
 
     // ── Cap + piston physics ─────────────────────────────────────────────────
     if (this._pistonCapY !== undefined) {
-      var capLeft2 = this.W - 46;
+      var capLeft2 = (this.W / (this._viewZoom||1.0)) - 46;
       // Store prev positions BEFORE iterating so delta is valid for all balls
       var _pistonPrevY1 = this._pistonPrevY1 !== undefined ? this._pistonPrevY1 : this._pistonY1;
       var _pistonPrevY2 = this._pistonPrevY2 !== undefined ? this._pistonPrevY2 : this._pistonY2;
@@ -2017,7 +2024,7 @@ class Game {
       var g3 = this._chuteGeom();
       if (obj.x + obj.r >= g3.LEFT_X - 2)   { nx = -1; ny =  0; } // chute left wall → launch left
       else if (obj.x - obj.r <= 2)           { nx =  1; ny =  0; } // left wall → launch right
-      else if (obj.x + obj.r >= this.W - 2)  { nx = -1; ny =  0; } // right wall → launch left
+      else if (obj.x + obj.r >= this.W/(this._viewZoom||1.0) - 2)  { nx = -1; ny =  0; } // right wall → launch left
       else if (obj.y - obj.r <= 2)            { nx =  0; ny =  1; } // ceiling → launch down
       else                                    { nx =  0; ny = -1; } // default → launch up
       obj._stickNx = nx;
@@ -2121,7 +2128,8 @@ class Game {
   //   Control point: (leftX, floorY)  ← corner of the J
 
   _chuteGeom() {
-    var W        = this.W;
+    var z4 = this._viewZoom || 1.0;
+    var W        = this.W / z4;
     var floorY   = this.floorY();
     var CHUTE_W  = 46;
     var TURN_R   = 30;
@@ -2845,7 +2853,7 @@ class Game {
   _draw() {
     var ctx = this.ctx, W = this.W, H = this.H;
     var z       = this._viewZoom || 1.0;
-    var vSY     = this._viewScrollY || 0;
+    var vSY     = this._editorMode ? 0 : (this._viewScrollY || 0);  // editor scroll is separate
     var floorY  = this.floorY();
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
 
