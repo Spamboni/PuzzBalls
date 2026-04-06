@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1462;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1463;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -326,6 +326,11 @@ class Game {
 
     function onDown(e) {
       if (isUI(e.target)) return;
+      // Two-finger = start pinch, don't process as tap
+      if (e.touches && e.touches.length >= 2) {
+        self._lastPinchAngle = undefined;  // reset so first move sets it
+        return;
+      }
       // Let touches in the HUD button strip pass through to DOM elements
       var hudH = 56;  // approximate height of top HUD bar
       var firstTouch = e.touches ? e.touches[0] : e;
@@ -1037,6 +1042,18 @@ class Game {
       }
       // Tube piece drag
       // Two-finger tube manipulation
+      // Two-finger pinch on selected tube = rotate it
+      if (self._editorTubeMode && self._tubeSelected && e.touches && e.touches.length >= 2) {
+        var t1 = e.touches[0], t2p = e.touches[1];
+        var pinchAngle = Math.atan2(t2p.clientY - t1.clientY, t2p.clientX - t1.clientX);
+        if (self._lastPinchAngle !== undefined) {
+          var dAngle = pinchAngle - self._lastPinchAngle;
+          self._tubeSelected.rotation += dAngle;
+          self._tubeSelected.rebuild();
+        }
+        self._lastPinchAngle = pinchAngle;
+        return;
+      }
       if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
         // handled below via _tubeHandleTouch
       }
@@ -1151,6 +1168,7 @@ class Game {
         }
         self._tubeDragging = null;
         self._tubePivotState = null;
+        self._lastPinchAngle = undefined;
       }
       self._tubeDragSlider = null;
 
@@ -3450,7 +3468,7 @@ class Game {
       { id:'width',   label:'WID', col:'#ff8844' },
       { id:'rotate',  label:'ROT', col:'#cc44ff' },
     ];
-    var modeW = 34, modeGap = 3;
+    var modeW = 28, modeGap = 3;
     var totalModeW = modeTools.length * modeW + (modeTools.length-1) * modeGap;
     this._editorModeBtns = [];
     for (var mi = 0; mi < modeTools.length; mi++) {
@@ -3523,7 +3541,7 @@ class Game {
       ctx.restore();
       this._editorModeBtns.push({ x:mx, y:btnY, w:modeW, h:btnH, id:mt.id });
     }
-    var curX = startX + totalModeW + 6;
+    var curX = startX + totalModeW + 4;
     // Draw icon for mode button
     ctx.save();
     ctx.translate(startX + modeW/2, btnY + btnH/2);
@@ -4297,14 +4315,17 @@ class Game {
       this._tubeLayerBtns.push({ x:lx, y:row5Y, w:lW, h:rH, val:layers[li] });
     }
 
-    // Selected tube info + delete
-    if (this._tubeSelected) {
+    // Selected tube info + delete (DEL button always shown in delete mode)
+    var showTubeExtra = this._tubeSelected || this._tubeDeleteMode;
+    if (showTubeExtra) {
       var row6Y = row5Y + rH + gap;
-      var t2 = this._tubeSelected;
-      ctx.fillStyle = '#aaddff'; ctx.font = "7px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText('SEL: ' + t2.type + ' | ' + t2.style + ' | ' + t2.layer + ' | spd:' + t2.speedMod.toFixed(1) + 'x', padding, row6Y + rH/2);
-      // Delete selected
+      if (this._tubeSelected) {
+        var t2 = this._tubeSelected;
+        ctx.fillStyle = '#aaddff'; ctx.font = "7px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText('SEL: ' + t2.type + ' | ' + t2.style + ' | ' + t2.layer + ' | spd:' + t2.speedMod.toFixed(1) + 'x', padding, row6Y + rH/2);
+      }
+      // Delete button — always shown
       var delTX = W - 60;
       this._tubeDelBtn = { x: delTX, y: row6Y, w: 52, h: rH };
       ctx.fillStyle = 'rgba(80,10,10,0.85)';
