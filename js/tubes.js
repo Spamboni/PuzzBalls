@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1449;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1450;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -553,13 +553,31 @@ class TubeManager {
         if (tube.tryCapture(ball)) break;
       }
     }
-    // Advance balls in tubes
+    // Advance balls in tubes + chain into connected tubes
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var result = this.tubes[ti].update();
       if (result) {
-        result.ball._inTube  = null;
-        result.ball.pinned   = false;
-        result.ball.inFlight = true;
+        var exitedBall = result.ball;
+        exitedBall._inTube  = null;
+        exitedBall.pinned   = false;
+        exitedBall.inFlight = true;
+        // Immediately try to chain into a connected tube
+        var exitedTube = this.tubes[ti];
+        var conn = exitedTube.connectedA || exitedTube.connectedB;
+        if (conn) {
+          var connTube = conn.tube;
+          if (!connTube._ball && !exitedBall._inTube) {
+            // Temporarily clear cooldown for the connected tube specifically
+            var savedFrom = exitedBall._tubeExitFrom;
+            var savedCooldown = exitedBall._tubeExitCooldown;
+            exitedBall._tubeExitCooldown = 0;
+            if (!connTube.tryCapture(exitedBall)) {
+              // Restore cooldown if chaining failed
+              exitedBall._tubeExitFrom = savedFrom;
+              exitedBall._tubeExitCooldown = savedCooldown;
+            }
+          }
+        }
       }
     }
     // Exterior collision — balls bounce off tube outer surface

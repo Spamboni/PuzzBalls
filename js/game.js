@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1449;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1450;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -306,6 +306,10 @@ class Game {
 
     function onDown(e) {
       if (isUI(e.target)) return;
+      // Let touches in the HUD button strip pass through to DOM elements
+      var hudH = 56;  // approximate height of top HUD bar
+      var firstTouch = e.touches ? e.touches[0] : e;
+      if (firstTouch && firstTouch.clientY < hudH) return;
       e.preventDefault();
       if (window.Sound) Sound.getCtx();
 
