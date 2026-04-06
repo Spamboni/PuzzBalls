@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1466;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1467;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -326,9 +326,16 @@ class Game {
 
     function onDown(e) {
       if (isUI(e.target)) return;
-      // Two-finger = start pinch, don't process as tap
+      // Two-finger = start pinch
       if (e.touches && e.touches.length >= 2) {
-        self._lastPinchAngle = undefined;  // reset so first move sets it
+        self._lastPinchAngle = undefined;
+        self._editorPinchStart = null;
+        self._tubePinchStart = null;
+        // In tube editor: make sure selected tube is set as dragging for pinch
+        if (self._editorTubeMode && self._tubeSelected) {
+          self._tubeDragging = self._tubeSelected;
+          self._tubeDragOffX = 0; self._tubeDragOffY = 0;
+        }
         return;
       }
       // Let touches in the HUD button strip pass through to DOM elements
@@ -731,12 +738,18 @@ class Game {
               if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._tubeDeleteMode); return;
             }
           }
-          // Build/Select mode toggle
-          if (self._tubeModeBtn) {
-            var tmb=self._tubeModeBtn;
-            if (pos.x>=tmb.x&&pos.x<=tmb.x+tmb.w&&pos.y>=tmb.y&&pos.y<=tmb.y+tmb.h) {
-              self._tubeSelectMode=!self._tubeSelectMode;
-              if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._tubeSelectMode); return;
+          // Tube mode toolbar tap
+          if (self._tubeModeBtns) {
+            for (var tmbI2 = 0; tmbI2 < self._tubeModeBtns.length; tmbI2++) {
+              var tmb2 = self._tubeModeBtns[tmbI2];
+              if (pos.x>=tmb2.x && pos.x<=tmb2.x+tmb2.w && pos.y>=tmb2.y && pos.y<=tmb2.y+tmb2.h) {
+                self._tubeToolMode = tmb2.id;
+                self._tubeSelectMode = (tmb2.id !== 'build');
+                self._tubeSelected = null;
+                self._tubeRotateState = null;
+                self._tubeLengthState = null;
+                if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
+              }
             }
           }
           // Sliders
@@ -1048,6 +1061,22 @@ class Game {
       if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
         // handled below
       }
+      if (self._tubeRotateState) {
+        var trs = self._tubeRotateState;
+        var curAngleT = Math.atan2(pos.y - trs.tube.y, pos.x - trs.tube.x);
+        trs.tube.rotation = trs.origRot + (curAngleT - trs.startAngle);
+        trs.tube.rebuild();
+        return;
+      }
+      if (self._tubeLengthState) {
+        var tls = self._tubeLengthState;
+        var delta = Math.hypot(pos.x - tls.startX, pos.y - tls.startY);
+        var sign = ((pos.x - tls.startX) * Math.cos(tls.tube.rotation) +
+                    (pos.y - tls.startY) * Math.sin(tls.tube.rotation)) > 0 ? 1 : -1;
+        tls.tube.length = Math.max(20, Math.min(600, tls.origLen + sign * delta));
+        tls.tube.rebuild();
+        return;
+      }
       if (self._tubeDragging) {
         var td = self._tubeDragging;
         var conn = td.connectedA || td.connectedB;
@@ -1165,7 +1194,10 @@ class Game {
         }
         self._tubeDragging = null;
         self._tubePivotState = null;
+        self._tubeRotateState = null;
+        self._tubeLengthState = null;
         self._lastPinchAngle = undefined;
+        self._tubePinchStart = null;
       }
       self._tubeDragSlider = null;
 
@@ -3542,80 +3574,14 @@ class Game {
       this._editorModeBtns.push({ x:mx, y:btnY, w:modeW, h:btnH, id:mt.id });
     }
     var curX = startX + totalModeW + 3;
-    // Draw icon for mode button
-    ctx.save();
-    ctx.translate(startX + modeW/2, btnY + btnH/2);
-    if (isSelect) {
-      // Yellow dashed-outline arrow pointer (SELECT)
-      var aw = 11, ah = 14;
-      // Arrow body (solid teal-grey fill)
-      ctx.beginPath();
-      ctx.moveTo(-aw*0.5, -ah*0.55);  // tip
-      ctx.lineTo( aw*0.5,  ah*0.10);  // right shoulder
-      ctx.lineTo( aw*0.08, ah*0.08);  // inner right
-      ctx.lineTo( aw*0.08, ah*0.55);  // bottom right
-      ctx.lineTo(-aw*0.08, ah*0.55);  // bottom left
-      ctx.lineTo(-aw*0.08, ah*0.08);  // inner left
-      ctx.lineTo(-aw*0.5,  ah*0.10);  // left shoulder
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(0,180,200,0.75)';
-      ctx.fill();
-      // Yellow dashed outline
-      ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 1.5;
-      ctx.setLineDash([2.5, 2]); ctx.stroke();
-      ctx.setLineDash([]);
-      // Yellow glow
-      ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
-      ctx.setLineDash([]);
-    } else {
-      // Neon brick (BUILD)
-      var bw = 18, bh = 9;
-      ctx.fillStyle = 'rgba(0,100,180,0.5)';
-      ctx.beginPath(); ctx.roundRect(-bw/2, -bh/2, bw, bh, 2); ctx.fill();
-      ctx.strokeStyle = '#4488ff'; ctx.lineWidth = 1.5;
-      ctx.shadowColor = '#4488ff'; ctx.shadowBlur = 6;
-      ctx.beginPath(); ctx.roundRect(-bw/2, -bh/2, bw, bh, 2); ctx.stroke();
-      ctx.shadowBlur = 0;
-      // Rivet dots
-      ctx.fillStyle = '#4488ff';
-      [[-5,-2],[5,-2],[-5,2],[5,2]].forEach(function(d){
-        ctx.beginPath(); ctx.arc(d[0], d[1], 1.2, 0, Math.PI*2); ctx.fill();
-      });
-    }
-    ctx.restore();
 
-    var curX = startX + modeW + 4;
     this._editorTypeBtns = [];
+    this._editorSnapBtn = null;
+    this._editorMovBtn = null;
 
-    if ((this._editorToolMode || 'build') === 'build') {
-      var bTypes  = ['breakable_brick','circular_brick'];
-      var bLabels = ['BRICK','ROUND'];
-      var bColors = ['#4488ff','#44ff88'];
-      var tW = 38;
-      for (var ti = 0; ti < bTypes.length; ti++) {
-        if (curX + tW > clearX - 8) break;  // prevent overflow into right buttons
-        var active = this._editorBrickType === bTypes[ti];
-        ctx.fillStyle = active ? bColors[ti] + '44' : 'rgba(0,15,40,0.8)';
-        ctx.beginPath(); ctx.roundRect(curX, btnY, tW, btnH, 4); ctx.fill();
-        ctx.strokeStyle = active ? bColors[ti] : bColors[ti] + '55'; ctx.lineWidth = active ? 1.8 : 1;
-        ctx.beginPath(); ctx.roundRect(curX, btnY, tW, btnH, 4); ctx.stroke();
-        ctx.fillStyle = active ? bColors[ti] : bColors[ti] + 'aa';
-        ctx.font = "bold 10px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(bLabels[ti], curX + tW/2, btnY + btnH/2);
-        this._editorTypeBtns.push({ x: curX, y: btnY, w: tW, h: btnH, type: bTypes[ti] });
-        curX += tW + 4;
-      }
-      // Snap and MOV both moved to row 2 — nullify here
-      this._editorSnapBtn = null;
-    } else {
-      this._editorSnapBtn = null;
-    }
-    this._editorMovBtn = null;  // MOV is in row 2
-
-    // DEL — fixed position: right of mode+type buttons, always visible
+    // DEL — fixed position right of mode buttons, never moves
     var delW2 = 34;
-    var delX2 = startX + totalModeW + 3 + (this._editorToolMode === 'build' ? 2*(38+4) : 0);
-    // Cap so it never overlaps clearX
+    var delX2 = startX + totalModeW + 4;
     if (delX2 + delW2 > clearX - 6) delX2 = clearX - delW2 - 6;
     {
       var bDelActive = this._editorBrickDeleteMode || false;
@@ -3631,10 +3597,52 @@ class Game {
       ctx.font = "bold 10px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(bDelActive ? '✕DEL' : 'DEL', delX2 + delW2/2, btnY + btnH/2);
     }
+    // ── Brick type sub-row: RECT brick | ROUND brick (only in BUILD mode) ──────
+    var typeRowH = 26;
+    var typeRowY = btnY + btnH + 4;
+    this._editorTypeBtns = [];
+    if ((this._editorToolMode || 'build') === 'build') {
+      var bTypes2  = ['breakable_brick', 'circular_brick'];
+      var bLabels2 = ['RECT', 'ROUND'];
+      var bColors2 = ['#4488ff', '#44ff88'];
+      var typeW = Math.floor((W - 16) / 2);
+      for (var ti2 = 0; ti2 < bTypes2.length; ti2++) {
+        var tx2 = startX + ti2 * (typeW + 4);
+        var active2 = this._editorBrickType === bTypes2[ti2];
+        ctx.fillStyle = active2 ? bColors2[ti2] + '33' : 'rgba(0,10,25,0.7)';
+        ctx.beginPath(); ctx.roundRect(tx2, typeRowY, typeW, typeRowH, 4); ctx.fill();
+        ctx.strokeStyle = active2 ? bColors2[ti2] : bColors2[ti2] + '44';
+        ctx.lineWidth = active2 ? 1.8 : 0.8;
+        if (active2) { ctx.shadowColor = bColors2[ti2]; ctx.shadowBlur = 6; }
+        ctx.beginPath(); ctx.roundRect(tx2, typeRowY, typeW, typeRowH, 4); ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Icon + label
+        ctx.save();
+        ctx.translate(tx2 + typeW/2, typeRowY + typeRowH/2);
+        var ic2 = bColors2[ti2];
+        if (ti2 === 0) {
+          // Rect brick icon
+          ctx.fillStyle = ic2 + '66'; ctx.beginPath(); ctx.roundRect(-16,-6,32,12,2); ctx.fill();
+          ctx.strokeStyle = ic2; ctx.lineWidth = 1.3; ctx.shadowColor = ic2; ctx.shadowBlur = active2?5:0;
+          ctx.beginPath(); ctx.roundRect(-16,-6,32,12,2); ctx.stroke(); ctx.shadowBlur = 0;
+          ctx.fillStyle = ic2; [[-8,-3],[8,-3],[-8,3],[8,3]].forEach(function(d){ctx.beginPath();ctx.arc(d[0],d[1],1.2,0,Math.PI*2);ctx.fill();});
+        } else {
+          // Round brick icon
+          ctx.fillStyle = ic2 + '55'; ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.fill();
+          ctx.strokeStyle = ic2; ctx.lineWidth = 1.3; ctx.shadowColor = ic2; ctx.shadowBlur = active2?5:0;
+          ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.stroke(); ctx.shadowBlur = 0;
+          ctx.beginPath(); ctx.arc(-3, -3, 2, 0, Math.PI*2); ctx.fillStyle = ic2 + 'aa'; ctx.fill();
+        }
+        ctx.restore();
+        this._editorTypeBtns.push({ x: tx2, y: typeRowY, w: typeW, h: typeRowH, type: bTypes2[ti2] });
+      }
+    } else {
+      typeRowH = 0;  // no type row in other modes
+    }
+
     // Row 2+3: Sliders for HP (with ∞), REGEN, DENS, DIST
-    // Rows sit below the button row. Two sliders per row, each half screen width.
     var sliderRowH = 22;
-    var row2Y = btnY + btnH + 10;
+    var row2Y = typeRowY + typeRowH + (typeRowH > 0 ? 5 : 0) + 4;
     var row3Y = row2Y + sliderRowH + 6;
     var bd2   = window.BrickDefaults || {};
     var sb2   = this._editorSelected;
@@ -4130,10 +4138,31 @@ class Game {
       }
       this._lastTubeTapId = hitTube.id;
       this._tubeSelected = hitTube;
+      var tubeTool = this._tubeToolMode || 'build';
+      if (tubeTool === 'rotate') {
+        // Single-finger rotate: store start angle for drag
+        this._tubeRotateState = {
+          tube: hitTube,
+          startAngle: Math.atan2(pos.y - hitTube.y, pos.x - hitTube.x),
+          origRot: hitTube.rotation,
+        };
+        this._tubeDragging = null;
+        return;
+      }
+      if (tubeTool === 'length') {
+        // Single-finger length: drag along tube axis
+        this._tubeLengthState = {
+          tube: hitTube,
+          startX: pos.x, startY: pos.y,
+          origLen: hitTube.length,
+        };
+        this._tubeDragging = null;
+        return;
+      }
+      // Build/select: normal drag
       this._tubeDragging = hitTube;
       this._tubeDragOffX = pos.x - hitTube.x;
       this._tubeDragOffY = pos.y - hitTube.y;
-      // Pre-compute pivot state for connected-tube rotation (prevents spin accumulation)
       this._tubePivotState = (hitTube.connectedA || hitTube.connectedB)
         ? this.tubes.makePivotState(hitTube, pos.x, pos.y)
         : null;
@@ -4164,48 +4193,63 @@ class Game {
     var W = this.W;
     var padding = 8, btnH = 22, rH = 20, gap = 5;
 
-    // ── Row 0: BUILD/SELECT toggle (left) + DONE (right) ─────────────────────
+    // ── Row 0: 4-mode toolbar (BLD|SEL|LEN|ROT) + DONE ────────────────────────
     var row0Y = panelY + 4;
-    this._tubeSelectMode = this._tubeSelectMode || false;
-    this._tubeModeBtn = { x: padding, y: row0Y, w: 70, h: btnH };
-    ctx.fillStyle = this._tubeSelectMode ? 'rgba(255,180,0,0.22)' : 'rgba(0,50,100,0.50)';
-    ctx.beginPath(); ctx.roundRect(padding, row0Y, 70, btnH, 4); ctx.fill();
-    ctx.strokeStyle = this._tubeSelectMode ? '#ffcc00' : '#00aaff'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(padding, row0Y, 70, btnH, 4); ctx.stroke();
-    ctx.fillStyle = this._tubeSelectMode ? '#ffcc00' : '#88bbff';
-    ctx.font = "bold 11px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    // Draw tube mode icon
-    ctx.save();
-    ctx.translate(padding + 35, row0Y + btnH/2);
-    if (this._tubeSelectMode) {
-      // Yellow dashed arrow (SELECT)
-      var aw2 = 11, ah2 = 14;
-      ctx.beginPath();
-      ctx.moveTo(-aw2*0.5, -ah2*0.55); ctx.lineTo(aw2*0.5, ah2*0.10);
-      ctx.lineTo(aw2*0.08, ah2*0.08);  ctx.lineTo(aw2*0.08, ah2*0.55);
-      ctx.lineTo(-aw2*0.08, ah2*0.55); ctx.lineTo(-aw2*0.08, ah2*0.08);
-      ctx.lineTo(-aw2*0.5, ah2*0.10);  ctx.closePath();
-      ctx.fillStyle = 'rgba(0,180,200,0.75)'; ctx.fill();
-      ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 1.5;
-      ctx.setLineDash([2.5, 2]); ctx.stroke(); ctx.setLineDash([]);
-      ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
-    } else {
-      // Tube icon (BUILD) — little cylinder
-      var tw = 18, tr = 5;
-      ctx.fillStyle = 'rgba(0,150,200,0.4)';
-      ctx.beginPath(); ctx.ellipse(-tw/2+1, 0, 3, tr, 0, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.rect(-tw/2+1, -tr, tw-2, tr*2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(tw/2-1, 0, 3, tr, 0, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = '#00ccff'; ctx.lineWidth = 1.5;
-      ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 6;
-      ctx.beginPath(); ctx.moveTo(-tw/2+1, -tr); ctx.lineTo(tw/2-1, -tr);
-      ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-tw/2+1, tr); ctx.lineTo(tw/2-1, tr);
-      ctx.stroke();
-      ctx.beginPath(); ctx.ellipse(tw/2-1, 0, 3, tr, 0, 0, Math.PI*2); ctx.stroke();
+    var tubeToolMode = this._tubeToolMode || 'build';
+    this._tubeSelectMode = (tubeToolMode !== 'build');
+    var tubeModes = [
+      { id:'build',  col:'#00aaff' },
+      { id:'select', col:'#ffcc00' },
+      { id:'length', col:'#00ff88' },
+      { id:'rotate', col:'#cc44ff' },
+    ];
+    var tmW = 52, tmGap = 3;
+    this._tubeModeBtn = null;
+    this._tubeModeBtns = [];
+    for (var tmi = 0; tmi < tubeModes.length; tmi++) {
+      var tm = tubeModes[tmi];
+      var tmx = padding + tmi * (tmW + tmGap);
+      var tmActive = tubeToolMode === tm.id;
+      ctx.fillStyle = tmActive ? tm.col + '44' : 'rgba(0,10,30,0.7)';
+      ctx.beginPath(); ctx.roundRect(tmx, row0Y, tmW, btnH, 4); ctx.fill();
+      ctx.strokeStyle = tmActive ? tm.col : tm.col + '55'; ctx.lineWidth = tmActive ? 2 : 1;
+      if (tmActive) { ctx.shadowColor = tm.col; ctx.shadowBlur = 8; }
+      ctx.beginPath(); ctx.roundRect(tmx, row0Y, tmW, btnH, 4); ctx.stroke();
       ctx.shadowBlur = 0;
+      ctx.save(); ctx.translate(tmx + tmW/2, row0Y + btnH/2);
+      var tc2 = tm.col;
+      if (tm.id === 'build') {
+        ctx.fillStyle=tc2+'44'; ctx.beginPath(); ctx.ellipse(-9,0,3,5,0,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.rect(-9,-5,18,10); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(9,0,3,5,0,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle=tc2; ctx.lineWidth=1.3; ctx.shadowColor=tc2; ctx.shadowBlur=tmActive?5:0;
+        ctx.beginPath(); ctx.moveTo(-9,-5); ctx.lineTo(9,-5); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-9,5); ctx.lineTo(9,5); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(9,0,3,5,0,0,Math.PI*2); ctx.stroke(); ctx.shadowBlur=0;
+      } else if (tm.id === 'select') {
+        ctx.save(); ctx.rotate(-Math.PI/4);
+        ctx.beginPath(); ctx.moveTo(-3,-9); ctx.lineTo(3,-9); ctx.lineTo(3,-1); ctx.lineTo(7,-1);
+        ctx.lineTo(0,8); ctx.lineTo(-7,-1); ctx.lineTo(-3,-1); ctx.closePath();
+        ctx.fillStyle='rgba(0,160,180,0.7)'; ctx.fill();
+        ctx.strokeStyle=tc2; ctx.lineWidth=1.3; ctx.setLineDash([2,2]);
+        ctx.shadowColor=tc2; ctx.shadowBlur=tmActive?5:0; ctx.stroke();
+        ctx.setLineDash([]); ctx.shadowBlur=0; ctx.restore();
+      } else if (tm.id === 'length') {
+        ctx.strokeStyle=tc2; ctx.lineWidth=1.3; ctx.shadowColor=tc2; ctx.shadowBlur=tmActive?4:0;
+        ctx.fillStyle=tc2+'33'; ctx.beginPath(); ctx.roundRect(-8,-4,16,8,2); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-8,-4,16,8,2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-8,-3); ctx.lineTo(-13,0); ctx.lineTo(-8,3); ctx.moveTo(-8,0); ctx.lineTo(-13,0); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(8,-3); ctx.lineTo(13,0); ctx.lineTo(8,3); ctx.moveTo(8,0); ctx.lineTo(13,0); ctx.stroke();
+        ctx.shadowBlur=0;
+      } else if (tm.id === 'rotate') {
+        ctx.strokeStyle=tc2; ctx.lineWidth=1.8; ctx.shadowColor=tc2; ctx.shadowBlur=tmActive?5:0;
+        ctx.beginPath(); ctx.arc(0,0,7,0.5,Math.PI*2-0.5); ctx.stroke(); ctx.shadowBlur=0;
+        ctx.fillStyle=tc2; ctx.beginPath(); ctx.moveTo(5,5); ctx.lineTo(9,2); ctx.lineTo(5,-1); ctx.fill();
+        ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+      this._tubeModeBtns.push({ x:tmx, y:row0Y, w:tmW, h:btnH, id:tm.id });
     }
-    ctx.restore();
 
     this._editorDoneBtn = { x: W - 64, y: row0Y, w: 56, h: btnH };
     ctx.fillStyle = 'rgba(0,60,30,0.85)';
