@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1473;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1474;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -308,34 +308,28 @@ class TubePiece {
       ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
       ctx.fill();
 
-      // ── Ball inside tube — clipped to tube body so edges always show on top ────
+      // ── Ball inside tube — clipped and darkened so tube walls show on top ──────
       if (this._ball && style !== 'solid') {
         var ballPos0 = this._pointAtT(this._ballT);
         var bs0 = window.BallSettings && BallSettings[this._ball.type] || {};
         var bGlow0 = bs0.glow || '#ffffff';
-        var bAlpha0 = style === 'glass' ? 0.85 : 0.65;
-        // Clip to tube body polygon so ball never bleeds past the tube walls
+        // Reduce alpha so ball reads as inside/behind the tube
+        var bAlpha0 = style === 'glass' ? 0.55 : 0.45;
         ctx.save();
+        // Clip to tube body
         ctx.beginPath();
         ctx.moveTo(edgeA[0].x, edgeA[0].y);
         for (var bi2 = 1; bi2 < edgeA.length; bi2++) ctx.lineTo(edgeA[bi2].x, edgeA[bi2].y);
         for (var bi2 = edgeB.length-1; bi2 >= 0; bi2--) ctx.lineTo(edgeB[bi2].x, edgeB[bi2].y);
         ctx.closePath();
         ctx.clip();
-        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.75, 0, Math.PI * 2);
         ctx.fillStyle = bGlow0 + Math.round(bAlpha0 * 255).toString(16).padStart(2,'0');
         ctx.fill();
-        var bgr = ctx.createRadialGradient(
-          ballPos0.x - this._ball.r*0.2, ballPos0.y - this._ball.r*0.2, 0,
-          ballPos0.x, ballPos0.y, this._ball.r * 0.78);
-        bgr.addColorStop(0, 'rgba(255,255,255,0.5)');
-        bgr.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
-        ctx.fillStyle = bgr; ctx.fill();
         ctx.restore();
       }
 
-      // ── Outer glow (wide soft halo along both edges) ──────────────────────────
+      // ── Outer glow ──────────────────────────────────────────────────────────────
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       [edgeA, edgeB].forEach(function(edge) {
         ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
@@ -344,9 +338,24 @@ class TubePiece {
         ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.18) + ')';
         ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.4)';
         ctx.shadowBlur  = style === 'solid' ? 12 : 8;
-        ctx.stroke();
-        ctx.shadowBlur  = 0;
+        ctx.stroke(); ctx.shadowBlur = 0;
       });
+
+      // ── Dark tube wall overlay — drawn OVER the ball area to sell depth ────────
+      if (this._ball && style !== 'solid') {
+        var ballPos1 = this._pointAtT(this._ballT);
+        // Draw semi-transparent tube body again to darken/obscure the ball edges
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(edgeA[0].x, edgeA[0].y);
+        for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
+        for (var i = edgeB.length-1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
+        ctx.closePath();
+        // Cut out ball center — only darken the outer ring near tube walls
+        ctx.fillStyle = 'rgba(0,5,20,' + (style === 'glass' ? 0.25 : 0.35) + ')';
+        ctx.fill();
+        ctx.restore();
+      }
 
       // ── Bright rim line on both edges ─────────────────────────────────────────
       [edgeA, edgeB].forEach(function(edge) {
