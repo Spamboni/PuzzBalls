@@ -11,8 +11,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#000000">
   <title>PuzzBalls</title>
-  <link rel="stylesheet" href="css/styles.css?v=1455">
-  <link rel="manifest" href="manifest.json?v=1455">
+  <link rel="stylesheet" href="css/styles.css?v=1456">
+  <link rel="manifest" href="manifest.json?v=1456">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#030A18">
 </head>
@@ -53,16 +53,16 @@
 
 </div><!-- /#game-screen -->
 
-<script src="js/sound.js?v=1455"></script>
-<script src="js/physics.js?v=1455"></script>
-<script src="js/objects.js?v=1455"></script>
-<script src="js/tubes.js?v=1455"></script>
-<script src="js/events.js?v=1455"></script>
-<script src="js/balls.js?v=1455"></script>
-<script src="js/presets.js?v=1455"></script>
-<script src="js/menu.js?v=1455"></script>
-<script src="js/ui.js?v=1455"></script>
-<script src="js/game.js?v=1455"></script>
+<script src="js/sound.js?v=1456"></script>
+<script src="js/physics.js?v=1456"></script>
+<script src="js/objects.js?v=1456"></script>
+<script src="js/tubes.js?v=1456"></script>
+<script src="js/events.js?v=1456"></script>
+<script src="js/balls.js?v=1456"></script>
+<script src="js/presets.js?v=1456"></script>
+<script src="js/menu.js?v=1456"></script>
+<script src="js/ui.js?v=1456"></script>
+<script src="js/game.js?v=1456"></script>
 
 <script>
 window.addEventListener('DOMContentLoaded', function() {
@@ -231,8 +231,29 @@ window.addEventListener('DOMContentLoaded', function() {
     menuScreen.style.display = 'none';
     gameScreen.style.display = 'block';
 
-    game = new Game(canvas, showMenu); window._gameRef = game;
-    game.loadLevel(levelData);
+    try {
+      game = new Game(canvas, showMenu); window._gameRef = game;
+      game.loadLevel(levelData);
+    } catch(err) {
+      console.error('PuzzBalls startup crash:', err);
+      var ctx2 = canvas.getContext('2d');
+      var W2 = canvas.width || window.innerWidth;
+      var H2 = canvas.height || window.innerHeight;
+      canvas.width = W2; canvas.height = H2;
+      ctx2.fillStyle = '#030a18'; ctx2.fillRect(0,0,W2,H2);
+      ctx2.fillStyle = '#ff4444'; ctx2.font = "bold 13px 'Share Tech Mono',monospace";
+      ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+      ctx2.fillText('STARTUP ERROR:', W2/2, H2/2 - 50);
+      ctx2.fillStyle = '#ff8888'; ctx2.font = "11px 'Share Tech Mono',monospace";
+      var msg = (err.message || String(err)).slice(0, 120);
+      ctx2.fillText(msg.slice(0,55), W2/2, H2/2 - 20);
+      if (msg.length > 55) ctx2.fillText(msg.slice(55), W2/2, H2/2);
+      ctx2.fillStyle = '#ffaa44'; ctx2.font = "9px 'Share Tech Mono',monospace";
+      var st = err.stack ? err.stack.split('\n').slice(1,3).join(' | ') : '';
+      ctx2.fillText(st.slice(0,70), W2/2, H2/2 + 30);
+      ctx2.fillStyle = '#44aaff';
+      ctx2.fillText('Tap ◀ to go back', W2/2, H2/2 + 60);
+    }
   }
 
   Menu.init(menuScreen, playLevel);
