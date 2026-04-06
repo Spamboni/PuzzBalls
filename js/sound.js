@@ -687,12 +687,18 @@ window.BrickNote = (function() {
   // Slider tick — very soft blip, not annoying
   S.uiSlider = function() {
     var c = S.getCtx(); if (!c) return;
-    var vol = 0.02 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
+    var vol = 0.008 * ((window.AudioSettings && window.AudioSettings.masterVol) || 1);
     var now = c.currentTime;
+    // Soft low whoosh — filtered noise feel
     var o = c.createOscillator(), g = c.createGain();
-    o.type = 'sine'; o.frequency.value = 1200 + Math.random() * 400;
-    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
-    o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.03);
+    o.type = 'sine';
+    // Gentle low pitch with slow glide — 180-260Hz range
+    o.frequency.setValueAtTime(180 + Math.random() * 80, now);
+    o.frequency.linearRampToValueAtTime(200 + Math.random() * 60, now + 0.12);
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(vol, now + 0.02);
+    g.gain.linearRampToValueAtTime(0, now + 0.14);
+    o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.15);
   };
 
   // Toggle on/off — two-tone
