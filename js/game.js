@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1472;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1473;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -2846,19 +2846,20 @@ class Game {
     var ctx = this.ctx, W = this.W, H = this.H;
     var z       = this._viewZoom || 1.0;
     var vSY     = this._viewScrollY || 0;
-    var floorY  = this.floorY();   // screen Y of floor line (H - FLOOR_MARGIN)
+    var floorY  = this.floorY();
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
 
-    // ── Zoom transform: clip to play area, anchor at bottom-right of play area
-    // Floor stays fixed; world above floor expands upward+left when zooming out
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, W, floorY); ctx.clip();  // clip to play area
-    ctx.translate(W, floorY);   // anchor bottom-right of play area
-    ctx.scale(z, z);
-    ctx.translate(-W, -floorY); // translate back
-    if (vSY !== 0) ctx.translate(0, vSY);
+    // ── Background — always full screen, outside zoom transform ──────────────
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
+
+    // ── Zoom transform: clip to play area, anchor bottom-right ───────────────
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, floorY); ctx.clip();
+    ctx.translate(W, floorY);
+    ctx.scale(z, z);
+    ctx.translate(-W, -floorY);
+    if (vSY !== 0) ctx.translate(0, vSY);
 
     for (var g = 0; g < this.objects.length; g++) {
       if (this.objects[g].type === BALL_TYPES.GRAVITY && this.objects[g].gravActive) this._drawGravityRange(this.objects[g]);
@@ -2881,13 +2882,11 @@ class Game {
     this.tubes.draw(ctx, 'above', this.frame, this._tubeSelected);
     if (this.sling) this._drawSling();
     this._drawSparks();
-    if (this._editorMode) this._drawEditor();
     ctx.restore();  // restore zoom+clip
 
-    // Floor line drawn AFTER restore — always at fixed screen position
+    // ── Fixed screen-space UI (drawn after restore, no zoom/clip) ─────────────
     this._drawFloor(floorY);
-
-    // Fixed UI (no zoom)
+    if (this._editorMode) this._drawEditor();  // editor panel always below floor
     this._drawHudClearButtons();
     if (!this._editorMode) {
       if (z < 0.99) {
