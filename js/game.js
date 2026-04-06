@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1478;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1479;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -4599,6 +4599,7 @@ class Game {
 
   _drawBall(obj) {
     if (obj.dead || obj.exploded) return;
+    if (obj._inTube) return;  // drawn by tube's own draw method, not here
     var ctx = this.ctx, bs = BallSettings[obj.type] || BallSettings.bouncer;
     var pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.06 + obj.r);
 
