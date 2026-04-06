@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1453;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1458;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -340,18 +340,21 @@ class TubePiece {
         });
       }
 
-      // ── Specular gloss stripe (upper edge — sells the cylindrical glass look) ─
+      // ── Specular gloss stripe (gravity-aligned — always on world-space top) ──
+      // Instead of offsetting perpendicular to path, we shift each point straight up
+      // by a fraction of tubeR. This makes highlights consistent across connected tubes.
       if (style === 'glass' || style === 'window') {
-        var glossEdge = this._offsetPath(pts, -(tubeR * 0.48));
-        ctx.beginPath(); ctx.moveTo(glossEdge[0].x, glossEdge[0].y);
-        for (var i = 1; i < glossEdge.length; i++) ctx.lineTo(glossEdge[i].x, glossEdge[i].y);
+        var glossUp = tubeR * 0.48;
+        var glossPts = pts.map(function(p) { return { x: p.x, y: p.y - glossUp }; });
+        ctx.beginPath(); ctx.moveTo(glossPts[0].x, glossPts[0].y);
+        for (var i = 1; i < glossPts.length; i++) ctx.lineTo(glossPts[i].x, glossPts[i].y);
         ctx.lineWidth   = style === 'glass' ? tubeR * 0.22 : tubeR * 0.10;
         ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.38 : 0.18)) + ')';
         ctx.stroke();
-        // Extra thin bright highlight at the very top
-        var glossThin = this._offsetPath(pts, -(tubeR * 0.60));
-        ctx.beginPath(); ctx.moveTo(glossThin[0].x, glossThin[0].y);
-        for (var i = 1; i < glossThin.length; i++) ctx.lineTo(glossThin[i].x, glossThin[i].y);
+        // Extra thin bright line at very top
+        var glossThinPts = pts.map(function(p) { return { x: p.x, y: p.y - tubeR * 0.62 }; });
+        ctx.beginPath(); ctx.moveTo(glossThinPts[0].x, glossThinPts[0].y);
+        for (var i = 1; i < glossThinPts.length; i++) ctx.lineTo(glossThinPts[i].x, glossThinPts[i].y);
         ctx.lineWidth   = 1.0;
         ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.55) + ')';
         ctx.stroke();
@@ -369,27 +372,13 @@ class TubePiece {
         ctx.fill();
       }
 
-      // ── End caps (skip on connected sockets — draw weld ring instead) ─────────
+      // ── End caps (suppressed on connected sockets for seamless joints) ────────
       var sockA = this.socketA(), sockB = this.socketB();
       if (!this.connectedA) {
         this._drawCap(ctx, sockA.x, sockA.y, sockA.angle, tubeR, cr, cg, cb, alpha, style);
-      } else {
-        ctx.save();
-        ctx.translate(sockA.x, sockA.y); ctx.rotate(sockA.angle);
-        ctx.beginPath(); ctx.ellipse(0, 0, tubeR * 0.38, tubeR * 1.05, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0,255,120,0.75)'; ctx.lineWidth = 2.5;
-        ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
-        ctx.restore();
       }
       if (!this.connectedB) {
         this._drawCap(ctx, sockB.x, sockB.y, sockB.angle, tubeR, cr, cg, cb, alpha, style);
-      } else {
-        ctx.save();
-        ctx.translate(sockB.x, sockB.y); ctx.rotate(sockB.angle);
-        ctx.beginPath(); ctx.ellipse(0, 0, tubeR * 0.38, tubeR * 1.05, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0,255,120,0.75)'; ctx.lineWidth = 2.5;
-        ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
-        ctx.restore();
       }
     }
 
