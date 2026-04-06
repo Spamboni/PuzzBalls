@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1463;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1464;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -304,6 +304,19 @@ class TubePiece {
       ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
       ctx.fill();
 
+      // ── Ball inside tube — drawn early so tube edges overlay it ─────────────
+      if (this._ball && style !== 'solid') {
+        var ballPos0 = this._pointAtT(this._ballT);
+        var bs0 = window.BallSettings && BallSettings[this._ball.type] || {};
+        var bGlow0 = bs0.glow || '#ffffff';
+        var bAlpha0 = style === 'glass' ? 0.88 : 0.62;
+        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.80, 0, Math.PI * 2);
+        ctx.fillStyle = bGlow0 + Math.round(bAlpha0 * 255).toString(16).padStart(2,'0');
+        ctx.shadowColor = bGlow0; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
+        ctx.beginPath(); ctx.arc(ballPos0.x - this._ball.r*0.25, ballPos0.y - this._ball.r*0.28, this._ball.r*0.18, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
+      }
+
       // ── Outer glow (wide soft halo along both edges) ──────────────────────────
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       [edgeA, edgeB].forEach(function(edge) {
@@ -384,27 +397,14 @@ class TubePiece {
       }
     }
 
-    // ── Draw ball inside tube ─────────────────────────────────────────────────
-    if (this._ball) {
-      var ballPos = this._pointAtT(this._ballT);
+    // ── Draw ball inside tube (solid style only — glass/window drawn under edges above) ──
+    if (this._ball && style === 'solid') {
+      var exitPt = this._pointAtT(this._ballT > 0.5 ? 0.95 : 0.05);
       var bs = window.BallSettings && BallSettings[this._ball.type] || {};
       var bGlow = bs.glow || '#ffffff';
-      if (style === 'solid') {
-        // Solid: just a glow pulse at the exit end so you know it's coming
-        var exitPt = this._pointAtT(this._ballT > 0.5 ? 0.95 : 0.05);
-        ctx.beginPath(); ctx.arc(exitPt.x, exitPt.y, tubeR * 0.4, 0, Math.PI * 2);
-        ctx.fillStyle = bGlow + '44';
-        ctx.shadowColor = bGlow; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
-      } else {
-        var bAlpha = style === 'glass' ? 0.92 : 0.65;
-        ctx.beginPath(); ctx.arc(ballPos.x, ballPos.y, this._ball.r * 0.80, 0, Math.PI * 2);
-        ctx.fillStyle = bGlow + Math.round(bAlpha * 255).toString(16).padStart(2,'0');
-        ctx.shadowColor = bGlow; ctx.shadowBlur = 10;
-        ctx.fill(); ctx.shadowBlur = 0;
-        // Small specular dot on ball
-        ctx.beginPath(); ctx.arc(ballPos.x - this._ball.r*0.25, ballPos.y - this._ball.r*0.28, this._ball.r*0.18, 0, Math.PI*2);
-        ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();
-      }
+      ctx.beginPath(); ctx.arc(exitPt.x, exitPt.y, tubeR * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = bGlow + '44';
+      ctx.shadowColor = bGlow; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
     }
 
     // ── Behind-layer darkening overlay ────────────────────────────────────────
