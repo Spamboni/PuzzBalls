@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1454;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1455;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -92,8 +92,28 @@ class Game {
 
   loadLevel(levelData) {
     this.levelData = levelData;
-    this.nebulaOffscreen = this._buildNebulaOffscreen();
-    this._spawnLevel();
+    try {
+      this.nebulaOffscreen = this._buildNebulaOffscreen();
+      this._spawnLevel();
+    } catch(err) {
+      console.error('PuzzBalls loadLevel crash:', err);
+      // Show error on canvas immediately
+      var ctx = this.ctx;
+      if (ctx) {
+        ctx.fillStyle = '#030a18'; ctx.fillRect(0,0,this.W,this.H);
+        ctx.fillStyle = '#ff4444'; ctx.font = "bold 13px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('LOAD ERROR:', this.W/2, this.H/2 - 30);
+        ctx.fillStyle = '#ff8888'; ctx.font = "11px 'Share Tech Mono',monospace";
+        // Word-wrap the error message
+        var msg = err.message || String(err);
+        ctx.fillText(msg.slice(0,50), this.W/2, this.H/2);
+        if (msg.length > 50) ctx.fillText(msg.slice(50,100), this.W/2, this.H/2 + 18);
+        ctx.fillStyle = '#ffaa44'; ctx.font = "9px 'Share Tech Mono',monospace";
+        ctx.fillText(err.stack ? err.stack.split('\n')[1] : '', this.W/2, this.H/2 + 44);
+        ctx.fillText('Tap ⟳ to retry', this.W/2, this.H/2 + 68);
+      }
+    }
     this._bindInput();
     if (!this._rafId) this._rafId = requestAnimationFrame(this._loop);
   }
