@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1459;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1460;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -153,8 +153,10 @@ class TubePiece {
   // ── Update: advance ball through tube ────────────────────────────────────────
   update() {
     if (!this._ball) return null;
+    // Global tube speed multiplier (non-energy tubes only — energy uses own speedMod)
+    var globalMult = (this.style !== 'energy') ? (window._tubeSpeedMult !== undefined ? window._tubeSpeedMult : 1.0) : 1.0;
     var spf = this._pathLen > 0 ? 1 / this._pathLen : 0.05;
-    this._ballT += this._ballV * spf * this._ballDir;
+    this._ballT += this._ballV * globalMult * spf * this._ballDir;
     var done  = this._ballT >= 1 || this._ballT <= 0;
     var exitA = this._ballT <= 0;
     if (done) {
@@ -506,10 +508,11 @@ class TubePiece {
 
   _tubeColor() {
     if (this.color) return this.color;
-    if (this.style === 'energy' || this.speedMod > 1.5) return '#ff8800';  // hot orange
-    if (this.speedMod > 1.15) return '#ff6600';   // accelerator
-    if (this.speedMod < 0.85) return '#4466ff';   // decelerator
-    return '#00ccff';                              // neutral
+    if (this.style === 'energy') {
+      // Orange = speeding up (>1.0), blue = slowing down (<1.0)
+      return this.speedMod >= 1.0 ? '#ff8800' : '#4466ff';
+    }
+    return '#00ccff';  // neutral glass/window/solid
   }
 
   // ── Rebuild path after position/rotation change ───────────────────────────
@@ -595,7 +598,8 @@ class TubeManager {
       var tubeR = tube.radius;
       for (var bi = 0; bi < balls.length; bi++) {
         var ball = balls[bi];
-        if (ball.dead || (ball._inTube === tube)) continue;
+        if (ball.dead || ball._inTube) continue;  // skip any ball inside any tube
+        if (ball._tubeExitCooldown && ball._tubeExitCooldown > 0) continue;  // skip recently exited
         // Check distance from ball to each path segment
         for (var pi = 0; pi < pts.length - 1; pi++) {
           var ax = pts[pi].x, ay = pts[pi].y;
@@ -613,9 +617,22 @@ class TubeManager {
             var overlap = minDist - dist;
             ball.x += nx2 * overlap;
             ball.y += ny2 * overlap;
-            // Reflect velocity component along normal
             var dot = ball.vx * nx2 + ball.vy * ny2;
             if (dot < 0) {
+              // Sticky ball: stick to tube exterior
+              var BT = window.BALL_TYPES;
+              var BS = window.BallSettings;
+              if (BT && ball.type === BT.STICKY && !ball.stuckTo && !ball._fromChute) {
+                var spd2 = Math.hypot(ball.vx, ball.vy);
+                var stickyThresh = (BS && BS.sticky && BS.sticky.stickThreshold) || 6;
+                if (spd2 < stickyThresh) {
+                  ball.vx = 0; ball.vy = 0; ball.inFlight = false;
+                  ball.stuckTo = '_wall_';
+                  ball._stickNx = nx2; ball._stickNy = ny2;
+                  if (window.Sound && window.Sound.thud) window.Sound.thud(4);
+                  break;
+                }
+              }
               var bounce = 0.55;
               ball.vx -= (1 + bounce) * dot * nx2;
               ball.vy -= (1 + bounce) * dot * ny2;
