@@ -2,7 +2,7 @@
   "name": "PuzzBalls",
   "short_name": "PuzzBalls",
   "description": "Physics puzzle game — sling, bounce, and solve",
-  "start_url": "./index.html?v=1500",
+  "start_url": "./index.html?v=1501",
   "display": "fullscreen",
   "orientation": "portrait",
   "background_color": "#030A18",
