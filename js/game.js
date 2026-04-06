@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1468;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1470;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -53,6 +53,7 @@ class Game {
     this._tubeDragging  = null;
     this._editorTubeMode = false;
     this._viewScrollY     = 0;   // px the whole view is shifted up
+    this._viewZoom       = 1.0;  // 1.0 = normal, 0.5 = zoomed out 2x
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
     // ── Phase 2: Interactive Objects ─────────────────────────────────────────
@@ -301,7 +302,11 @@ class Game {
     return obj;
   }
 
-  floorY() { return this.H - FLOOR_MARGIN; }
+  floorY() {
+    var z = this._viewZoom || 1.0;
+    // In zoomed-out mode, the world is larger — floor stays at logical position
+    return (this.H - FLOOR_MARGIN) / z;
+  }
 
   // ── Input ──────────────────────────────────────────────────────────────────
 
@@ -314,7 +319,13 @@ class Game {
     function getPos(e) {
       var rect = canvas.getBoundingClientRect();
       var src  = e.touches ? e.touches[0] : e;
-      return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+      var sx = src.clientX - rect.left;
+      var sy = src.clientY - rect.top;
+      var z  = self._viewZoom || 1.0;
+      // Convert screen coords to world coords (divide by zoom)
+      // BUT: editor panel and HUD are drawn unzoomed, so keep screen coords for those
+      // We return screen coords here; callers that need world coords divide by zoom
+      return { x: sx, y: sy, wx: sx / z, wy: sy / z };
     }
 
     function isUI(t) {
@@ -331,6 +342,12 @@ class Game {
         self._lastPinchAngle = undefined;
         self._editorPinchStart = null;
         self._tubePinchStart = null;
+        if (!self._editorMode) {
+          // Play area pinch-to-zoom
+          var pp0b = e.touches[0], pp1b = e.touches[1];
+          self._playPinchStartDist = Math.hypot(pp1b.clientX-pp0b.clientX, pp1b.clientY-pp0b.clientY);
+          self._playPinchStartZoom = self._viewZoom || 1.0;
+        }
         if (self._editorTubeMode && self._tubeSelected) {
           self._tubeDragging = self._tubeSelected;
           self._tubeDragOffX = 0; self._tubeDragOffY = 0;
@@ -361,6 +378,8 @@ class Game {
       if (window.Sound) Sound.getCtx();
 
       var pos = getPos(e);
+      // World position (zoom-adjusted) for game interactions
+      var _worldPos = { x: pos.wx || pos.x, y: pos.wy || pos.y };
 
       // ── Corner HUD buttons — only when editor is closed ─────────────────────
       if (!self._editorMode) {
@@ -1024,12 +1043,10 @@ class Game {
         if (obj.dead || obj.exploded) continue;
         if (obj.stuckTo && obj.stuckTo !== '_wall_') continue;
         if (obj.stuckTo === '_wall_') continue;
-        // Allow: resting balls OR in-flight balls that are within the sling zone
         var inZone = obj.y >= zoneTop - obj.r;
-        // Hard cap: never grab balls that drifted way above the floor line
         var hardCap = self.floorY() - (self._slingZoneH || 100) - 60;
         if (obj.inFlight && (!inZone || obj.y < hardCap)) continue;
-        var dx = pos.x - obj.x, dy = pos.y - obj.y;
+        var dx = _worldPos.x - obj.x, dy = _worldPos.y - obj.y;
         var hit = false;
         if (self._aimMode === 'push') {
           hit = Math.hypot(dx, dy) < obj.r * 3.5;
@@ -1050,11 +1067,11 @@ class Game {
           self._pendingFloorBall = { obj: best, touchX: pos.x, touchY: pos.y, zoneTop: zoneTop };
           best.vx = 0; best.vy = 0; best.pinned = true;
           self.sling = { obj: best, anchorX: best.x, anchorY: best.y,
-                         startX: pos.x, startY: pos.y, pullX: pos.x, pullY: pos.y };
+                         startX: _worldPos.x, startY: _worldPos.y, pullX: _worldPos.x, pullY: _worldPos.y };
         } else {
           best.vx = 0; best.vy = 0; best.pinned = true;
           self.sling = { obj: best, anchorX: best.x, anchorY: best.y,
-                         startX: pos.x, startY: pos.y, pullX: pos.x, pullY: pos.y };
+                         startX: _worldPos.x, startY: _worldPos.y, pullX: _worldPos.x, pullY: _worldPos.y };
         }
       }
     }
@@ -1073,6 +1090,17 @@ class Game {
       // Tube piece drag
       // Two-finger tube manipulation
       // Two-finger: tube pinch (handled below via _tubeHandleTouch)
+      // Two-finger pinch on play area = zoom in/out
+      if (e.touches && e.touches.length >= 2 && !self._editorMode) {
+        var pt0 = e.touches[0], pt1 = e.touches[1];
+        var pinchDist = Math.hypot(pt1.clientX - pt0.clientX, pt1.clientY - pt0.clientY);
+        if (self._playPinchStartDist) {
+          var zoomDelta = pinchDist / self._playPinchStartDist;
+          var newZoom = Math.max(0.25, Math.min(1.0, self._playPinchStartZoom * zoomDelta));
+          self._viewZoom = newZoom;
+        }
+        return;
+      }
       if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
         // handled below
       }
@@ -1172,7 +1200,8 @@ class Game {
       }
       if (!self.sling) return;
       var pos = getPos(e);
-      self.sling.pullX = pos.x; self.sling.pullY = pos.y;
+      var z2 = self._viewZoom || 1.0;
+      self.sling.pullX = pos.x / z2; self.sling.pullY = pos.y / z2;
       var dx = self.sling.anchorX - pos.x, dy = self.sling.anchorY - pos.y;
       var dist = Math.hypot(dx, dy);
       if (dist > SLING_MIN_OFFSET && window.Sound) Sound.stretch(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
@@ -1213,6 +1242,7 @@ class Game {
         self._tubeLengthState = null;
         self._lastPinchAngle = undefined;
         self._tubePinchStart = null;
+        self._playPinchStartDist = null;
       }
       self._tubeDragSlider = null;
 
@@ -2807,10 +2837,15 @@ class Game {
   // ── Rendering ──────────────────────────────────────────────────────────────
 
   _draw() {
-    var ctx = this.ctx, W = this.W, H = this.H, floorY = this.floorY();
+    var ctx = this.ctx, W = this.W, H = this.H;
+    var z   = this._viewZoom || 1.0;
     var vSY = this._viewScrollY || 0;
+    var floorY = this.floorY();  // already zoom-adjusted
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
-    if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
+    // Apply zoom — scale from top-left, world coords scale up
+    ctx.save();
+    ctx.scale(z, z);
+    if (vSY !== 0) ctx.translate(0, vSY / z);
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
 
@@ -2843,13 +2878,21 @@ class Game {
     if (this.sling) this._drawSling();
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
-    // Restore transform before fixed-position overlays
-    if (vSY !== 0) ctx.restore();
+    // Restore zoom transform before fixed-position overlays
+    ctx.restore();  // always restore (we always save now for zoom)
     // CLR buttons always shown in top bar
     this._drawHudClearButtons();
     // Speed slider and corner buttons hidden when editor is open
     if (!this._editorMode) {
-      this._drawSpeedSlider();
+      // Zoom level indicator (only when zoomed out)
+    if ((this._viewZoom || 1.0) < 0.99) {
+      var zPct = Math.round((this._viewZoom || 1.0) * 100);
+      ctx.fillStyle = 'rgba(0,200,255,0.5)';
+      ctx.font = "bold 9px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText('ZOOM ' + zPct + '%', 8, this.H - FLOOR_MARGIN + 4);
+    }
+    this._drawSpeedSlider();
       this._drawCornerButtons();
     }
   }
