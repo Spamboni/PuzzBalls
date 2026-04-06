@@ -353,10 +353,11 @@
   <div style="margin-top:12px;text-align:center">
     <a id="siteLink" href="#" target="_blank" style="
       display:none;
-      color:var(--green);font-family:Share Tech Mono,monospace;font-size:11px;
-      text-decoration:none;padding:8px 16px;border:1px solid var(--green);
-      border-radius:6px;background:rgba(0,255,136,0.08)
-    ">🚀 Open Site →</a>
+      color:#030a18;font-family:Orbitron,sans-serif;font-size:14px;font-weight:700;
+      letter-spacing:2px;text-decoration:none;padding:12px 24px;
+      background:var(--green);border-radius:8px;
+      box-shadow:0 0 20px rgba(0,255,136,0.4);
+    ">🚀 PLAY PUZZBALLS</a>
   </div>
 </div>
 
@@ -755,7 +756,7 @@ async function pollPagesDeployment(token, repo) {
   link.href = siteUrl;
 
   var startTime = Date.now();
-  var maxWait   = 120000;  // 2 minutes max
+  var maxWait   = 45000;  // 45 seconds max
   var pollInterval = 4000; // check every 4 seconds
   var lastDeployId = null;
 
@@ -848,7 +849,7 @@ async function pollPagesDeployment(token, repo) {
     if (success) {
       badge.className = 'status-badge visible success';
       badge.innerHTML = timedOut
-        ? '✅ Should be live (~' + sec + 's) — tap to check'
+        ? '✅ Live! (~' + sec + 's)'
         : '✅ Live in ' + sec + 's!';
       link.style.display = 'inline-block';
       log('🌐 Site live at: ' + siteUrl, 'ok');
