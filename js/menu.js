@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['menu.js'] = 1456;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['menu.js'] = 1457;
 // menu.js — Main menu / level selector screen
 
 var LEVEL_CATALOG = [
@@ -69,7 +69,7 @@ var Menu = (function() {
 
     // ── Header ──────────────────────────────────────────────────────────────
     var header = _el('div', 'menu-header');
-    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">v14.56</div>';
+    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">v14.57</div>';
     _container.appendChild(header);
 
     // ── Preset selector ──────────────────────────────────────────────────────
