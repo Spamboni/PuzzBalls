@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>PuzzBalls Deployer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
+
+  :root {
+    --cyan: #00e5ff;
+    --green: #00ff88;
+    --orange: #ff8800;
+    --red: #ff3060;
+    --bg: #030a18;
+    --panel: rgba(0,20,50,0.85);
+    --border: rgba(0,200,255,0.25);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: #cde;
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px 40px;
+    overflow-x: hidden;
+  }
+
+  /* Starfield */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 15%, rgba(0,200,255,0.6) 0%, transparent 100%),
+      radial-gradient(1px 1px at 75% 30%, rgba(0,200,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 40% 60%, rgba(0,200,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 85% 70%, rgba(0,200,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 10% 80%, rgba(0,200,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 55% 85%, rgba(0,200,255,0.3) 0%, transparent 100%),
+      radial-gradient(2px 2px at 90% 20%, rgba(255,136,0,0.3) 0%, transparent 100%),
+      radial-gradient(2px 2px at 30% 45%, rgba(255,136,0,0.2) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(22px, 7vw, 36px);
+    font-weight: 900;
+    color: var(--cyan);
+    text-shadow: 0 0 20px var(--cyan), 0 0 60px rgba(0,229,255,0.3);
+    letter-spacing: 4px;
+    margin-bottom: 4px;
+    position: relative; z-index: 1;
+  }
+
+  .subtitle {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: rgba(0,200,255,0.45);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    position: relative; z-index: 1;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    width: 100%;
+    max-width: 480px;
+    position: relative; z-index: 1;
+    backdrop-filter: blur(10px);
+    margin-bottom: 14px;
+  }
+
+  .card-title {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: rgba(0,200,255,0.5);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 10px;
+    color: rgba(0,200,255,0.6);
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    background: rgba(0,10,30,0.8);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--cyan);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+    margin-bottom: 14px;
+  }
+  input:focus { border-color: var(--cyan); box-shadow: 0 0 8px rgba(0,229,255,0.2); }
+
+  .token-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .token-row input { flex: 1; margin-bottom: 0; }
+  .eye-btn {
+    background: rgba(0,20,50,0.8);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: rgba(0,200,255,0.5);
+    font-size: 16px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    margin-top: 0;
+  }
+  .eye-btn:active { background: rgba(0,100,200,0.2); }
+
+  .drop-zone {
+    border: 2px dashed rgba(0,200,255,0.3);
+    border-radius: 10px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .drop-zone.has-file {
+    border-color: var(--green);
+    background: rgba(0,255,136,0.05);
+  }
+  .drop-zone.dragging {
+    border-color: var(--cyan);
+    background: rgba(0,229,255,0.08);
+  }
+  .drop-zone input[type="file"] {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer;
+    width: 100%; height: 100%;
+  }
+  .drop-icon { font-size: 32px; margin-bottom: 8px; }
+  .drop-label { font-size: 11px; color: rgba(0,200,255,0.6); }
+  .drop-filename { font-size: 12px; color: var(--green); margin-top: 6px; font-weight: bold; }
+
+  .btn {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-deploy {
+    background: linear-gradient(135deg, rgba(0,60,30,0.9), rgba(0,40,20,0.9));
+    border: 2px solid var(--green);
+    color: var(--green);
+    text-shadow: 0 0 8px var(--green);
+    box-shadow: 0 0 20px rgba(0,255,136,0.15);
+  }
+  .btn-deploy:active:not(:disabled) {
+    background: linear-gradient(135deg, rgba(0,255,136,0.2), rgba(0,255,136,0.1));
+    transform: scale(0.98);
+  }
+  .btn-deploy:disabled {
+    opacity: 0.4; cursor: not-allowed;
+  }
+
+  .progress-bar {
+    height: 4px;
+    background: rgba(0,200,255,0.15);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 12px;
+    display: none;
+  }
+  .progress-bar.visible { display: block; }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--green));
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px var(--cyan);
+  }
+
+  .log {
+    background: rgba(0,5,15,0.8);
+    border: 1px solid rgba(0,200,255,0.15);
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 220px;
+    overflow-y: auto;
+    font-size: 10px;
+    line-height: 1.7;
+    display: none;
+  }
+  .log.visible { display: block; }
+  .log-line { padding: 1px 0; }
+  .log-ok   { color: var(--green); }
+  .log-err  { color: var(--red); }
+  .log-info { color: var(--cyan); }
+  .log-warn { color: var(--orange); }
+  .log-dim  { color: rgba(0,200,255,0.35); }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    margin-top: 10px;
+    display: none;
+  }
+  .status-badge.visible { display: inline-flex; }
+  .status-badge.success { background: rgba(0,255,136,0.12); border: 1px solid var(--green); color: var(--green); }
+  .status-badge.error   { background: rgba(255,48,96,0.12);  border: 1px solid var(--red);   color: var(--red); }
+  .status-badge.working { background: rgba(0,229,255,0.10); border: 1px solid var(--cyan);  color: var(--cyan); }
+
+  .dot-pulse { animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .stats-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 10px;
+    display: none;
+  }
+  .stats-row.visible { display: flex; }
+  .stat {
+    flex: 1;
+    background: rgba(0,10,30,0.6);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    text-align: center;
+  }
+  .stat-num { font-size: 18px; color: var(--cyan); font-family: 'Orbitron', sans-serif; }
+  .stat-label { font-size: 8px; color: rgba(0,200,255,0.4); letter-spacing: 1px; margin-top: 2px; }
+
+  .saved-token-hint {
+    font-size: 9px;
+    color: rgba(0,255,136,0.5);
+    margin-top: 6px;
+    display: none;
+  }
+
+  .repo-display {
+    font-size: 11px;
+    color: rgba(0,200,255,0.5);
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: rgba(0,10,30,0.5);
+    border-radius: 4px;
+    border-left: 2px solid var(--cyan);
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="logo">PUZZBALLS</div>
+<div class="subtitle">GitHub Deploy Tool</div>
+
+<div class="card">
+  <div class="card-title">⚙ Configuration</div>
+
+  <label>GitHub Personal Access Token</label>
+  <div class="token-row">
+    <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+    <button class="eye-btn" id="eyeBtn" onclick="toggleToken()">👁</button>
+  </div>
+  <div class="saved-token-hint" id="savedHint">✓ Token saved in browser</div>
+
+  <label>Repository (owner/name)</label>
+  <input type="text" id="repoInput" value="Spamboni/PuzzBalls" placeholder="username/reponame">
+
+  <label>Branch</label>
+  <input type="text" id="branchInput" value="main" placeholder="main">
+  <div class="repo-display" id="repoDisplay"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">📦 Zip File</div>
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".zip" onchange="onFileSelect(this)">
+    <div class="drop-icon">📂</div>
+    <div class="drop-label">Tap to select puzzballs-v*.zip</div>
+    <div class="drop-filename" id="fileName"></div>
+  </div>
+</div>
+
+<div class="card">
+  <button class="btn btn-deploy" id="deployBtn" onclick="deploy()" disabled>
+    🚀 DEPLOY TO GITHUB
+  </button>
+  <div class="progress-bar" id="progressBar">
+    <div class="progress-fill" id="progressFill" style="width:0%"></div>
+  </div>
+  <div style="text-align:center">
+    <div class="status-badge" id="statusBadge"></div>
+  </div>
+  <div class="stats-row" id="statsRow">
+    <div class="stat"><div class="stat-num" id="statPushed">0</div><div class="stat-label">PUSHED</div></div>
+    <div class="stat"><div class="stat-num" id="statSkipped">0</div><div class="stat-label">SKIPPED</div></div>
+    <div class="stat"><div class="stat-num" id="statErrors">0</div><div class="stat-label">ERRORS</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">📋 Log</div>
+  <div class="log" id="log"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+let zipFile = null;
+let deploying = false;
+
+// Load saved token and repo
+window.onload = function() {
+  var saved = localStorage.getItem('pb_token');
+  if (saved) {
+    document.getElementById('tokenInput').value = saved;
+    document.getElementById('savedHint').style.display = 'block';
+  }
+  var savedRepo = localStorage.getItem('pb_repo');
+  if (savedRepo) document.getElementById('repoInput').value = savedRepo;
+  updateRepoDisplay();
+  checkReady();
+};
+
+function toggleToken() {
+  var inp = document.getElementById('tokenInput');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function updateRepoDisplay() {
+  var repo = document.getElementById('repoInput').value.trim();
+  var d = document.getElementById('repoDisplay');
+  if (repo) {
+    d.style.display = 'block';
+    d.textContent = '→ https://github.com/' + repo;
+  }
+}
+
+document.getElementById('tokenInput').addEventListener('input', function() {
+  localStorage.setItem('pb_token', this.value.trim());
+  document.getElementById('savedHint').style.display = this.value ? 'block' : 'none';
+  checkReady();
+});
+document.getElementById('repoInput').addEventListener('input', function() {
+  localStorage.setItem('pb_repo', this.value.trim());
+  updateRepoDisplay();
+  checkReady();
+});
+
+// Drag and drop
+var dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('dragging'); });
+dz.addEventListener('dragleave', function() { dz.classList.remove('dragging'); });
+dz.addEventListener('drop', function(e) {
+  e.preventDefault(); dz.classList.remove('dragging');
+  var f = e.dataTransfer.files[0];
+  if (f && f.name.endsWith('.zip')) setFile(f);
+});
+
+function onFileSelect(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(f) {
+  zipFile = f;
+  dz.classList.add('has-file');
+  document.querySelector('.drop-icon').textContent = '✅';
+  document.querySelector('.drop-label').textContent = 'Zip file selected';
+  document.getElementById('fileName').textContent = f.name + ' (' + (f.size/1024).toFixed(0) + ' KB)';
+  checkReady();
+}
+
+function checkReady() {
+  var token = document.getElementById('tokenInput').value.trim();
+  var repo  = document.getElementById('repoInput').value.trim();
+  document.getElementById('deployBtn').disabled = !(token && repo && zipFile && !deploying);
+}
+
+function log(msg, type) {
+  var el = document.getElementById('log');
+  el.classList.add('visible');
+  var line = document.createElement('div');
+  line.className = 'log-line log-' + (type||'info');
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(text, type) {
+  var b = document.getElementById('statusBadge');
+  b.className = 'status-badge visible ' + type;
+  b.innerHTML = text;
+}
+
+function setProgress(pct) {
+  document.getElementById('progressBar').classList.add('visible');
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+async function getFileSHA(token, repo, branch, path) {
+  var r = await fetch('https://api.github.com/repos/' + repo + '/contents/' + path + '?ref=' + branch, {
+    headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) return undefined;
+  var j = await r.json();
+  return j.sha || null;
+}
+
+async function pushFile(token, repo, branch, path, content, sha, commitMsg) {
+  var body = {
+    message: commitMsg,
+    content: content,  // base64
+    branch: branch,
+  };
+  if (sha) body.sha = sha;
+  var r = await fetch('https://api.github.com/repos/' + repo + '/contents/' + path, {
+    method: 'PUT',
+    headers: {
+      'Authorization': 'token ' + token,
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.github.v3+json'
+    },
+    body: JSON.stringify(body)
+  });
+  return r.ok;
+}
+
+function arrayBufferToBase64(buffer) {
+  var bytes = new Uint8Array(buffer);
+  var b = '';
+  for (var i = 0; i < bytes.byteLength; i++) b += String.fromCharCode(bytes[i]);
+  return btoa(b);
+}
+
+async function deploy() {
+  if (deploying) return;
+  deploying = true;
+  checkReady();
+
+  var token  = document.getElementById('tokenInput').value.trim();
+  var repo   = document.getElementById('repoInput').value.trim();
+  var branch = document.getElementById('branchInput').value.trim() || 'main';
+
+  // Clear log
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('statsRow').classList.remove('visible');
+  setStatus('<span class="dot-pulse">●</span> Reading zip...', 'working');
+  setProgress(2);
+
+  var pushed = 0, skipped = 0, errors = 0;
+
+  try {
+    // Validate file before attempting to parse
+    if (zipFile.size < 10000) {
+      throw new Error('File too small (' + zipFile.size + ' bytes) — download may be corrupted. Try re-downloading the zip from Claude.');
+    }
+    var headerBytes = await new Promise(function(res, rej) {
+      var r = new FileReader(); r.onload = function(e) { res(new Uint8Array(e.target.result)); }; r.onerror = rej;
+      r.readAsArrayBuffer(zipFile.slice(0, 4));
+    });
+    if (headerBytes[0] !== 0x50 || headerBytes[1] !== 0x4B) {
+      throw new Error('Not a valid zip file — wrong file header. The download may have been truncated. Please re-download the zip from Claude and try again.');
+    }
+    // Read zip
+    var zip = await JSZip.loadAsync(zipFile);
+    var files = [];
+    zip.forEach(function(path, entry) {
+      if (!entry.dir) files.push({ path: path, entry: entry });
+    });
+
+    // Strip leading folder name (e.g. "puzzballs/")
+    var prefix = '';
+    if (files.length > 0) {
+      var firstPath = files[0].path;
+      var slash = firstPath.indexOf('/');
+      if (slash > 0) prefix = firstPath.slice(0, slash + 1);
+    }
+
+    // Filter to only deployable files (skip icons unless changed)
+    var deployFiles = files.filter(function(f) {
+      var p = f.path;
+      // Skip .DS_Store, __MACOSX etc
+      if (p.includes('__MACOSX') || p.includes('.DS_Store')) return false;
+      return true;
+    });
+
+    log('📦 Found ' + deployFiles.length + ' files in zip', 'info');
+    log('🌿 Deploying to ' + repo + ' @ ' + branch, 'info');
+
+    var commitMsg = 'Deploy ' + zipFile.name.replace('.zip','') + ' via PuzzBalls Deploy Tool';
+
+    for (var i = 0; i < deployFiles.length; i++) {
+      var f = deployFiles[i];
+      // Strip prefix to get repo-relative path
+      var repoPath = prefix ? f.path.slice(prefix.length) : f.path;
+      if (!repoPath) continue;
+
+      setProgress(5 + Math.round((i / deployFiles.length) * 88));
+      setStatus('<span class="dot-pulse">●</span> ' + (i+1) + '/' + deployFiles.length + ': ' + repoPath.split('/').pop(), 'working');
+
+      try {
+        // Get file content as ArrayBuffer
+        var buf = await f.entry.async('arraybuffer');
+        var b64 = arrayBufferToBase64(buf);
+
+        // Get current SHA (needed to update existing files)
+        var sha = await getFileSHA(token, repo, branch, repoPath);
+
+        var ok = await pushFile(token, repo, branch, repoPath, b64, sha, commitMsg);
+        if (ok) {
+          pushed++;
+          log('  ✓ ' + repoPath, 'ok');
+        } else {
+          errors++;
+          log('  ✗ ' + repoPath + ' — push failed', 'err');
+        }
+      } catch(e) {
+        errors++;
+        log('  ✗ ' + repoPath + ' — ' + e.message, 'err');
+      }
+
+      // Small delay to avoid rate limiting
+      await new Promise(function(r) { setTimeout(r, 120); });
+    }
+
+    setProgress(100);
+    document.getElementById('statPushed').textContent = pushed;
+    document.getElementById('statSkipped').textContent = skipped;
+    document.getElementById('statErrors').textContent = errors;
+    document.getElementById('statsRow').classList.add('visible');
+
+    if (errors === 0) {
+      setStatus('✅ Deploy complete! ' + pushed + ' files pushed', 'success');
+      log('', 'dim');
+      log('🚀 Deployed! GitHub Pages updates in ~30 seconds.', 'ok');
+      log('👉 https://' + repo.split('/')[0].toLowerCase() + '.github.io/' + repo.split('/')[1], 'info');
+    } else {
+      setStatus('⚠ Done with ' + errors + ' errors', 'error');
+      log('Check errors above. Try re-deploying — GitHub sometimes rate-limits.', 'warn');
+    }
+
+  } catch(e) {
+    setStatus('❌ Error: ' + e.message, 'error');
+    log('Fatal error: ' + e.message, 'err');
+  }
+
+  deploying = false;
+  checkReady();
+}
+</script>
+</body>
+</html>
