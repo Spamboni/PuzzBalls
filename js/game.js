@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1453;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1454;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1193,6 +1193,7 @@ class Game {
     this._rafId = requestAnimationFrame(this._loop);
     this.frame++;
     var i, j, floorY = this.floorY();
+    try {
 
     window._gameSparks = this.sparks;
     window._gameBrickSpeedMult = this.brickSpeedMult;
@@ -1793,6 +1794,19 @@ class Game {
     this._checkObjectives();
 
     this._draw();
+    } catch(err) {
+      // Surface errors visibly instead of silently killing the loop
+      console.error('PuzzBalls _loop error:', err);
+      var ctx = this.ctx;
+      if (ctx) {
+        ctx.fillStyle = '#030a18'; ctx.fillRect(0,0,this.W,this.H);
+        ctx.fillStyle = '#ff4444'; ctx.font = "12px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('ERROR: ' + err.message, this.W/2, this.H/2 - 16);
+        ctx.fillStyle = '#ff8888'; ctx.font = "9px 'Share Tech Mono',monospace";
+        ctx.fillText('Check console. Tap ⟳ to reset.', this.W/2, this.H/2 + 10);
+      }
+    }
   }
 
   _checkObjectives() {

@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1453;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1454;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -202,7 +202,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v14.53</b>';
+        vRow.innerHTML = '<b>PuzzBalls v14.54</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -224,11 +224,11 @@ class UI {
           nameEl.textContent = key;
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
-          if (loaded === 1453undefined) {
-            verEl.textContent = f === 'index.html' ? 'v14.53 (this page)' : 'not stamped';
+          if (loaded === 1454undefined) {
+            verEl.textContent = f === 'index.html' ? 'v14.54 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1453) {
-            verEl.textContent = 'v14.53 ✓';
+          } else if (loaded === 1454) {
+            verEl.textContent = 'v14.54 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
