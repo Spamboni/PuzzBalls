@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1468;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1470;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -313,12 +313,19 @@ class TubePiece {
         var ballPos0 = this._pointAtT(this._ballT);
         var bs0 = window.BallSettings && BallSettings[this._ball.type] || {};
         var bGlow0 = bs0.glow || '#ffffff';
-        var bAlpha0 = style === 'glass' ? 0.88 : 0.62;
-        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.80, 0, Math.PI * 2);
+        var bAlpha0 = style === 'glass' ? 0.82 : 0.58;
+        // No shadow — shadow bleeds above the rim lines drawn over this
+        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
         ctx.fillStyle = bGlow0 + Math.round(bAlpha0 * 255).toString(16).padStart(2,'0');
-        ctx.shadowColor = bGlow0; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
-        ctx.beginPath(); ctx.arc(ballPos0.x - this._ball.r*0.25, ballPos0.y - this._ball.r*0.28, this._ball.r*0.18, 0, Math.PI*2);
-        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
+        ctx.fill();
+        // Inner gradient — slightly lighter center
+        var bgr = ctx.createRadialGradient(
+          ballPos0.x - this._ball.r*0.2, ballPos0.y - this._ball.r*0.2, 0,
+          ballPos0.x, ballPos0.y, this._ball.r * 0.78);
+        bgr.addColorStop(0, 'rgba(255,255,255,0.45)');
+        bgr.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, this._ball.r * 0.78, 0, Math.PI * 2);
+        ctx.fillStyle = bgr; ctx.fill();
       }
 
       // ── Outer glow (wide soft halo along both edges) ──────────────────────────
