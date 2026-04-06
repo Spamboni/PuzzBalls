@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1448;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1449;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -164,7 +164,8 @@ class TubePiece {
       // Apply speed modifier — only for energy tubes; others preserve entry speed
       var spd  = Math.max(3, Math.hypot(ball.vx, ball.vy));
       var newSpd = (this.style === 'energy') ? Math.max(3, spd * this.speedMod) : spd;
-      var exitAngle = exitSocket.angle + (exitA ? Math.PI : 0);
+      // exitSocket.angle already points OUTWARD from each end — use it directly
+      var exitAngle = exitSocket.angle;
       ball.vx = Math.cos(exitAngle) * newSpd;
       ball.vy = Math.sin(exitAngle) * newSpd;
       ball.inFlight = true;

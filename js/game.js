@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1448;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1449;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -3859,26 +3859,27 @@ class Game {
       ctx.fillText(tDelAct ? '✕ DELETING' : '✕ DEL TUBE', delTX + 26, row6Y + rH/2);
     }
 
-    // DONE button — always visible at bottom of tube panel
-    var tubeDoneY = (this._tubeSelected ? row5Y + rH + gap + rH + gap : row5Y + rH + gap);
-    this._editorDoneBtn = { x: W - 64, y: tubeDoneY, w: 56, h: btnH };
+    // DONE + BUILD pinned at TOP of tube editor content area (right below tabs)
+    var topBtnY = panelY - btnH - 2;  // sits just above the first content row
+    this._editorDoneBtn = { x: W - 64, y: topBtnY, w: 56, h: btnH };
     ctx.fillStyle = 'rgba(0,60,30,0.85)';
-    ctx.beginPath(); ctx.roundRect(W - 64, tubeDoneY, 56, btnH, 4); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(W - 64, topBtnY, 56, btnH, 4); ctx.fill();
     ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(W - 64, tubeDoneY, 56, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#00ff88'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.beginPath(); ctx.roundRect(W - 64, topBtnY, 56, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#00ff88'; ctx.font = "bold 11px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DONE', W - 64 + 28, tubeDoneY + btnH/2);
+    ctx.fillText('DONE', W - 64 + 28, topBtnY + btnH/2);
 
-    // BUILD / SELECT mode toggle for tubes
+    // BUILD / SELECT mode toggle — left side of same row
     this._tubeSelectMode = this._tubeSelectMode || false;
-    this._tubeModeBtn = { x: padding, y: tubeDoneY, w: 60, h: btnH };
+    this._tubeModeBtn = { x: padding, y: topBtnY, w: 60, h: btnH };
     ctx.fillStyle = this._tubeSelectMode ? 'rgba(255,180,0,0.22)' : 'rgba(0,50,100,0.50)';
-    ctx.beginPath(); ctx.roundRect(padding, tubeDoneY, 60, btnH, 4); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(padding, topBtnY, 60, btnH, 4); ctx.fill();
     ctx.strokeStyle = this._tubeSelectMode ? '#ffcc00' : '#00aaff'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(padding, tubeDoneY, 60, btnH, 4); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(padding, topBtnY, 60, btnH, 4); ctx.stroke();
     ctx.fillStyle = this._tubeSelectMode ? '#ffcc00' : '#88bbff';
-    ctx.fillText(this._tubeSelectMode ? 'SELECT' : 'BUILD', padding + 30, tubeDoneY + btnH/2);
+    ctx.font = "bold 11px 'Share Tech Mono',monospace";
+    ctx.fillText(this._tubeSelectMode ? 'SELECT' : 'BUILD', padding + 30, topBtnY + btnH/2);
   }
 
   _drawNotePopup(ctx, brick) {
@@ -3897,15 +3898,17 @@ class Game {
     ctx.fillStyle = '#dd88ff'; ctx.font = "bold 10px 'Share Tech Mono',monospace";
     ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillText('🎵 BRICK NOTE', popX + 10, popY + 8);
-    // DONE button — green, easy to tap
-    var doneNoteX = popX + popW - 58, doneNoteY = popY + 5;
-    var doneNoteW = 50, doneNoteH = 22;
-    this._notePopupClose = { x: doneNoteX, y: doneNoteY, w: doneNoteW, h: doneNoteH };
-    ctx.fillStyle = 'rgba(0,60,30,0.9)';
-    ctx.beginPath(); ctx.roundRect(doneNoteX, doneNoteY, doneNoteW, doneNoteH, 4); ctx.fill();
-    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(doneNoteX, doneNoteY, doneNoteW, doneNoteH, 4); ctx.stroke();
-    ctx.fillStyle = '#00ff88'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    // DONE button — large, top-right of popup, easy to tap
+    var doneNoteX = popX + popW - 72, doneNoteY = popY + 4;
+    var doneNoteW = 62, doneNoteH = 30;
+    this._notePopupClose = { x: doneNoteX - 8, y: doneNoteY - 6, w: doneNoteW + 16, h: doneNoteH + 12 };  // extra hit area
+    ctx.fillStyle = 'rgba(0,80,40,0.95)';
+    ctx.beginPath(); ctx.roundRect(doneNoteX, doneNoteY, doneNoteW, doneNoteH, 5); ctx.fill();
+    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.roundRect(doneNoteX, doneNoteY, doneNoteW, doneNoteH, 5); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#00ff88'; ctx.font = "bold 12px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('DONE', doneNoteX + doneNoteW/2, doneNoteY + doneNoteH/2);
 
