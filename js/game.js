@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1460;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1462;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -403,12 +403,19 @@ class Game {
         var inPanel = _py >= _screenFloorY;
 
         // Always check panel buttons regardless of Y position (buttons are below floor)
-        if (self._editorModeBtn) {
-          var mb2 = self._editorModeBtn;
-          if (_px >= mb2.x && _px <= mb2.x + mb2.w && _py >= mb2.y && _py <= mb2.y + mb2.h) {
-            self._editorSelectMode = !self._editorSelectMode;
-            self._editorSelected   = null;
-            return;
+        if (self._editorModeBtns) {
+          for (var mbi = 0; mbi < self._editorModeBtns.length; mbi++) {
+            var mb2 = self._editorModeBtns[mbi];
+            if (_px >= mb2.x && _px <= mb2.x + mb2.w && _py >= mb2.y && _py <= mb2.y + mb2.h) {
+              self._editorToolMode = mb2.id;
+              self._editorSelectMode = (mb2.id !== 'build');
+              self._editorSelected = null;
+              self._editorStretchState = null;
+              self._editorWidthState   = null;
+              self._editorRotateState  = null;
+              if (window.Sound && Sound.uiTap) Sound.uiTap(0.2);
+              return;
+            }
           }
         }
         // Clear all bricks
@@ -1921,6 +1928,17 @@ class Game {
     }
   }
 
+  _getPivotOffset(brick, pivot) {
+    // Returns {x,y} offset from brick center to pivot point
+    var hw = (brick.w || 40) / 2, hh = (brick.h || 22) / 2;
+    var pMap = {
+      'TL':{x:-hw,y:-hh},'TC':{x:0,y:-hh},'TR':{x:hw,y:-hh},
+      'ML':{x:-hw,y:0},  'CM':{x:0,y:0},   'MR':{x:hw,y:0},
+      'BL':{x:-hw,y:hh}, 'BC':{x:0,y:hh},  'BR':{x:hw,y:hh},
+    };
+    return pMap[pivot] || {x:0, y:0};
+  }
+
   // Try to unstick a sticky ball that was hit by another ball
   _tryKnockSticky(sticky, impactSpeed) {
     if (sticky.type !== BALL_TYPES.STICKY || sticky.stuckTo !== '_wall_') return;
@@ -2818,6 +2836,9 @@ class Game {
   toggleEditor() {
     this._editorMode = !this._editorMode;
     if (this._editorMode) {
+      // Clear speed slider rects so they can't be hit-tested while editor is open
+      this._sliderRect = null; this._brickSliderRect = null;
+      this._zoneSliderRect = null; this._tubeSliderRect = null;
       this._editorBrickType   = 'breakable_brick';
       this._editorDragging    = null;
       this._editorSelected    = null;
@@ -2873,7 +2894,8 @@ class Game {
     }
     if (bestBrick) {
       var b = bestBrick;
-      // Brick delete mode: tap = delete
+      var toolMode = this._editorToolMode || 'build';
+      // Brick delete mode: tap = delete (always active regardless of tool)
       if (this._editorBrickDeleteMode) {
         this._undoPush();
         var idx2 = this.bricks.indexOf(b);
@@ -2883,11 +2905,64 @@ class Game {
         return;
       }
       this._editorSelected = b;
+      this._showBrickSettings = true;
+      this._editorMovable = b._movable || false;
+
+      if (toolMode === 'stretch') {
+        // Determine which end was tapped (in brick local space)
+        var bRot4 = b._rotation || 0;
+        var cosR4 = Math.cos(-bRot4), sinR4 = Math.sin(-bRot4);
+        var relX4 = pos.x - b.x, relY4 = pos.y - b.y;
+        var localX4 = cosR4 * relX4 - sinR4 * relY4;
+        var halfW4 = (b.w || 40) / 2;
+        // Which end is closer?
+        var endSide = localX4 >= 0 ? 'right' : 'left';
+        this._editorStretchState = {
+          brick: b, side: endSide,
+          startLocalX: localX4,
+          origW: b.w || 40,
+          origX: b.x, origY: b.y,
+        };
+        this._editorDragging = null;
+        return;
+      }
+
+      if (toolMode === 'width') {
+        // Determine which edge (top/bottom in local space)
+        var bRot5 = b._rotation || 0;
+        var cosR5 = Math.cos(-bRot5), sinR5 = Math.sin(-bRot5);
+        var relX5 = pos.x - b.x, relY5 = pos.y - b.y;
+        var localY5 = sinR5 * relX5 + cosR5 * relY5;
+        var edgeSide = localY5 >= 0 ? 'bottom' : 'top';
+        this._editorWidthState = {
+          brick: b, side: edgeSide,
+          startLocalY: localY5,
+          origH: b.h || 22,
+          origX: b.x, origY: b.y,
+        };
+        this._editorDragging = null;
+        return;
+      }
+
+      if (toolMode === 'rotate') {
+        // Use existing pivot point or brick center
+        var pivot = b._pivot || 'CM';
+        var pOff = this._getPivotOffset(b, pivot);
+        this._editorRotateState = {
+          brick: b,
+          pivotWorldX: b.x + pOff.x,
+          pivotWorldY: b.y + pOff.y,
+          startAngle: Math.atan2(pos.y - (b.y + pOff.y), pos.x - (b.x + pOff.x)),
+          origRotation: b._rotation || 0,
+        };
+        this._editorDragging = null;
+        return;
+      }
+
+      // BUILD or SELECT mode: normal drag
       this._editorDragOffX = pos.x - b.x;
       this._editorDragOffY = pos.y - b.y;
       this._editorDragging = b;
-      this._editorMovable  = b._movable || false;
-      this._showBrickSettings = true;
       return;
     }
     // SELECT mode: tapping empty space just deselects — never place
@@ -3099,6 +3174,70 @@ class Game {
       this._setSliderVal(sl.key, sl.defKey, val, sl);
       return;
     }
+    // STRETCH mode
+    if (this._editorStretchState) {
+      var ss = this._editorStretchState, sb = ss.brick;
+      var bRot6 = sb._rotation || 0;
+      var cosR6 = Math.cos(-bRot6), sinR6 = Math.sin(-bRot6);
+      var relX6 = pos.x - sb.x, relY6 = pos.y - sb.y;
+      var localX6 = cosR6 * relX6 - sinR6 * relY6;
+      var delta6 = localX6 - ss.startLocalX;
+      var minW = 12;
+      if (ss.side === 'right') {
+        var newW6 = Math.max(minW, ss.origW + delta6);
+        var growBy6 = newW6 - ss.origW;
+        sb.w = newW6;
+        // Move center to keep left end anchored
+        sb.x = ss.origX + Math.cos(bRot6) * growBy6 / 2;
+        sb.y = ss.origY + Math.sin(bRot6) * growBy6 / 2;
+      } else {
+        var newW7 = Math.max(minW, ss.origW - delta6);
+        var growBy7 = newW7 - ss.origW;
+        sb.w = newW7;
+        // Move center to keep right end anchored
+        sb.x = ss.origX - Math.cos(bRot6) * growBy7 / 2;
+        sb.y = ss.origY - Math.sin(bRot6) * growBy7 / 2;
+      }
+      return;
+    }
+
+    // WIDTH mode
+    if (this._editorWidthState) {
+      var ws = this._editorWidthState, wb = ws.brick;
+      var bRot7 = wb._rotation || 0;
+      var cosR7 = Math.cos(-bRot7), sinR7 = Math.sin(-bRot7);
+      var relX7 = pos.x - wb.x, relY7 = pos.y - wb.y;
+      var localY7 = sinR7 * relX7 + cosR7 * relY7;
+      var delta7 = localY7 - ws.startLocalY;
+      var minH = 6;
+      if (ws.side === 'bottom') {
+        var newH7 = Math.max(minH, ws.origH + delta7);
+        var growBy8 = newH7 - ws.origH;
+        wb.h = newH7;
+        // Move center to keep top edge anchored
+        var perpAngle = bRot7 + Math.PI/2;
+        wb.x = ws.origX + Math.cos(perpAngle) * growBy8 / 2;
+        wb.y = ws.origY + Math.sin(perpAngle) * growBy8 / 2;
+      } else {
+        var newH8 = Math.max(minH, ws.origH - delta7);
+        var growBy9 = newH8 - ws.origH;
+        wb.h = newH8;
+        var perpAngle2 = bRot7 + Math.PI/2;
+        wb.x = ws.origX - Math.cos(perpAngle2) * growBy9 / 2;
+        wb.y = ws.origY - Math.sin(perpAngle2) * growBy9 / 2;
+      }
+      return;
+    }
+
+    // ROTATE mode
+    if (this._editorRotateState) {
+      var rs = this._editorRotateState, rb = rs.brick;
+      var curAngle = Math.atan2(pos.y - rs.pivotWorldY, pos.x - rs.pivotWorldX);
+      var deltaAngle = curAngle - rs.startAngle;
+      rb._rotation = rs.origRotation + deltaAngle;
+      return;
+    }
+
     if (!this._editorDragging) return;
     var nx = pos.x - (this._editorDragOffX || 0);
     var ny = pos.y - (this._editorDragOffY || 0) - (this._viewScrollY || 0);
@@ -3161,8 +3300,11 @@ class Game {
   }
 
   _editorOnUp() {
-    if (this._editorDragging || this._editorDragSlider) this._undoPush();
+    if (this._editorDragging || this._editorDragSlider || this._editorStretchState || this._editorWidthState || this._editorRotateState) this._undoPush();
     this._editorDragging    = null;
+    this._editorStretchState = null;
+    this._editorWidthState   = null;
+    this._editorRotateState  = null;
     this._editorDragSlider  = null;
   }
 
@@ -3297,22 +3439,137 @@ class Game {
     this._editorUndoBtn = null;
     this._editorRedoBtn = null;
 
-    // Left side: SELECT/BUILD + type-specific
-    var modeW = 52;
-    this._editorModeBtn = { x: startX, y: btnY, w: modeW, h: btnH };
-    ctx.fillStyle = isSelect ? 'rgba(255,180,0,0.22)' : 'rgba(0,50,100,0.50)';
-    ctx.beginPath(); ctx.roundRect(startX, btnY, modeW, btnH, 4); ctx.fill();
-    ctx.strokeStyle = isSelect ? '#ffcc00' : '#00aaff'; ctx.lineWidth = 1.8;
-    ctx.beginPath(); ctx.roundRect(startX, btnY, modeW, btnH, 4); ctx.stroke();
-    ctx.fillStyle = isSelect ? '#ffcc00' : '#00ccff';
-    ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 10px 'Share Tech Mono',monospace";
-    ctx.fillText(isSelect ? '✦ SEL' : '+ BLD', startX + modeW/2, btnY + btnH/2);
+    // ── Mode toolbar: BUILD | SEL | STR | WID | ROT ────────────────────────────
+    var editorMode = this._editorToolMode || 'build';  // 'build','select','stretch','width','rotate'
+    // Keep _editorSelectMode in sync for existing code
+    this._editorSelectMode = (editorMode !== 'build');
+    var modeTools = [
+      { id:'build',   label:'BLD', col:'#4488ff' },
+      { id:'select',  label:'SEL', col:'#ffcc00' },
+      { id:'stretch', label:'STR', col:'#00ff88' },
+      { id:'width',   label:'WID', col:'#ff8844' },
+      { id:'rotate',  label:'ROT', col:'#cc44ff' },
+    ];
+    var modeW = 34, modeGap = 3;
+    var totalModeW = modeTools.length * modeW + (modeTools.length-1) * modeGap;
+    this._editorModeBtns = [];
+    for (var mi = 0; mi < modeTools.length; mi++) {
+      var mt = modeTools[mi];
+      var mx = startX + mi * (modeW + modeGap);
+      var isActive = editorMode === mt.id;
+      ctx.fillStyle = isActive ? mt.col + '44' : 'rgba(0,10,30,0.7)';
+      ctx.beginPath(); ctx.roundRect(mx, btnY, modeW, btnH, 4); ctx.fill();
+      ctx.strokeStyle = isActive ? mt.col : mt.col + '55';
+      ctx.lineWidth = isActive ? 2 : 1;
+      if (isActive) { ctx.shadowColor = mt.col; ctx.shadowBlur = 8; }
+      ctx.beginPath(); ctx.roundRect(mx, btnY, modeW, btnH, 4); ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Draw icon
+      ctx.save();
+      ctx.translate(mx + modeW/2, btnY + btnH/2);
+      var ic = mt.col;
+      if (mt.id === 'build') {
+        // Brick
+        ctx.fillStyle = ic + '88'; ctx.beginPath(); ctx.roundRect(-9,-5,18,10,2); ctx.fill();
+        ctx.strokeStyle = ic; ctx.lineWidth=1.4; ctx.shadowColor=ic; ctx.shadowBlur=isActive?6:0;
+        ctx.beginPath(); ctx.roundRect(-9,-5,18,10,2); ctx.stroke(); ctx.shadowBlur=0;
+        ctx.fillStyle=ic; [[-3,-2],[3,-2],[-3,2],[3,2]].forEach(function(d){ctx.beginPath();ctx.arc(d[0],d[1],1,0,Math.PI*2);ctx.fill();});
+      } else if (mt.id === 'select') {
+        // Arrow
+        ctx.save(); ctx.rotate(-Math.PI/4);
+        ctx.beginPath();
+        ctx.moveTo(-4,-10); ctx.lineTo(4,-10); ctx.lineTo(4,0); ctx.lineTo(8,0);
+        ctx.lineTo(0,9); ctx.lineTo(-8,0); ctx.lineTo(-4,0); ctx.closePath();
+        ctx.fillStyle='rgba(0,160,180,0.7)'; ctx.fill();
+        ctx.strokeStyle=ic; ctx.lineWidth=1.4; ctx.setLineDash([2,2]);
+        ctx.shadowColor=ic; ctx.shadowBlur=isActive?6:0; ctx.stroke();
+        ctx.setLineDash([]); ctx.shadowBlur=0; ctx.restore();
+      } else if (mt.id === 'stretch') {
+        // Brick with arrows pointing out from ends
+        ctx.strokeStyle=ic; ctx.lineWidth=1.4; ctx.shadowColor=ic; ctx.shadowBlur=isActive?5:0;
+        ctx.fillStyle=ic+'55'; ctx.beginPath(); ctx.roundRect(-7,-4,14,8,2); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-7,-4,14,8,2); ctx.stroke();
+        // Left arrow
+        ctx.beginPath(); ctx.moveTo(-7,-3); ctx.lineTo(-12,0); ctx.lineTo(-7,3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(-12,0); ctx.stroke();
+        // Right arrow
+        ctx.beginPath(); ctx.moveTo(7,-3); ctx.lineTo(12,0); ctx.lineTo(7,3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(7,0); ctx.lineTo(12,0); ctx.stroke();
+        ctx.shadowBlur=0;
+      } else if (mt.id === 'width') {
+        // Brick with arrows pointing out from top/bottom
+        ctx.strokeStyle=ic; ctx.lineWidth=1.4; ctx.shadowColor=ic; ctx.shadowBlur=isActive?5:0;
+        ctx.fillStyle=ic+'55'; ctx.beginPath(); ctx.roundRect(-8,-3,16,6,2); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-8,-3,16,6,2); ctx.stroke();
+        // Top arrow
+        ctx.beginPath(); ctx.moveTo(-3,-3); ctx.lineTo(0,-9); ctx.lineTo(3,-3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,-3); ctx.lineTo(0,-9); ctx.stroke();
+        // Bottom arrow
+        ctx.beginPath(); ctx.moveTo(-3,3); ctx.lineTo(0,9); ctx.lineTo(3,3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,3); ctx.lineTo(0,9); ctx.stroke();
+        ctx.shadowBlur=0;
+      } else if (mt.id === 'rotate') {
+        // Circular arrow
+        ctx.strokeStyle=ic; ctx.lineWidth=2; ctx.shadowColor=ic; ctx.shadowBlur=isActive?5:0;
+        ctx.beginPath(); ctx.arc(0,0,7,0.4,Math.PI*2-0.4);
+        ctx.stroke(); ctx.shadowBlur=0;
+        // Arrowhead at end
+        ctx.fillStyle=ic;
+        ctx.beginPath(); ctx.moveTo(6,5); ctx.lineTo(10,2); ctx.lineTo(6,-1); ctx.fill();
+        // Pivot dot
+        ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2);
+        ctx.fillStyle=ic; ctx.fill();
+      }
+      ctx.restore();
+      this._editorModeBtns.push({ x:mx, y:btnY, w:modeW, h:btnH, id:mt.id });
+    }
+    var curX = startX + totalModeW + 6;
+    // Draw icon for mode button
+    ctx.save();
+    ctx.translate(startX + modeW/2, btnY + btnH/2);
+    if (isSelect) {
+      // Yellow dashed-outline arrow pointer (SELECT)
+      var aw = 11, ah = 14;
+      // Arrow body (solid teal-grey fill)
+      ctx.beginPath();
+      ctx.moveTo(-aw*0.5, -ah*0.55);  // tip
+      ctx.lineTo( aw*0.5,  ah*0.10);  // right shoulder
+      ctx.lineTo( aw*0.08, ah*0.08);  // inner right
+      ctx.lineTo( aw*0.08, ah*0.55);  // bottom right
+      ctx.lineTo(-aw*0.08, ah*0.55);  // bottom left
+      ctx.lineTo(-aw*0.08, ah*0.08);  // inner left
+      ctx.lineTo(-aw*0.5,  ah*0.10);  // left shoulder
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(0,180,200,0.75)';
+      ctx.fill();
+      // Yellow dashed outline
+      ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 1.5;
+      ctx.setLineDash([2.5, 2]); ctx.stroke();
+      ctx.setLineDash([]);
+      // Yellow glow
+      ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.setLineDash([]);
+    } else {
+      // Neon brick (BUILD)
+      var bw = 18, bh = 9;
+      ctx.fillStyle = 'rgba(0,100,180,0.5)';
+      ctx.beginPath(); ctx.roundRect(-bw/2, -bh/2, bw, bh, 2); ctx.fill();
+      ctx.strokeStyle = '#4488ff'; ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#4488ff'; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.roundRect(-bw/2, -bh/2, bw, bh, 2); ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Rivet dots
+      ctx.fillStyle = '#4488ff';
+      [[-5,-2],[5,-2],[-5,2],[5,2]].forEach(function(d){
+        ctx.beginPath(); ctx.arc(d[0], d[1], 1.2, 0, Math.PI*2); ctx.fill();
+      });
+    }
+    ctx.restore();
 
     var curX = startX + modeW + 4;
     this._editorTypeBtns = [];
 
-    if (!isSelect) {
+    if ((this._editorToolMode || 'build') === 'build') {
       var bTypes  = ['breakable_brick','circular_brick'];
       var bLabels = ['BRICK','ROUND'];
       var bColors = ['#4488ff','#44ff88'];
@@ -3687,7 +3944,12 @@ class Game {
     // Highlight selected brick
     if (this._editorSelected) {
       var sb = this._editorSelected;
-      ctx.strokeStyle = 'rgba(255,255,100,0.85)';
+      // Color selection outline by current tool mode
+      var toolMode2 = this._editorToolMode || 'build';
+      var modeColors = { build:'rgba(255,255,100,0.85)', select:'rgba(255,200,0,0.85)',
+                         stretch:'rgba(0,255,136,0.85)', width:'rgba(255,136,68,0.85)',
+                         rotate:'rgba(200,68,255,0.85)' };
+      ctx.strokeStyle = modeColors[toolMode2] || 'rgba(255,255,100,0.85)';
       ctx.lineWidth   = 2;
       ctx.setLineDash([4, 4]);
       ctx.save();
@@ -3699,6 +3961,57 @@ class Game {
       }
       ctx.restore();
       ctx.setLineDash([]);
+
+      // ROTATE mode: show pivot crosshair
+      if (toolMode2 === 'rotate' || this._editorRotateState) {
+        var pivotSrc = this._editorRotateState || null;
+        var pivot3 = sb._pivot || 'CM';
+        var pOff3 = this._getPivotOffset(sb, pivot3);
+        var pvX = sb.x + Math.cos(sb._rotation||0)*pOff3.x - Math.sin(sb._rotation||0)*pOff3.y;
+        var pvY = sb.y + Math.sin(sb._rotation||0)*pOff3.x + Math.cos(sb._rotation||0)*pOff3.y;
+        ctx.save();
+        ctx.strokeStyle = '#cc44ff'; ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#cc44ff'; ctx.shadowBlur = 8;
+        ctx.beginPath(); ctx.arc(pvX, pvY, 6, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(pvX-9,pvY); ctx.lineTo(pvX+9,pvY);
+        ctx.moveTo(pvX,pvY-9); ctx.lineTo(pvX,pvY+9); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.restore();
+      }
+
+      // STRETCH mode: glow the active end
+      if (toolMode2 === 'stretch' || this._editorStretchState) {
+        var bRot8 = sb._rotation || 0;
+        var hw2 = (sb.w || 40) / 2;
+        var side8 = this._editorStretchState ? this._editorStretchState.side : null;
+        var ends = side8 ? [side8] : ['left','right'];
+        ends.forEach(function(s) {
+          var ex = sb.x + Math.cos(bRot8) * hw2 * (s==='right'?1:-1);
+          var ey = sb.y + Math.sin(bRot8) * hw2 * (s==='right'?1:-1);
+          ctx.save();
+          ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2;
+          ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10;
+          ctx.beginPath(); ctx.arc(ex, ey, 6, 0, Math.PI * 2); ctx.stroke();
+          ctx.shadowBlur = 0; ctx.restore();
+        });
+      }
+
+      // WIDTH mode: glow top/bottom edges
+      if (toolMode2 === 'width' || this._editorWidthState) {
+        var bRot9 = sb._rotation || 0;
+        var hh2 = (sb.h || 22) / 2;
+        var perpA = bRot9 + Math.PI/2;
+        ['top','bottom'].forEach(function(s) {
+          var sign = s==='bottom' ? 1 : -1;
+          var ex2 = sb.x + Math.cos(perpA) * hh2 * sign;
+          var ey2 = sb.y + Math.sin(perpA) * hh2 * sign;
+          ctx.save();
+          ctx.strokeStyle = '#ff8844'; ctx.lineWidth = 2;
+          ctx.shadowColor = '#ff8844'; ctx.shadowBlur = 8;
+          ctx.beginPath(); ctx.moveTo(ex2 - Math.cos(bRot9)*10, ey2 - Math.sin(bRot9)*10);
+          ctx.lineTo(ex2 + Math.cos(bRot9)*10, ey2 + Math.sin(bRot9)*10); ctx.stroke();
+          ctx.shadowBlur = 0; ctx.restore();
+        });
+      }
     }
     ctx.filter = 'none';
     ctx.restore();
@@ -3832,7 +4145,38 @@ class Game {
     ctx.beginPath(); ctx.roundRect(padding, row0Y, 70, btnH, 4); ctx.stroke();
     ctx.fillStyle = this._tubeSelectMode ? '#ffcc00' : '#88bbff';
     ctx.font = "bold 11px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(this._tubeSelectMode ? '✦ SEL' : '+ BLD', padding + 35, row0Y + btnH/2);
+    // Draw tube mode icon
+    ctx.save();
+    ctx.translate(padding + 35, row0Y + btnH/2);
+    if (this._tubeSelectMode) {
+      // Yellow dashed arrow (SELECT)
+      var aw2 = 11, ah2 = 14;
+      ctx.beginPath();
+      ctx.moveTo(-aw2*0.5, -ah2*0.55); ctx.lineTo(aw2*0.5, ah2*0.10);
+      ctx.lineTo(aw2*0.08, ah2*0.08);  ctx.lineTo(aw2*0.08, ah2*0.55);
+      ctx.lineTo(-aw2*0.08, ah2*0.55); ctx.lineTo(-aw2*0.08, ah2*0.08);
+      ctx.lineTo(-aw2*0.5, ah2*0.10);  ctx.closePath();
+      ctx.fillStyle = 'rgba(0,180,200,0.75)'; ctx.fill();
+      ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 1.5;
+      ctx.setLineDash([2.5, 2]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
+    } else {
+      // Tube icon (BUILD) — little cylinder
+      var tw = 18, tr = 5;
+      ctx.fillStyle = 'rgba(0,150,200,0.4)';
+      ctx.beginPath(); ctx.ellipse(-tw/2+1, 0, 3, tr, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.rect(-tw/2+1, -tr, tw-2, tr*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(tw/2-1, 0, 3, tr, 0, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#00ccff'; ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 6;
+      ctx.beginPath(); ctx.moveTo(-tw/2+1, -tr); ctx.lineTo(tw/2-1, -tr);
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-tw/2+1, tr); ctx.lineTo(tw/2-1, tr);
+      ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(tw/2-1, 0, 3, tr, 0, 0, Math.PI*2); ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
 
     this._editorDoneBtn = { x: W - 64, y: row0Y, w: 56, h: btnH };
     ctx.fillStyle = 'rgba(0,60,30,0.85)';
