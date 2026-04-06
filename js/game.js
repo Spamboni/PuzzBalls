@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1451;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1453;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1006,10 +1006,9 @@ class Game {
       if (self._tubeDragging) {
         var td = self._tubeDragging;
         var conn = td.connectedA || td.connectedB;
-        if (conn) {
-          // Pivot around joint
+        if (conn && self._tubePivotState) {
           var _connPos = { x: pos.x, y: pos.y - (self._viewScrollY || 0) };
-          self.tubes.dragConnected(td, _connPos, self._tubeDragOffX || 0, self._tubeDragOffY || 0);
+          self.tubes.dragConnected(td, _connPos, self._tubePivotState);
         } else {
           td.x = pos.x - (self._tubeDragOffX || 0);
           td.y = (pos.y - (self._viewScrollY || 0)) - (self._tubeDragOffY || 0);
@@ -1088,8 +1087,26 @@ class Game {
         var snapResult = self.tubes.checkSnap(self._tubeDragging);
         if (snapResult && snapResult.dist < self.tubes.SNAP_DIST) {
           self.tubes.applySnap(self._tubeDragging, snapResult, false);
+          // Weld sound — metallic click
+          if (window.Sound && Sound.getCtx) {
+            var sc = Sound.getCtx();
+            if (sc) {
+              var g = sc.createGain(); g.connect(sc.destination);
+              g.gain.setValueAtTime(0.18, sc.currentTime);
+              g.gain.exponentialRampToValueAtTime(0.001, sc.currentTime + 0.18);
+              var o1 = sc.createOscillator(); o1.connect(g);
+              o1.type = 'square'; o1.frequency.setValueAtTime(880, sc.currentTime);
+              o1.frequency.exponentialRampToValueAtTime(440, sc.currentTime + 0.06);
+              o1.start(sc.currentTime); o1.stop(sc.currentTime + 0.18);
+              var o2 = sc.createOscillator(); o2.connect(g);
+              o2.type = 'sine'; o2.frequency.setValueAtTime(1320, sc.currentTime);
+              o2.frequency.exponentialRampToValueAtTime(660, sc.currentTime + 0.1);
+              o2.start(sc.currentTime); o2.stop(sc.currentTime + 0.1);
+            }
+          }
         }
         self._tubeDragging = null;
+        self._tubePivotState = null;
       }
       self._tubeDragSlider = null;
 
@@ -2827,6 +2844,8 @@ class Game {
       return;
     }
     // BUILD mode: place new brick — use last-used settings or factory defaults
+    // First, save settings from whatever brick was selected (carries forward all slider values)
+    if (this._editorSelected) this._saveLastSettings(this._editorSelected);
     var defaults = window.BrickDefaults || {};
     var last     = this._editorLastSettings || {};
     var isCircle = this._editorBrickType === 'circular_brick';
@@ -3699,17 +3718,29 @@ class Game {
       var now2 = performance.now();
       var dtap = now2 - (this._lastTubeTap || 0);
       this._lastTubeTap = now2;
-      // Double-tap in select mode = disconnect
-      if (dtap < 350 && this._tubeSelectMode && this._lastTubeTapId === hitTube.id) {
-        this.tubes.disconnect(hitTube);
-        this._lastTubeTap = 0;
-        return;
+      // Double-tap = disconnect from all connected tubes (both modes)
+      if (dtap < 350 && this._lastTubeTapId === hitTube.id) {
+        if (hitTube.connectedA || hitTube.connectedB) {
+          this.tubes.disconnect(hitTube);
+          // Nudge tube slightly so it's visually obvious it's disconnected
+          var nudgeAngle = hitTube.rotation + Math.PI / 2;
+          hitTube.x += Math.cos(nudgeAngle) * 12;
+          hitTube.y += Math.sin(nudgeAngle) * 12;
+          hitTube.rebuild();
+          if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
+          this._lastTubeTap = 0;
+          return;
+        }
       }
       this._lastTubeTapId = hitTube.id;
       this._tubeSelected = hitTube;
       this._tubeDragging = hitTube;
       this._tubeDragOffX = pos.x - hitTube.x;
       this._tubeDragOffY = pos.y - hitTube.y;
+      // Pre-compute pivot state for connected-tube rotation (prevents spin accumulation)
+      this._tubePivotState = (hitTube.connectedA || hitTube.connectedB)
+        ? this.tubes.makePivotState(hitTube, pos.x, pos.y)
+        : null;
       return;
     }
     // Select mode: don't place new tubes
@@ -3736,7 +3767,30 @@ class Game {
   _drawTubeEditor(ctx, panelY) {
     var W = this.W;
     var padding = 8, btnH = 22, rH = 20, gap = 5;
-    var row1Y = panelY + 6;
+
+    // ── Row 0: BUILD/SELECT toggle (left) + DONE (right) ─────────────────────
+    var row0Y = panelY + 4;
+    this._tubeSelectMode = this._tubeSelectMode || false;
+    this._tubeModeBtn = { x: padding, y: row0Y, w: 70, h: btnH };
+    ctx.fillStyle = this._tubeSelectMode ? 'rgba(255,180,0,0.22)' : 'rgba(0,50,100,0.50)';
+    ctx.beginPath(); ctx.roundRect(padding, row0Y, 70, btnH, 4); ctx.fill();
+    ctx.strokeStyle = this._tubeSelectMode ? '#ffcc00' : '#00aaff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(padding, row0Y, 70, btnH, 4); ctx.stroke();
+    ctx.fillStyle = this._tubeSelectMode ? '#ffcc00' : '#88bbff';
+    ctx.font = "bold 11px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(this._tubeSelectMode ? '✦ SEL' : '+ BLD', padding + 35, row0Y + btnH/2);
+
+    this._editorDoneBtn = { x: W - 64, y: row0Y, w: 56, h: btnH };
+    ctx.fillStyle = 'rgba(0,60,30,0.85)';
+    ctx.beginPath(); ctx.roundRect(W - 64, row0Y, 56, btnH, 4); ctx.fill();
+    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(W - 64, row0Y, 56, btnH, 4); ctx.stroke();
+    ctx.fillStyle = '#00ff88'; ctx.font = "bold 11px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('DONE', W - 64 + 28, row0Y + btnH/2);
+
+    // Shift all content rows down past the mode row
+    var row1Y = row0Y + btnH + gap;
 
     // Tube type buttons
     var types = ['straight','elbow90','elbow45','elbow30','elbow15','uturn','funnel'];
@@ -3870,27 +3924,7 @@ class Game {
       ctx.fillText(tDelAct ? '✕ DELETING' : '✕ DEL TUBE', delTX + 26, row6Y + rH/2);
     }
 
-    // DONE + BUILD pinned at TOP of tube editor content area (right below tabs)
-    var topBtnY = panelY - btnH - 2;  // sits just above the first content row
-    this._editorDoneBtn = { x: W - 64, y: topBtnY, w: 56, h: btnH };
-    ctx.fillStyle = 'rgba(0,60,30,0.85)';
-    ctx.beginPath(); ctx.roundRect(W - 64, topBtnY, 56, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(W - 64, topBtnY, 56, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#00ff88'; ctx.font = "bold 11px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DONE', W - 64 + 28, topBtnY + btnH/2);
-
-    // BUILD / SELECT mode toggle — left side of same row
-    this._tubeSelectMode = this._tubeSelectMode || false;
-    this._tubeModeBtn = { x: padding, y: topBtnY, w: 60, h: btnH };
-    ctx.fillStyle = this._tubeSelectMode ? 'rgba(255,180,0,0.22)' : 'rgba(0,50,100,0.50)';
-    ctx.beginPath(); ctx.roundRect(padding, topBtnY, 60, btnH, 4); ctx.fill();
-    ctx.strokeStyle = this._tubeSelectMode ? '#ffcc00' : '#00aaff'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(padding, topBtnY, 60, btnH, 4); ctx.stroke();
-    ctx.fillStyle = this._tubeSelectMode ? '#ffcc00' : '#88bbff';
-    ctx.font = "bold 11px 'Share Tech Mono',monospace";
-    ctx.fillText(this._tubeSelectMode ? 'SELECT' : 'BUILD', padding + 30, topBtnY + btnH/2);
+    // (BUILD/SELECT and DONE are drawn at the top of the panel — see row0Y above)
   }
 
   _drawNotePopup(ctx, brick) {

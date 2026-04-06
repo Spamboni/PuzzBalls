@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1451;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1453;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -369,15 +369,28 @@ class TubePiece {
         ctx.fill();
       }
 
-      // ── End caps ──────────────────────────────────────────────────────────────
+      // ── End caps (skip on connected sockets — draw weld ring instead) ─────────
       var sockA = this.socketA(), sockB = this.socketB();
-      // Cap ellipse major axis must be perpendicular to tube direction.
-      // sockA.angle points outward from the tube end. The cap rotation
-      // should align the ellipse's tall axis (ry) with the tube cross-section,
-      // meaning we rotate by sockA.angle itself (the ellipse is drawn vertically
-      // in local space, then rotated into world space along the tube direction).
-      this._drawCap(ctx, sockA.x, sockA.y, sockA.angle, tubeR, cr, cg, cb, alpha, style);
-      this._drawCap(ctx, sockB.x, sockB.y, sockB.angle, tubeR, cr, cg, cb, alpha, style);
+      if (!this.connectedA) {
+        this._drawCap(ctx, sockA.x, sockA.y, sockA.angle, tubeR, cr, cg, cb, alpha, style);
+      } else {
+        ctx.save();
+        ctx.translate(sockA.x, sockA.y); ctx.rotate(sockA.angle);
+        ctx.beginPath(); ctx.ellipse(0, 0, tubeR * 0.38, tubeR * 1.05, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0,255,120,0.75)'; ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+      if (!this.connectedB) {
+        this._drawCap(ctx, sockB.x, sockB.y, sockB.angle, tubeR, cr, cg, cb, alpha, style);
+      } else {
+        ctx.save();
+        ctx.translate(sockB.x, sockB.y); ctx.rotate(sockB.angle);
+        ctx.beginPath(); ctx.ellipse(0, 0, tubeR * 0.38, tubeR * 1.05, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0,255,120,0.75)'; ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
+        ctx.restore();
+      }
     }
 
     // ── Draw ball inside tube ─────────────────────────────────────────────────
@@ -648,24 +661,45 @@ class TubeManager {
     });
   }
 
-  // When dragging a connected tube: pivot around the joint if dragging the free end
-  dragConnected(tube, pos, dragOffX, dragOffY) {
+  // When dragging a connected tube: pivot around the joint
+  // pivotState must be pre-computed at drag start and passed each frame
+  dragConnected(tube, pos, pivotState) {
     var conn = tube.connectedA || tube.connectedB;
-    if (!conn) return false;  // not connected — normal drag
-    // Pivot point = the connected socket position
-    var pivotSock = (tube.connectedA && tube.connectedA.tube) ? tube.socketA() : tube.socketB();
-    var pivotX = pivotSock.x, pivotY = pivotSock.y;
-    // Angle from pivot to new drag position
-    var newAngle = Math.atan2((pos.y - dragOffY) - pivotY, (pos.x - dragOffX) - pivotX);
-    var origAngle = Math.atan2(tube.y - pivotY, tube.x - pivotX);
-    var deltaAngle = newAngle - origAngle;
-    tube.rotation += deltaAngle;
-    // Move center to maintain pivot
-    var armLen = Math.hypot(tube.x - pivotX, tube.y - pivotY);
+    if (!conn || !pivotState) return false;
+    var pivotX = pivotState.pivotX, pivotY = pivotState.pivotY;
+    var armLen  = pivotState.armLen;
+
+    // Angle from pivot to current finger position (adjusted by finger-to-center offset at start)
+    var fingerAngle = Math.atan2(pos.y - pivotY, pos.x - pivotX);
+    var newAngle = fingerAngle - pivotState.fingerToCenterAngle;
+
+    // Absolute rotation: initial rotation + how much the arm has turned
+    tube.rotation = pivotState.initRotation + (newAngle - pivotState.initArmAngle);
+
+    // Move center to maintain fixed arm length from pivot
     tube.x = pivotX + Math.cos(newAngle) * armLen;
     tube.y = pivotY + Math.sin(newAngle) * armLen;
     tube.rebuild();
     return true;
+  }
+
+  // Compute pivot state at drag start — call once when drag begins
+  makePivotState(tube, fingerX, fingerY) {
+    var conn = tube.connectedA || tube.connectedB;
+    if (!conn) return null;
+    var pivotSock = tube.connectedA ? tube.socketA() : tube.socketB();
+    var pivotX = pivotSock.x, pivotY = pivotSock.y;
+    var armAngle = Math.atan2(tube.y - pivotY, tube.x - pivotX);
+    var armLen   = Math.hypot(tube.x - pivotX, tube.y - pivotY);
+    // fingerToCenterAngle: offset from finger to arm center at start
+    var fingerAngle0 = Math.atan2(fingerY - pivotY, fingerX - pivotX);
+    return {
+      pivotX: pivotX, pivotY: pivotY,
+      armLen: armLen,
+      initArmAngle: armAngle,
+      initRotation: tube.rotation,
+      fingerToCenterAngle: fingerAngle0 - armAngle,
+    };
   }
 
   // ── Snap check ───────────────────────────────────────────────────────────
