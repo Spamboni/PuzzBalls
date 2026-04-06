@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1464;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1466;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -173,7 +173,7 @@ class TubePiece {
       ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 6);
       ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 6);
       ball._tubeExitFrom = this.id;
-      ball._tubeExitCooldown = 20;
+      ball._tubeExitCooldown = 28;
       return { ball: ball, socket: exitSocket, exitA: exitA };
     }
     // Update ball position to follow path
@@ -203,12 +203,16 @@ class TubePiece {
           ball.y += Math.sin(repelAngle) * (threshold - dist + 4);
           return false;
         }
-        // For non-energy tubes: check ball is moving INTO the tube (strict 60% cone)
-        // inwardAngle = direction pointing INTO the tube from this socket
+        // For non-energy tubes: strict cone check — tighter at connected sockets
         var inwardAngle = sock.angle + Math.PI;
         var ballAngle   = Math.atan2(ball.vy, ball.vx);
         var diff = Math.abs(((ballAngle - inwardAngle) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-        if (diff < Math.PI * 0.60 || this.type === 'funnel') {
+        // Connected sockets get tighter cone (0.40) to prevent joint eating
+        var isConnected = (s === 0 && this.connectedA) || (s === 1 && this.connectedB);
+        var maxCone = isConnected ? Math.PI * 0.40 : Math.PI * 0.60;
+        // Also require minimum approach speed
+        var approachSpd = Math.hypot(ball.vx, ball.vy);
+        if ((diff < maxCone || this.type === 'funnel') && approachSpd > 1.5) {
           this._ball    = ball;
           this._ballT   = s === 0 ? 0 : 1;
           this._ballDir = s === 0 ? 1 : -1;
