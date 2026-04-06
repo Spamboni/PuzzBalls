@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1470;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1471;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -302,11 +302,7 @@ class Game {
     return obj;
   }
 
-  floorY() {
-    var z = this._viewZoom || 1.0;
-    // In zoomed-out mode, the world is larger — floor stays at logical position
-    return (this.H - FLOOR_MARGIN) / z;
-  }
+  floorY() { return this.H - FLOOR_MARGIN; }
 
   // ── Input ──────────────────────────────────────────────────────────────────
 
@@ -348,24 +344,39 @@ class Game {
           self._playPinchStartDist = Math.hypot(pp1b.clientX-pp0b.clientX, pp1b.clientY-pp0b.clientY);
           self._playPinchStartZoom = self._viewZoom || 1.0;
         }
-        if (self._editorTubeMode && self._tubeSelected) {
-          self._tubeDragging = self._tubeSelected;
-          self._tubeDragOffX = 0; self._tubeDragOffY = 0;
-          // Pre-compute pinch start state immediately so first move works
+        if (self._editorTubeMode) {
+          // Hit-test at first finger to find tube (handles simultaneous two-finger touch)
           var rect2 = self.canvas.getBoundingClientRect();
-          var vSY2 = self._viewScrollY || 0;
           var pt0 = e.touches[0], pt1 = e.touches[1];
-          var pp0 = { x: pt0.clientX - rect2.left, y: pt0.clientY - rect2.top - vSY2 };
-          var pp1 = { x: pt1.clientX - rect2.left, y: pt1.clientY - rect2.top - vSY2 };
-          var td2 = self._tubeDragging;
-          self._tubePinchStart = {
-            p0:pp0, p1:pp1, x:td2.x, y:td2.y,
-            rot:td2.rotation, len:td2.length,
-            dist: Math.hypot(pp1.x-pp0.x, pp1.y-pp0.y),
-            angle: Math.atan2(pp1.y-pp0.y, pp1.x-pp0.x),
-          };
+          var pp0 = { x: pt0.clientX - rect2.left, y: pt0.clientY - rect2.top };
+          var pp1 = { x: pt1.clientX - rect2.left, y: pt1.clientY - rect2.top };
+          // Find tube under first finger if none selected
+          if (!self._tubeSelected) {
+            var tubes2 = self.tubes.tubes;
+            for (var ti2b = tubes2.length-1; ti2b >= 0; ti2b--) {
+              var tb2 = tubes2[ti2b];
+              var path2 = tb2._path;
+              if (!path2) continue;
+              for (var pi2 = 0; pi2 < path2.length; pi2++) {
+                if (Math.hypot(pp0.x - path2[pi2].x, pp0.y - path2[pi2].y) < tb2.radius + 20) {
+                  self._tubeSelected = tb2; break;
+                }
+              }
+              if (self._tubeSelected) break;
+            }
+          }
+          if (self._tubeSelected) {
+            self._tubeDragging = self._tubeSelected;
+            self._tubeDragOffX = 0; self._tubeDragOffY = 0;
+            var td2 = self._tubeDragging;
+            self._tubePinchStart = {
+              p0:pp0, p1:pp1, x:td2.x, y:td2.y,
+              rot:td2.rotation, len:td2.length,
+              dist: Math.hypot(pp1.x-pp0.x, pp1.y-pp0.y),
+              angle: Math.atan2(pp1.y-pp0.y, pp1.x-pp0.x),
+            };
+          }
         } else if (!self._editorTubeMode && self._editorSelected) {
-          // Pre-init brick pinch too
           self._editorPinchStart = null;
         }
         return;
@@ -1137,13 +1148,7 @@ class Game {
       if (self._editorMode) {
         // Multi-touch: pinch/rotate bricks (or tubes if tube selected)
         if (e.touches && e.touches.length >= 2) {
-          if (self._editorTubeMode && (self._tubeDragging || self._tubeSelected)) {
-            // Ensure _tubeDragging mirrors _tubeSelected for pinch
-            if (!self._tubeDragging && self._tubeSelected) {
-              self._tubeDragging = self._tubeSelected;
-              self._tubeDragOffX = 0; self._tubeDragOffY = 0;
-              self._tubePinchStart = null;  // fresh start
-            }
+          if (self._editorTubeMode && self._tubeDragging) {
             self._tubeHandleTouch(e.touches);
           } else if (!self._editorTubeMode) {
             self._editorHandleTouch(e.touches);
@@ -2842,10 +2847,13 @@ class Game {
     var vSY = this._viewScrollY || 0;
     var floorY = this.floorY();  // already zoom-adjusted
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
-    // Apply zoom — scale from top-left, world coords scale up
+    // Apply zoom — anchor at bottom-right so chute/floor stay fixed
+    // Transform: translate to bottom-right, scale, translate back
     ctx.save();
+    ctx.translate(W, H);
     ctx.scale(z, z);
-    if (vSY !== 0) ctx.translate(0, vSY / z);
+    ctx.translate(-W, -H);
+    if (vSY !== 0) ctx.translate(0, vSY);
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
 
@@ -2857,7 +2865,7 @@ class Game {
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     // Behind-layer tubes drawn first (under everything)
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
-    // Chute balls drawn BEFORE buttons so they appear behind them
+    // Chute and chute balls drawn inside zoom so they scale with world
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
     this._drawChute();
     if (this.barrier) this.barrier.draw(ctx);
