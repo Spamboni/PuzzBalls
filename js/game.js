@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1464;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1466;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1044,20 +1044,9 @@ class Game {
       }
       // Tube piece drag
       // Two-finger tube manipulation
-      // Two-finger pinch on selected tube = rotate it
-      if (self._editorTubeMode && self._tubeSelected && e.touches && e.touches.length >= 2) {
-        var t1 = e.touches[0], t2p = e.touches[1];
-        var pinchAngle = Math.atan2(t2p.clientY - t1.clientY, t2p.clientX - t1.clientX);
-        if (self._lastPinchAngle !== undefined) {
-          var dAngle = pinchAngle - self._lastPinchAngle;
-          self._tubeSelected.rotation += dAngle;
-          self._tubeSelected.rebuild();
-        }
-        self._lastPinchAngle = pinchAngle;
-        return;
-      }
+      // Two-finger: tube pinch (handled below via _tubeHandleTouch)
       if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
-        // handled below via _tubeHandleTouch
+        // handled below
       }
       if (self._tubeDragging) {
         var td = self._tubeDragging;
@@ -1076,7 +1065,13 @@ class Game {
       if (self._editorMode) {
         // Multi-touch: pinch/rotate bricks (or tubes if tube selected)
         if (e.touches && e.touches.length >= 2) {
-          if (self._editorTubeMode && self._tubeDragging) {
+          if (self._editorTubeMode && (self._tubeDragging || self._tubeSelected)) {
+            // Ensure _tubeDragging mirrors _tubeSelected for pinch
+            if (!self._tubeDragging && self._tubeSelected) {
+              self._tubeDragging = self._tubeSelected;
+              self._tubeDragOffX = 0; self._tubeDragOffY = 0;
+              self._tubePinchStart = null;  // fresh start
+            }
             self._tubeHandleTouch(e.touches);
           } else if (!self._editorTubeMode) {
             self._editorHandleTouch(e.touches);
@@ -3151,8 +3146,11 @@ class Game {
     if (snapDeg > 0) { var sr = snapDeg*Math.PI/180; newAngle = Math.round(newAngle/sr)*sr; }
     td.rotation = newAngle;
 
-    if (td.type === 'straight') {
-      td.length = Math.max(20, Math.min(600, Math.hypot(p1.x-p0.x, p1.y-p0.y)));
+    // Scale length from finger distance for all types
+    var newDist2 = Math.hypot(p1.x-p0.x, p1.y-p0.y);
+    if (ps.dist > 5) {
+      var scaleFactor = newDist2 / ps.dist;
+      td.length = Math.max(20, Math.min(600, ps.len * scaleFactor));
     }
 
     if (d0 < ANCHOR) {
@@ -3470,7 +3468,7 @@ class Game {
       { id:'width',   label:'WID', col:'#ff8844' },
       { id:'rotate',  label:'ROT', col:'#cc44ff' },
     ];
-    var modeW = 28, modeGap = 3;
+    var modeW = 26, modeGap = 2;
     var totalModeW = modeTools.length * modeW + (modeTools.length-1) * modeGap;
     this._editorModeBtns = [];
     for (var mi = 0; mi < modeTools.length; mi++) {
@@ -3543,7 +3541,7 @@ class Game {
       ctx.restore();
       this._editorModeBtns.push({ x:mx, y:btnY, w:modeW, h:btnH, id:mt.id });
     }
-    var curX = startX + totalModeW + 4;
+    var curX = startX + totalModeW + 3;
     // Draw icon for mode button
     ctx.save();
     ctx.translate(startX + modeW/2, btnY + btnH/2);
@@ -3593,7 +3591,7 @@ class Game {
       var bTypes  = ['breakable_brick','circular_brick'];
       var bLabels = ['BRICK','ROUND'];
       var bColors = ['#4488ff','#44ff88'];
-      var tW = 44;
+      var tW = 38;
       for (var ti = 0; ti < bTypes.length; ti++) {
         if (curX + tW > clearX - 8) break;  // prevent overflow into right buttons
         var active = this._editorBrickType === bTypes[ti];
@@ -3614,21 +3612,24 @@ class Game {
     }
     this._editorMovBtn = null;  // MOV is in row 2
 
-    // DEL — always shown after other buttons, before CLR ALL
-    var delW2 = 36;
-    if (curX + delW2 < clearX - 4) {
+    // DEL — fixed position: right of mode+type buttons, always visible
+    var delW2 = 34;
+    var delX2 = startX + totalModeW + 3 + (this._editorToolMode === 'build' ? 2*(38+4) : 0);
+    // Cap so it never overlaps clearX
+    if (delX2 + delW2 > clearX - 6) delX2 = clearX - delW2 - 6;
+    {
       var bDelActive = this._editorBrickDeleteMode || false;
-      this._editorDelBtn = { x: curX, y: btnY, w: delW2, h: btnH };
+      this._editorDelBtn = { x: delX2, y: btnY, w: delW2, h: btnH };
       ctx.fillStyle = bDelActive ? 'rgba(180,0,0,0.85)' : (this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)');
-      ctx.beginPath(); ctx.roundRect(curX, btnY, delW2, btnH, 4); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(delX2, btnY, delW2, btnH, 4); ctx.fill();
       ctx.strokeStyle = bDelActive ? '#ff2222' : (this._editorSelected ? '#ff4444' : '#882222');
       if (bDelActive) { ctx.shadowColor='#ff0000'; ctx.shadowBlur=8; }
       ctx.lineWidth = bDelActive ? 2 : 1.5;
-      ctx.beginPath(); ctx.roundRect(curX, btnY, delW2, btnH, 4); ctx.stroke();
+      ctx.beginPath(); ctx.roundRect(delX2, btnY, delW2, btnH, 4); ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.fillStyle = bDelActive ? '#ff4444' : (this._editorSelected ? '#ff6666' : '#884444');
       ctx.font = "bold 10px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(bDelActive ? '✕DEL' : 'DEL', curX + delW2/2, btnY + btnH/2);
+      ctx.fillText(bDelActive ? '✕DEL' : 'DEL', delX2 + delW2/2, btnY + btnH/2);
     }
     // Row 2+3: Sliders for HP (with ∞), REGEN, DENS, DIST
     // Rows sit below the button row. Two sliders per row, each half screen width.
@@ -3828,31 +3829,34 @@ class Game {
     }
 
     // ── Row 2b: GRID | SNAP | ROT SNAP | GR SIZE | ADV ─────────────────────
-    var row2bY = row2Y + rH2 + 4;
+    var row2bY = row2Y + rH2 + 5;
+    var rH2b = 24;  // row2b taller buttons
     // GRID toggle
     var gridX = padding;
     var gridOn = window._showEditorGrid || false;
-    this._editorGridBtn = { x: gridX, y: row2bY, w: 32, h: rH2 };
+    this._editorGridBtn = { x: gridX, y: row2bY, w: 32, h: rH2b };
     ctx.fillStyle = gridOn ? 'rgba(0,180,100,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(gridX, row2bY, 32, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(gridX, row2bY, 32, rH2b, 3); ctx.fill();
     ctx.strokeStyle = gridOn ? '#00cc66' : '#334455'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(gridX, row2bY, 32, rH2, 3); ctx.stroke();
     ctx.fillStyle = gridOn ? '#00ff88' : '#446655';
     ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('GRID', gridX + 16, row2bY + rH2/2);
+    ctx.font = "bold 9px 'Share Tech Mono',monospace";
+    ctx.fillText('GRID', gridX + 16, row2bY + rH2b/2);
 
     // SNAP-GRID toggle
     var snapGX = gridX + 36;
     var snapGOn = window._snapToGrid || false;
-    this._editorSnapGridBtn = { x: snapGX, y: row2bY, w: 34, h: rH2 };
+    this._editorSnapGridBtn = { x: snapGX, y: row2bY, w: 34, h: rH2b };
     ctx.fillStyle = snapGOn ? 'rgba(0,150,255,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(snapGX, row2bY, 34, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(snapGX, row2bY, 34, rH2b, 3); ctx.fill();
     ctx.strokeStyle = snapGOn ? '#00aaff' : '#334455'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(snapGX, row2bY, 34, rH2, 3); ctx.stroke();
     ctx.fillStyle = snapGOn ? '#44ccff' : '#445566';
     ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('SNAP', snapGX + 17, row2bY + rH2/2 - 3);
-    ctx.fillText('GRID', snapGX + 17, row2bY + rH2/2 + 4);
+    ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.fillText('SNAP', snapGX + 17, row2bY + rH2b/2 - 3);
+    ctx.fillText('GRID', snapGX + 17, row2bY + rH2b/2 + 4);
 
     // UNDO/REDO buttons at start of row 2
     var undoW2 = 38;
@@ -3882,40 +3886,43 @@ class Game {
     var snaps3 = [0, 15, 30, 45]; var sLabels3 = ['ROT:FREE','ROT:15°','ROT:30°','ROT:45°'];
     var sIdx3 = snaps3.indexOf(this._editorSnapDeg || 0);
     var rotSnapW = 52;
-    this._editorSnapBtn = { x: rotSnapX, y: row2bY, w: rotSnapW, h: rH2 };
+    this._editorSnapBtn = { x: rotSnapX, y: row2bY, w: rotSnapW, h: rH2b };
     ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? 'rgba(255,170,0,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(rotSnapX, row2bY, rotSnapW, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(rotSnapX, row2bY, rotSnapW, rH2b, 3); ctx.fill();
     ctx.strokeStyle = (this._editorSnapDeg||0) > 0 ? '#ffaa00' : '#334455'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(rotSnapX, row2bY, rotSnapW, rH2, 3); ctx.stroke();
     ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? '#ffcc44' : '#556677';
     ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(sLabels3[sIdx3], rotSnapX + rotSnapW/2, row2bY + rH2/2);
+    ctx.font = "bold 9px 'Share Tech Mono',monospace";
+    ctx.fillText(sLabels3[sIdx3], rotSnapX + rotSnapW/2, row2bY + rH2b/2);
 
     // Grid size value display (tap to edit) — beside SNAP-GRID
     var gSizeX = rotSnapX + rotSnapW + 4;
     var gSizeW = 36;
     var gSizeVal = window._gridSize || 20;
-    this._editorGridSizeBtn = { x: gSizeX, y: row2bY, w: gSizeW, h: rH2 };
+    this._editorGridSizeBtn = { x: gSizeX, y: row2bY, w: gSizeW, h: rH2b };
     ctx.fillStyle = 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(gSizeX, row2bY, gSizeW, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(gSizeX, row2bY, gSizeW, rH2b, 3); ctx.fill();
     ctx.strokeStyle = '#334466'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(gSizeX, row2bY, gSizeW, rH2, 3); ctx.stroke();
     ctx.fillStyle = '#88aabb'; ctx.font = "bold 6px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('GR:' + gSizeVal, gSizeX + gSizeW/2, row2bY + rH2/2);
+    ctx.font = "bold 9px 'Share Tech Mono',monospace";
+    ctx.fillText('GR:' + gSizeVal, gSizeX + gSizeW/2, row2bY + rH2b/2);
 
     // ADV/BASIC toggle — end of row 2
     var advOn = (window._editorAdvanced !== false);  // default true
     var advX = W - 44, advW = 40;
-    this._editorAdvBtn = { x: advX, y: row2bY, w: advW, h: rH2 };
+    this._editorAdvBtn = { x: advX, y: row2bY, w: advW, h: rH2b };
     ctx.fillStyle = advOn ? 'rgba(255,100,0,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(advX, row2bY, advW, rH2, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(advX, row2bY, advW, rH2b, 3); ctx.fill();
     ctx.strokeStyle = advOn ? '#ff8800' : '#334455'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(advX, row2bY, advW, rH2, 3); ctx.stroke();
     ctx.fillStyle = advOn ? '#ffaa44' : '#556677';
     ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(advOn ? 'ADV' : 'BASIC', advX + advW/2, row2bY + rH2/2 - 3);
-    ctx.fillText(advOn ? '▲' : '▼', advX + advW/2, row2bY + rH2/2 + 4);
+    ctx.font = "bold 9px 'Share Tech Mono',monospace";
+    ctx.fillText(advOn ? 'ADV' : 'BASIC', advX + advW/2, row2bY + rH2b/2 - 3);
+    ctx.fillText(advOn ? '▲' : '▼', advX + advW/2, row2bY + rH2b/2 + 4);
 
     // ── ROWS 3–7: sliders ────────────────────────────────────────────────────
     var sliderRowH = 22;
@@ -3925,7 +3932,7 @@ class Game {
     var halfW2     = Math.floor((W - 16) / 2);
 
     var advOn2 = (window._editorAdvanced !== false);
-    var row3Y = row2bY + rH2 + 6;  // below row2b
+    var row3Y = row2bY + rH2b + 6;  // below row2b
     var row4Y = row3Y + (advOn2 ? sliderRowH + 5 : 0);
     var row5Y = row4Y + sliderRowH + 5;
     var row6Y = row5Y + (advOn2 ? sliderRowH + 5 : 0);
