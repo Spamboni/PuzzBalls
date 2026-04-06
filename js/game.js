@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1457;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1459;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -2806,6 +2806,9 @@ class Game {
       this._editorSelected    = null;
       if (!this._undoHistory) { this._undoHistory = []; this._redoHistory = []; }
       if (this._editorTranslate === undefined) this._editorTranslate = false;
+      // Default: stationary, no rotation, translate-on-rotate off
+      if (this._editorMovable === undefined) this._editorMovable = false;
+      if (this._editorLastSettings === undefined) this._editorLastSettings = { _movable: false, _rotation: 0, _translateOnRotate: false };
       if (window.Sound && Sound.editorOpen) Sound.editorOpen();  // default ⊕ROT
     } else {
       this._editorNotePopup = false;
@@ -3482,9 +3485,9 @@ class Game {
     ctx.font = "bold 9px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(transOn3 ? '↔ROT' : '⊕ROT', transX3 + 20, row2Y + rH2/2);
 
-    // PIVOT 3×3 grid — advanced only
+    // PIVOT 3×3 grid — advanced only (↔ROT button always available)
     var pivX3 = transX3 + 44;
-    if (!advOn) { this._editorPivotRects = []; this._editorTransRect = null; }
+    if (!advOn) { this._editorPivotRects = []; }  // transRect stays
     var pivCols = ['L','C','R'], pivRows = ['T','M','B'];
     var pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
     var curPiv3 = sb2 ? (sb2._pivot || 'CM') : (this._editorPivot || 'CM');

@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1458;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1459;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -743,13 +743,33 @@ class TubeManager {
   // ── Serialise for level save ──────────────────────────────────────────────
   toJSON() {
     return this.tubes.map(function(t) {
-      return { type:t.type, x:t.x, y:t.y, rotation:t.rotation, length:t.length,
-               radius:t.radius, speedMod:t.speedMod, style:t.style, layer:t.layer, color:t.color, id:t.id };
+      return {
+        type:t.type, x:t.x, y:t.y, rotation:t.rotation, length:t.length,
+        radius:t.radius, speedMod:t.speedMod, style:t.style, layer:t.layer,
+        color:t.color, id:t.id,
+        // Save connection info as {id, side} pairs
+        connectedA: t.connectedA ? { id: t.connectedA.tube.id, side: t.connectedA.side } : null,
+        connectedB: t.connectedB ? { id: t.connectedB.tube.id, side: t.connectedB.side } : null,
+      };
     });
   }
 
   fromJSON(arr) {
+    // First pass: create all tube objects
     this.tubes = arr.map(function(d) { return new TubePiece(d.type, d.x, d.y, d.rotation, d); });
+    // Second pass: restore connections by matching IDs
+    var tubeMap = {};
+    this.tubes.forEach(function(t) { tubeMap[t.id] = t; });
+    var self = this;
+    arr.forEach(function(d, i) {
+      var tube = self.tubes[i];
+      if (d.connectedA && tubeMap[d.connectedA.id]) {
+        tube.connectedA = { tube: tubeMap[d.connectedA.id], side: d.connectedA.side };
+      }
+      if (d.connectedB && tubeMap[d.connectedB.id]) {
+        tube.connectedB = { tube: tubeMap[d.connectedB.id], side: d.connectedB.side };
+      }
+    });
   }
 }
 
