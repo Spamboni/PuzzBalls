@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1471;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1472;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -318,10 +318,12 @@ class Game {
       var sx = src.clientX - rect.left;
       var sy = src.clientY - rect.top;
       var z  = self._viewZoom || 1.0;
-      // Convert screen coords to world coords (divide by zoom)
-      // BUT: editor panel and HUD are drawn unzoomed, so keep screen coords for those
-      // We return screen coords here; callers that need world coords divide by zoom
-      return { x: sx, y: sy, wx: sx / z, wy: sy / z };
+      var fY = self.floorY();
+      // Convert screen coords to world coords using the zoom transform:
+      // world = (screen - anchor) / z + anchor, where anchor = (W, floorY)
+      var wx = (sx - canvas.width) / z + canvas.width;
+      var wy = (sy - fY) / z + fY;
+      return { x: sx, y: sy, wx: wx, wy: wy };
     }
 
     function isUI(t) {
@@ -754,7 +756,7 @@ class Game {
           // Type buttons
           if (self._tubeBtns) for (var tbi=0;tbi<self._tubeBtns.length;tbi++) {
             var tb=self._tubeBtns[tbi];
-            if (_tpx>=tb.x-2&&_tpx<=tb.x+tb.w+2&&_tpy>=tb.y-2&&_tpy<=tb.y+tb.h+2) {
+            if (_tpx>=tb.x-4&&_tpx<=tb.x+tb.w+4&&_tpy>=tb.y-6&&_tpy<=tb.y+tb.h+6) {
               self._tubeType=tb.val; if(window.Sound&&Sound.uiTap)Sound.uiTap(0.22); return;
             }
           }
@@ -787,7 +789,7 @@ class Game {
           if (self._tubeModeBtns) {
             for (var tmbI2 = 0; tmbI2 < self._tubeModeBtns.length; tmbI2++) {
               var tmb2 = self._tubeModeBtns[tmbI2];
-              if (pos.x>=tmb2.x && pos.x<=tmb2.x+tmb2.w && pos.y>=tmb2.y && pos.y<=tmb2.y+tmb2.h) {
+              if (pos.x>=tmb2.x-4 && pos.x<=tmb2.x+tmb2.w+4 && pos.y>=tmb2.y-6 && pos.y<=tmb2.y+tmb2.h+6) {
                 self._tubeToolMode = tmb2.id;
                 self._tubeSelectMode = (tmb2.id !== 'build');
                 self._tubeSelected = null;
@@ -1205,8 +1207,7 @@ class Game {
       }
       if (!self.sling) return;
       var pos = getPos(e);
-      var z2 = self._viewZoom || 1.0;
-      self.sling.pullX = pos.x / z2; self.sling.pullY = pos.y / z2;
+      self.sling.pullX = pos.wx; self.sling.pullY = pos.wy;
       var dx = self.sling.anchorX - pos.x, dy = self.sling.anchorY - pos.y;
       var dist = Math.hypot(dx, dy);
       if (dist > SLING_MIN_OFFSET && window.Sound) Sound.stretch(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
@@ -2843,16 +2844,18 @@ class Game {
 
   _draw() {
     var ctx = this.ctx, W = this.W, H = this.H;
-    var z   = this._viewZoom || 1.0;
-    var vSY = this._viewScrollY || 0;
-    var floorY = this.floorY();  // already zoom-adjusted
+    var z       = this._viewZoom || 1.0;
+    var vSY     = this._viewScrollY || 0;
+    var floorY  = this.floorY();   // screen Y of floor line (H - FLOOR_MARGIN)
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
-    // Apply zoom — anchor at bottom-right so chute/floor stay fixed
-    // Transform: translate to bottom-right, scale, translate back
+
+    // ── Zoom transform: clip to play area, anchor at bottom-right of play area
+    // Floor stays fixed; world above floor expands upward+left when zooming out
     ctx.save();
-    ctx.translate(W, H);
+    ctx.beginPath(); ctx.rect(0, 0, W, floorY); ctx.clip();  // clip to play area
+    ctx.translate(W, floorY);   // anchor bottom-right of play area
     ctx.scale(z, z);
-    ctx.translate(-W, -H);
+    ctx.translate(-W, -floorY); // translate back
     if (vSY !== 0) ctx.translate(0, vSY);
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
@@ -2861,46 +2864,39 @@ class Game {
       if (this.objects[g].type === BALL_TYPES.GRAVITY && this.objects[g].gravActive) this._drawGravityRange(this.objects[g]);
     }
 
-    this._drawFloor(floorY);
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
-    // Behind-layer tubes drawn first (under everything)
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
-    // Chute and chute balls drawn inside zoom so they scale with world
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
     this._drawChute();
     if (this.barrier) this.barrier.draw(ctx);
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
-    // Main-layer tubes under bricks
     this.tubes.draw(ctx, 'main', this.frame, this._tubeSelected);
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
-    for (var i = 0; i < this.bricks.length; i++) {
-      this.bricks[i].draw(ctx);
-    }
+    for (var i = 0; i < this.bricks.length; i++) this.bricks[i].draw(ctx);
     for (var i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].draw(ctx);
     for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
     for (var i = 0; i < this.spawners.length;   i++) this.spawners[i].draw(ctx);
     for (var j = 0; j < this.objects.length;   j++) this._drawBall(this.objects[j]);
-    // Above-layer tubes on top of everything
     this.tubes.draw(ctx, 'above', this.frame, this._tubeSelected);
     if (this.sling) this._drawSling();
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
-    // Restore zoom transform before fixed-position overlays
-    ctx.restore();  // always restore (we always save now for zoom)
-    // CLR buttons always shown in top bar
+    ctx.restore();  // restore zoom+clip
+
+    // Floor line drawn AFTER restore — always at fixed screen position
+    this._drawFloor(floorY);
+
+    // Fixed UI (no zoom)
     this._drawHudClearButtons();
-    // Speed slider and corner buttons hidden when editor is open
     if (!this._editorMode) {
-      // Zoom level indicator (only when zoomed out)
-    if ((this._viewZoom || 1.0) < 0.99) {
-      var zPct = Math.round((this._viewZoom || 1.0) * 100);
-      ctx.fillStyle = 'rgba(0,200,255,0.5)';
-      ctx.font = "bold 9px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText('ZOOM ' + zPct + '%', 8, this.H - FLOOR_MARGIN + 4);
-    }
-    this._drawSpeedSlider();
+      if (z < 0.99) {
+        ctx.fillStyle = 'rgba(0,200,255,0.5)';
+        ctx.font = "bold 9px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillText('ZOOM ' + Math.round(z * 100) + '%', 8, floorY - 14);
+      }
+      this._drawSpeedSlider();
       this._drawCornerButtons();
     }
   }
@@ -4335,7 +4331,7 @@ class Game {
     var types = ['straight','elbow90','elbow45','elbow30','elbow15','uturn','funnel'];
     var labels = ['STR','90°','45°','30°','15°','U','FNL'];
     var tW = Math.floor((W - 16) / types.length) - 1;
-    var tH = 28;  // taller for easier mobile tapping
+    var tH = 34;  // taller for easier mobile tapping
     ctx.font = "bold 11px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     this._tubeBtns = [];
