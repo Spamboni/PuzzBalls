@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1479;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1480;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -438,607 +438,332 @@ class Game {
       }
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
-        // Taps in the chute column (right strip) always start a scroll — never build there
-        var chuteX = self.W - 50;
-        if (pos.x >= chuteX && pos.y < self.floorY() + (self._viewScrollY || 0)) {
-          self._editorScrollPending  = true;
-          self._editorScrollDragging = false;
-          self._editorScrollStart    = self._viewScrollY || 0;
-          self._editorScrollDragY    = pos.y;
-          return;
-        }
-        // Convert tap to panel/world coordinate space first
-        var _py = pos.y - (self._viewScrollY || 0);
-        var _px = pos.x;
-        // Panel boundary: floorY in translated space
-        var _screenFloorY = self.floorY();  // panel rects stored in translated coords, so just floorY
-        var inPanel = _py >= _screenFloorY;
+        var _py  = pos.y - (self._viewScrollY || 0);
+        var _px  = pos.x;
+        var inPanel = _py >= self.floorY();
 
-        // Always check panel buttons regardless of Y position (buttons are below floor)
-        if (self._editorModeBtns) {
-          for (var mbi = 0; mbi < self._editorModeBtns.length; mbi++) {
-            var mb2 = self._editorModeBtns[mbi];
-            if (_px >= mb2.x && _px <= mb2.x + mb2.w && _py >= mb2.y && _py <= mb2.y + mb2.h) {
-              self._editorToolMode = mb2.id;
-              self._editorSelectMode = (mb2.id !== 'build');
-              self._editorSelected = null;
-              self._editorStretchState = null;
-              self._editorWidthState   = null;
-              self._editorRotateState  = null;
-              if (window.Sound && Sound.uiTap) Sound.uiTap(0.2);
-              return;
-            }
+        // ── Top-bar buttons (screen coords, no scroll offset) ─────────────────
+        // DONE
+        if (self._editorDoneBtn) {
+          var d=self._editorDoneBtn;
+          if (_px>=d.x&&_px<=d.x+d.w&&_py>=d.y&&_py<=d.y+d.h) {
+            self._editorMode=false; self._editorTubeMode=false;
+            window._tubeEditorMode=false; self._editorSelected=null;
+            self._editorBrickDeleteMode=false;
+            self._viewScrollY=0;
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.25); return;
           }
         }
-        // Clear all bricks
-        if (self._editorResetDefBtn) {
-          var rdb = self._editorResetDefBtn;
-          if (_px >= rdb.x && _px <= rdb.x+rdb.w && _py >= rdb.y && _py <= rdb.y+rdb.h) {
-            self._editorLastSettings = null;  // clear last-used template
-            if (self._editorSelected) {
-              // Reset selected brick to factory defaults
-              var bd3 = window.BrickDefaults || {};
-              var sb_r = self._editorSelected;
-              sb_r.maxHealth = bd3.rectHP || 100; sb_r.health = sb_r.maxHealth;
-              sb_r.regenAfter = bd3.rectRegen || 2000;
-              sb_r._density = bd3.density || 1.0;
-              sb_r._maxTravel = bd3.maxTravel || 60;
-              sb_r._decel = bd3.decel || 0.88;
-              sb_r._rotSpeed = 0.5; sb_r._rotDecel = 0.88;
-              sb_r._invincible = false; sb_r._noRegen = false;
-              sb_r._noteConfig = null; sb_r._movable = false;
+        // UNDO
+        if (self._editorUndoBtn) {
+          var u=self._editorUndoBtn;
+          if (_px>=u.x&&_px<=u.x+u.w&&_py>=u.y&&_py<=u.y+u.h) {
+            self._undoApply&&self._undoApply(self._undoHistory&&self._undoHistory.pop()); return;
+          }
+        }
+        // REDO
+        if (self._editorRedoBtn) {
+          var rd=self._editorRedoBtn;
+          if (_px>=rd.x&&_px<=rd.x+rd.w&&_py>=rd.y&&_py<=rd.y+rd.h) {
+            self._redoApply&&self._redoApply(self._redoHistory&&self._redoHistory.pop()); return;
+          }
+        }
+        // DEL button — tap deletes selected, long-press toggles delete mode
+        if (self._editorDelBtn) {
+          var db=self._editorDelBtn;
+          if (_px>=db.x&&_px<=db.x+db.w&&_py>=db.y&&_py<=db.y+db.h) {
+            if (self._editorSelected && !self._editorBrickDeleteMode) {
+              // Instant delete selected brick
+              self._undoPush();
+              var idx2=self.bricks.indexOf(self._editorSelected);
+              if (idx2>=0) self.bricks.splice(idx2,1);
+              self._editorSelected=null;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
+            } else if (self._editorBrickDeleteMode) {
+              // Tap again to turn off delete mode
+              self._editorBrickDeleteMode=false;
+              if(window.Sound&&Sound.uiToggle)Sound.uiToggle(false);
+            } else {
+              // No selection — start long press to enable delete mode
+              _startLongPress('del', 500, function() {
+                self._editorBrickDeleteMode=true;
+                if(window.Sound&&Sound.uiToggle)Sound.uiToggle(true);
+              });
             }
             return;
           }
         }
+        // CLR ALL — long press only
         if (self._editorClearBtn) {
-          var cb = self._editorClearBtn;
-          if (_px >= cb.x && _px <= cb.x + cb.w && _py >= cb.y && _py <= cb.y + cb.h) {
-            self.bricks = [];
-            self._editorSelected = null;
-            return;
+          var ca=self._editorClearBtn;
+          if (_px>=ca.x&&_px<=ca.x+ca.w&&_py>=ca.y&&_py<=ca.y+ca.h) {
+            _startLongPress('clrall', 700, function() {
+              self._undoPush();
+              self.bricks=[]; self.tubes.tubes=[]; self.objects=[];
+              self._editorSelected=null;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.4);
+            }); return;
           }
         }
-        // Check editor panel buttons first
+        // Tab buttons
+        if (self._editorTabBtns) {
+          for (var tbi=0; tbi<self._editorTabBtns.length; tbi++) {
+            var tb2=self._editorTabBtns[tbi];
+            if (_px>=tb2.x&&_px<=tb2.x+tb2.w&&_py>=tb2.y&&_py<=tb2.y+tb2.h) {
+              self._editorActiveTab=tb2.id;
+              self._editorTubeMode=(tb2.id==='tubes');
+              window._tubeEditorMode=(tb2.id==='tubes');
+              self._editorSelected=null;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            }
+          }
+        }
+        // Tool mode buttons
+        if (self._editorModeBtns) {
+          for (var mbi=0; mbi<self._editorModeBtns.length; mbi++) {
+            var mb2=self._editorModeBtns[mbi];
+            if (_px>=mb2.x&&_px<=mb2.x+mb2.w&&_py>=mb2.y&&_py<=mb2.y+mb2.h) {
+              self._editorToolMode=mb2.id;
+              self._editorSelectMode=(mb2.id!=='build');
+              self._editorSelected=null;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            }
+          }
+        }
+        // Sub-type buttons
         if (self._editorTypeBtns) {
-          for (var ti = 0; ti < self._editorTypeBtns.length; ti++) {
-            var tb = self._editorTypeBtns[ti];
-            if (_px >= tb.x && _px <= tb.x + tb.w && _py >= tb.y && _py <= tb.y + tb.h) {
-              self._editorBrickType = tb.type; return;
+          for (var ti4=0; ti4<self._editorTypeBtns.length; ti4++) {
+            var tb3=self._editorTypeBtns[ti4];
+            if (_px>=tb3.x&&_px<=tb3.x+tb3.w&&_py>=tb3.y&&_py<=tb3.y+tb3.h) {
+              self._editorBrickType=tb3.type;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
             }
           }
         }
-        // Slider drag start — check all sliders
-        if (self._editorSliders) {
-          var sliderDefs = [
-            { id:'hp',     key:'maxHealth',  defKey:'rectHP',    step:5,    min:10,   max:400,  invert:false },
-            { id:'regen',  key:'regenAfter', defKey:'rectRegen', step:100,  min:200,  max:10000,invert:false },
-            { id:'dens',   key:'_density',   defKey:'density',   step:0.1,  min:0.5,  max:5.0,  invert:false },
-            { id:'dist',   key:'_maxTravel', defKey:'maxTravel', step:10,   min:0,    max:900,  invert:false },
-            { id:'decel',  key:'_decel',     defKey:'decel',     step:0.01, min:0.50, max:0.99, invert:true  },
-            { id:'rotspd', key:'_rotSpeed',  defKey:'rotSpeed',  step:0.05, min:0.0,  max:1.0,  invert:false },
-            { id:'rotdec', key:'_rotDecel',  defKey:'rotDecel',  step:0.01, min:0.05, max:0.95, invert:true  },
-            { id:'blen',   key:'_blen',      defKey:'rectW',     step:5,    min:5,    max:900,  invert:false, isDim:true },
-            { id:'bwid',   key:'_bwid',      defKey:'rectH',     step:1,    min:2,    max:200,  invert:false, isDim:true },
-            { id:'rot',    key:'_rotDeg',    defKey:null,        step:1,    min:-180, max:180,  invert:false, isRot:true },
-            { id:'wbounce',key:'_wallBounce',defKey:'wallBounce', step:0.05, min:0.0,  max:1.0,  invert:false },
-          ];
-          var movNow = self._editorSelected ? (self._editorSelected._movable||false) : (self._editorMovable||false);
-          for (var sdi = 0; sdi < sliderDefs.length; sdi++) {
-            var sd  = sliderDefs[sdi];
-            var sl2 = self._editorSliders[sd.id];
-            if (!sl2) continue;
-            // Skip DENS/DIST if not movable
-            if ((sd.id === 'dens' || sd.id === 'dist') && !movNow) continue;
-            if (_px >= sl2.trackX - 8 && _px <= sl2.trackX + sl2.trackW + (sl2.infRect ? sl2.infRect.w + 10 : 8) &&
-                _py >= sl2.y + 2 && _py <= sl2.y + sl2.h - 2) {
-              // Check ∞ button on HP (invincible) and REGEN (no regen)
-              if (sl2.infRect) {
-                var ir = sl2.infRect;
-                if (_px >= ir.x && _px <= ir.x + ir.w && _py >= ir.y && _py <= ir.y + ir.h) {
-                  if (sd.id === 'hp') {
-                    if (self._editorSelected) {
-                      var sb_inv = self._editorSelected;
-                      sb_inv._invincible = !sb_inv._invincible;
-                      if (!sb_inv._invincible) {
-                        sb_inv.maxHealth = sb_inv.maxHealth || 100;
-                        sb_inv.health    = sb_inv.maxHealth;
-                      } else {
-                        sb_inv.health = sb_inv.maxHealth;  // full health when made invincible
-                      }
-                    }
-                  } else if (sd.id === 'regen') {
-                    if (self._editorSelected) self._editorSelected._noRegen = !self._editorSelected._noRegen;
-                  }
-                  return;
-                }
-              }
-              // Double-tap: only in brick mode, not tube mode
-              if (self._editorTubeMode) {
-                self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step, invert: sd.invert, isDim: sd.isDim, isRot: sd.isRot, id: sd.id }, sl2);
-                return;
-              }
-              var elapsed2 = performance.now() - (self._lastSliderTap || 0);
-              if (elapsed2 < 350 && self._lastSliderTapId === sd.id) {
-                self._lastSliderTap = 0;
-                var curVal2 = self._editorSelected ? (self._editorSelected[sd.key] || 0) : (window.BrickDefaults && window.BrickDefaults[sd.defKey] || 0);
-                var entered = prompt(sd.id.toUpperCase() + ' (' + sd.min + ' - ' + sd.max + '):', sd.invert ? (1-curVal2).toFixed(2) : String(curVal2));
-                if (entered !== null) {
-                  var parsed = parseFloat(entered);
-                  if (!isNaN(parsed)) {
-                    var clamped = Math.max(sd.min, Math.min(sd.max, parsed));
-                    var actual = sd.invert ? (1 - clamped) : clamped;
-                    self._setSliderVal(sd.key, sd.defKey, actual, sd);
-                  }
-                }
-                return;
-              }
-              self._lastSliderTap = performance.now();
-              self._lastSliderTapId = sd.id;
-              // Start drag on track
-              self._editorDragSlider = Object.assign({ key: sd.key, defKey: sd.defKey, step: sd.step, invert: sd.invert, isDim: sd.isDim, isRot: sd.isRot, id: sd.id }, sl2);
+        // CLR row buttons — long press only
+        if (self._editorClrBtns) {
+          for (var cli2=0; cli2<self._editorClrBtns.length; cli2++) {
+            var clb=self._editorClrBtns[cli2];
+            if (_px>=clb.x&&_px<=clb.x+clb.w&&_py>=clb.y&&_py<=clb.y+clb.h) {
+              (function(type) {
+                _startLongPress('clr'+type, 700, function() {
+                  self._undoPush();
+                  if (type===0) self.bricks=[];
+                  else if (type===1) self.tubes.tubes=[];
+                  else if (type===2) self.objects=[];
+                  self._editorSelected=null;
+                  if(window.Sound&&Sound.uiTap)Sound.uiTap(0.35);
+                });
+              })(clb.type);
               return;
             }
           }
         }
-        // Inline movable toggle
+        // Grid pivot
+        if (self._editorGridPivRects) {
+          for (var gpi=0; gpi<self._editorGridPivRects.length; gpi++) {
+            var gpr2=self._editorGridPivRects[gpi];
+            if (_px>=gpr2.x&&_px<=gpr2.x+gpr2.w&&_py>=gpr2.y&&_py<=gpr2.y+gpr2.h) {
+              window._editorGridSnapPivot=gpr2.val;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
+            }
+          }
+        }
+        // Snap grid button
+        if (self._editorSnapGridBtn) {
+          var sg2=self._editorSnapGridBtn;
+          if (_px>=sg2.x&&_px<=sg2.x+sg2.w&&_py>=sg2.y&&_py<=sg2.y+sg2.h) {
+            window._snapToGrid=!window._snapToGrid;
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._snapToGrid); return;
+          }
+        }
+        // Rotate snap
+        if (self._editorSnapBtn) {
+          var rsb=self._editorSnapBtn;
+          if (_px>=rsb.x&&_px<=rsb.x+rsb.w&&_py>=rsb.y&&_py<=rsb.y+rsb.h) {
+            var snaps=[0,15,30,45,90];
+            var cur=snaps.indexOf(self._editorSnapDeg||0);
+            self._editorSnapDeg=snaps[(cur+1)%snaps.length];
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+          }
+        }
+        // MOV / STAT
         if (self._editorMovInlineRect) {
-          var mr2 = self._editorMovInlineRect;
-          if (_px >= mr2.x && _px <= mr2.x + mr2.w && _py >= mr2.y && _py <= mr2.y + mr2.h) {
+          var mi2=self._editorMovInlineRect;
+          if (_px>=mi2.x&&_px<=mi2.x+mi2.w&&_py>=mi2.y&&_py<=mi2.y+mi2.h) {
             if (self._editorSelected) {
-              self._editorSelected._movable = !self._editorSelected._movable;
-              self._editorMovable = self._editorSelected._movable;
-            } else {
-              self._editorMovable = !self._editorMovable;
-            }
-            return;
+              self._editorSelected._movable=!self._editorSelected._movable;
+              self._editorMovable=self._editorSelected._movable;
+            } else { self._editorMovable=!self._editorMovable; }
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorMovable); return;
           }
         }
-        // Pivot selector
-        if (self._editorPivotRects) {
-          for (var piv = 0; piv < self._editorPivotRects.length; piv++) {
-            var pr = self._editorPivotRects[piv];
-            if (!pr.enabled) continue;  // greyed out — ignore tap
-            if (_px >= pr.x && _px <= pr.x + pr.w && _py >= pr.y && _py <= pr.y + pr.h) {
-              if (self._editorSelected) self._editorSelected._pivot = pr.val;
-              self._editorPivot = pr.val;
-              return;
-            }
-          }
-        }
-        // Translate toggle
+        // ↔ROT / ⊕ROT
         if (self._editorTransRect) {
-          var tr2 = self._editorTransRect;
-          if (_px >= tr2.x && _px <= tr2.x + tr2.w && _py >= tr2.y && _py <= tr2.y + tr2.h) {
+          var tr2=self._editorTransRect;
+          if (_px>=tr2.x&&_px<=tr2.x+tr2.w&&_py>=tr2.y&&_py<=tr2.y+tr2.h) {
             if (self._editorSelected) {
-              self._editorSelected._translateOnRotate = !(self._editorSelected._translateOnRotate !== false);
-              self._editorTranslate = self._editorSelected._translateOnRotate;
-            } else {
-              self._editorTranslate = !(self._editorTranslate !== false);
+              self._editorSelected._translateOnRotate=!(self._editorSelected._translateOnRotate!==false);
+              self._editorTranslate=self._editorSelected._translateOnRotate;
+            } else { self._editorTranslate=!(self._editorTranslate!==false); }
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorTranslate); return;
+          }
+        }
+        // Pivot rects
+        if (self._editorPivotRects) {
+          for (var piv=0; piv<self._editorPivotRects.length; piv++) {
+            var pr2=self._editorPivotRects[piv];
+            if (pr2.enabled&&_px>=pr2.x&&_px<=pr2.x+pr2.w&&_py>=pr2.y&&_py<=pr2.y+pr2.h) {
+              if (self._editorSelected) self._editorSelected._pivot=pr2.val;
+              self._editorPivot=pr2.val;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
             }
+          }
+        }
+        // Note button
+        if (self._editorNoteBtn&&self._editorSelected) {
+          var nb2=self._editorNoteBtn;
+          if (_px>=nb2.x&&_px<=nb2.x+nb2.w&&_py>=nb2.y&&_py<=nb2.y+nb2.h) {
+            self._editorNotePopup=!self._editorNotePopup;
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+          }
+        }
+        // Panel headers — toggle collapse
+        if (self._editorPanelHeaders) {
+          for (var phi=0; phi<self._editorPanelHeaders.length; phi++) {
+            var ph=self._editorPanelHeaders[phi];
+            if (!ph) continue;
+            if (_px>=ph.x&&_px<=ph.x+ph.w&&_py>=ph.y&&_py<=ph.y+ph.h) {
+              window['_edCollapse_'+ph.key]=!ph.collapsed;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
+            }
+          }
+        }
+        // DEFAULT button
+        if (self._editorDefaultBtn) {
+          var def=self._editorDefaultBtn;
+          if (_px>=def.x&&_px<=def.x+def.w&&_py>=def.y&&_py<=def.y+def.h) {
+            self._editorDefaultMode=!self._editorDefaultMode;
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+          }
+        }
+        // LOAD/SAVE preset
+        if (self._editorLoadPresetBtn) {
+          var lp=self._editorLoadPresetBtn;
+          if (_px>=lp.x&&_px<=lp.x+lp.w&&_py>=lp.y&&_py<=lp.y+lp.h) {
+            // TODO phase 2: open preset list
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+          }
+        }
+        if (self._editorSavePresetBtn) {
+          var sp2=self._editorSavePresetBtn;
+          if (_px>=sp2.x&&_px<=sp2.x+sp2.w&&_py>=sp2.y&&_py<=sp2.y+sp2.h) {
+            // TODO phase 2: save preset with name prompt
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+          }
+        }
+        // ∞ HP / ✕ REGEN
+        if (self._editorInfHPBtn) {
+          var ih=self._editorInfHPBtn;
+          if (_px>=ih.x&&_px<=ih.x+ih.w&&_py>=ih.y&&_py<=ih.y+ih.h) {
+            if (self._editorSelected) self._editorSelected._invincible=!self._editorSelected._invincible;
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(false); return;
+          }
+        }
+        if (self._editorNoRegenBtn) {
+          var nr2=self._editorNoRegenBtn;
+          if (_px>=nr2.x&&_px<=nr2.x+nr2.w&&_py>=nr2.y&&_py<=nr2.y+nr2.h) {
+            if (self._editorSelected) self._editorSelected._noRegen=!self._editorSelected._noRegen;
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(false); return;
+          }
+        }
+        // Tube mode buttons
+        if (self._editorTubeMode && self._tubeModeBtns) {
+          for (var tmbI2=0; tmbI2<self._tubeModeBtns.length; tmbI2++) {
+            var tmb2=self._tubeModeBtns[tmbI2];
+            if (_px>=tmb2.x-4&&_px<=tmb2.x+tmb2.w+4&&pos.y>=tmb2.y-6&&pos.y<=tmb2.y+tmb2.h+6) {
+              self._tubeToolMode=tmb2.id;
+              self._tubeSelectMode=(tmb2.id!=='build');
+              self._tubeSelected=null; self._tubeRotateState=null; self._tubeLengthState=null;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            }
+          }
+        }
+        // ── Sliders ────────────────────────────────────────────────────────────
+        var sliderDefs = [
+          { key:'blen',    apply:function(v){if(self._editorSelected){self._editorSelected.w=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectW=v;} },
+          { key:'bwid',    apply:function(v){if(self._editorSelected){self._editorSelected.h=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;} },
+          { key:'rot',     apply:function(v){if(self._editorSelected)self._editorSelected._rotation=v*Math.PI/180;} },
+          { key:'hp',      apply:function(v){if(self._editorSelected){self._editorSelected.maxHealth=v;self._editorSelected.health=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectHP=v;} },
+          { key:'regen',   apply:function(v){if(self._editorSelected)self._editorSelected.regenAfter=v;} },
+          { key:'dens',    apply:function(v){if(self._editorSelected)self._editorSelected._density=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.density=v;} },
+          { key:'dist',    apply:function(v){if(self._editorSelected)self._editorSelected._maxTravel=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.maxTravel=v;} },
+          { key:'decel',   apply:function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._decel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.decel=dv;} },
+          { key:'rotspd',  apply:function(v){if(self._editorSelected)self._editorSelected._rotSpeed=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotSpeed=v;} },
+          { key:'rotdec',  apply:function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._rotDecel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotDecel=dv;} },
+          { key:'wbounce', apply:function(v){if(self._editorSelected)self._editorSelected._wallBounce=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.wallBounce=v;} },
+          { key:'spinDist',apply:function(v){if(self._editorSelected)self._editorSelected._spinDist=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.spinDist=v;} },
+        ];
+        for (var sdi=0; sdi<sliderDefs.length; sdi++) {
+          var sd2=sliderDefs[sdi];
+          var sl2=self._editorSliders&&self._editorSliders[sd2.key];
+          if (!sl2) continue;
+          if (_px>=sl2.trackX-10&&_px<=sl2.trackX+sl2.trackW+10&&_py>=sl2.y-8&&_py<=sl2.y+sl2.h+8) {
+            var t2=Math.max(0,Math.min(1,(_px-sl2.trackX)/sl2.trackW));
+            var v2=sl2.min+t2*(sl2.max-sl2.min);
+            sd2.apply(v2);
+            self._editorDraggingSlider={key:sd2.key,apply:sd2.apply,sl:sl2};
+            if(window.Sound&&Sound.uiSlider)Sound.uiSlider();
             return;
           }
         }
-        // Note popup interactions (checked before other panel buttons to intercept)
-        if (self._editorNotePopup && self._editorSelected) {
-          var sb3 = self._editorSelected;
-          // Close button
-          if (self._notePopupClose) {
-            var nc2 = self._notePopupClose;
-            if (_px >= nc2.x && _px <= nc2.x + nc2.w && _py >= nc2.y && _py <= nc2.y + nc2.h) {
-              self._editorNotePopup = false; return;
-            }
-          }
-          // Note buttons
-          if (self._notePopupNoteRects) {
-            for (var nni = 0; nni < self._notePopupNoteRects.length; nni++) {
-              var nnr = self._notePopupNoteRects[nni];
-              if (_px >= nnr.x && _px <= nnr.x+nnr.w && _py >= nnr.y && _py <= nnr.y+nnr.h) {
-                sb3._noteConfig = sb3._noteConfig || {};
-                sb3._noteConfig.note = nnr.val;
-                // Auto-preview
-                if (window.BrickNote) window.BrickNote.playNote(nnr.val, sb3._noteConfig.octave||4, sb3._noteConfig.timbre||'marimba', (sb3._noteConfig.vol||0.6));
-                return;
-              }
-            }
-          }
-          // Octave buttons
-          if (self._notePopupOctaveRects) {
-            for (var noi = 0; noi < self._notePopupOctaveRects.length; noi++) {
-              var nor2 = self._notePopupOctaveRects[noi];
-              if (_px >= nor2.x && _px <= nor2.x+nor2.w && _py >= nor2.y && _py <= nor2.y+nor2.h) {
-                sb3._noteConfig = sb3._noteConfig || {};
-                sb3._noteConfig.octave = nor2.val;
-                if (window.BrickNote) window.BrickNote.playNote(sb3._noteConfig.note||'C', nor2.val, sb3._noteConfig.timbre||'marimba', (sb3._noteConfig.vol||0.6));
-                return;
-              }
-            }
-          }
-          // Timbre buttons
-          if (self._notePopupTimbreRects) {
-            for (var nti4 = 0; nti4 < self._notePopupTimbreRects.length; nti4++) {
-              var ntr = self._notePopupTimbreRects[nti4];
-              if (_px >= ntr.x && _px <= ntr.x+ntr.w && _py >= ntr.y && _py <= ntr.y+ntr.h) {
-                sb3._noteConfig = sb3._noteConfig || {};
-                sb3._noteConfig.timbre = ntr.val;
-                // Preview the sound
-                if (window.BrickNote) window.BrickNote.playNote(sb3._noteConfig.note||'C', sb3._noteConfig.octave||4, ntr.val, 0.5);
-                return;
-              }
-            }
-          }
-          // Preview button
-          if (self._notePopupPreviewBtn) {
-            var pb = self._notePopupPreviewBtn;
-            if (_px >= pb.x && _px <= pb.x+pb.w && _py >= pb.y && _py <= pb.y+pb.h) {
-              var cfg2 = sb3._noteConfig || {};
-              if (window.BrickNote) window.BrickNote.playNote(cfg2.note||'C', cfg2.octave||4, cfg2.timbre||'marimba', 0.6);
-              return;
-            }
-          }
-          // Clear button
-          if (self._notePopupClearBtn) {
-            var clb = self._notePopupClearBtn;
-            if (_px >= clb.x && _px <= clb.x+clb.w && _py >= clb.y && _py <= clb.y+clb.h) {
-              sb3._noteConfig = null; self._editorNotePopup = false; return;
-            }
-          }
-          // Volume slider drag
-          if (self._notePopupVolSlider) {
-            var vs = self._notePopupVolSlider;
-            if (_px >= vs.x && _px <= vs.x + vs.w && _py >= vs.y && _py <= vs.y + vs.h) {
-              var t2 = Math.max(0, Math.min(1, (pos.x - vs.trackX) / vs.trackW));
-              sb3._noteConfig = sb3._noteConfig || {};
-              sb3._noteConfig.vol = parseFloat((0.05 + t2 * 1.15).toFixed(2));
-              return;
-            }
-          }
-          return; // block other taps while popup is open
-        }
-        // Note button tap
-        if (self._editorNoteBtn && self._editorSelected) {
-          var nb = self._editorNoteBtn;
-          if (_px >= nb.x && _px <= nb.x+nb.w && _py >= nb.y && _py <= nb.y+nb.h) {
-            self._editorNotePopup = !self._editorNotePopup;
-            if (!self._editorSelected._noteConfig) self._editorSelected._noteConfig = { note:'C', octave:4, timbre:'marimba' };
-            return;
+        // Tube sliders
+        var tubeSliders2 = [
+          { sl:self._tubeSliderLen, cb:function(v){self._tubeLength=v;if(self._tubeSelected){self._tubeSelected.length=v;self._tubeSelected.rebuild();}} },
+          { sl:self._tubeSliderSpd, cb:function(v){self._tubeSpeedMod=v;if(self._tubeSelected)self._tubeSelected.speedMod=v;} },
+          { sl:self._tubeSliderRot, cb:function(v){if(self._tubeSelected){self._tubeSelected.rotation=v*Math.PI/180;self._tubeSelected.rebuild();}} },
+        ];
+        for (var tsi2=0; tsi2<tubeSliders2.length; tsi2++) {
+          var tsl2=tubeSliders2[tsi2];
+          if (!tsl2.sl) continue;
+          if (_px>=tsl2.sl.trackX-16&&_px<=tsl2.sl.trackX+tsl2.sl.trackW+16&&
+              _py>=tsl2.sl.y-8&&_py<=tsl2.sl.y+tsl2.sl.h+8) {
+            var tt2=Math.max(0,Math.min(1,(_px-tsl2.sl.trackX)/tsl2.sl.trackW));
+            tsl2.cb(tsl2.sl.min+tt2*(tsl2.sl.max-tsl2.sl.min));
+            self._draggingTubeSlider=true; self._dragTubeSliderIdx=tsi2;
+            if(window.Sound&&Sound.uiSlider)Sound.uiSlider(); return;
           }
         }
-        // Tab switching — ALWAYS checked first, before any panel content routing
-        // Quick-clear buttons
-        // _py same as _py (defined above)
-        if (self._editorQuickClearBtns) {
-          for (var qci2=0;qci2<self._editorQuickClearBtns.length;qci2++) {
-            var qcb=self._editorQuickClearBtns[qci2];
-            if (pos.x>=qcb.x&&pos.x<=qcb.x+qcb.w&&_py>=qcb.y&&_py<=qcb.y+qcb.h) {
-              if (qcb.type===0) { self._undoPush(); self.bricks=[]; }
-              else if (qcb.type===1) { self._undoPush(); self.objects.forEach(function(o){o.dead=true;}); }
-              else if (qcb.type===2) { self._undoPush(); self.tubes.tubes=[]; }
-              else if (qcb.type===3) { self._saveCustomLevel(); return; }
+        // Note popup
+        if (self._editorNotePopup&&self._editorSelected) {
+          var sb3=self._editorSelected;
+          var handled=self._handleNotePopupTap&&self._handleNotePopupTap(_px,_py,sb3);
+          if (handled) return;
+        }
+        // Brick delete mode tap
+        if (self._editorBrickDeleteMode&&!inPanel) {
+          for (var bdi=self.bricks.length-1; bdi>=0; bdi--) {
+            var br2=self.bricks[bdi];
+            if (Math.hypot(_px-br2.x,_py-br2.y)<(br2.w||br2.r||30)+12) {
+              self._undoPush(); self.bricks.splice(bdi,1);
+              self._editorBrickDeleteMode=false;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
             }
           }
         }
-        // Tab checks — translate to editor coordinate space
-        if (self._editorBrickTab) {
-          var bt = self._editorBrickTab;
-          if (pos.x >= bt.x-6 && pos.x <= bt.x+bt.w+6 && _py >= bt.y-6 && _py <= bt.y+bt.h+10) {
-            self._editorTubeMode = false; window._tubeEditorMode = false;
-            if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
-          }
+        // Scroll in chute area
+        var chuteX=self.W-50;
+        if (pos.x>=chuteX&&pos.y<self.floorY()+(self._viewScrollY||0)) {
+          self._editorScrollPending=true; self._editorScrollDragging=false;
+          self._editorScrollStart=self._viewScrollY||0;
+          self._editorScrollDragY=pos.y; return;
         }
-        if (self._editorTubeTab) {
-          var tt = self._editorTubeTab;
-          if (pos.x >= tt.x-6 && pos.x <= tt.x+tt.w+6 && _py >= tt.y-6 && _py <= tt.y+tt.h+10) {
-            self._editorTubeMode = true; window._tubeEditorMode = true;
-            if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
-          }
-        }
-        // Done button — in both brick and tube modes
-        if (self._editorDoneBtn) {
-          var dnb2 = self._editorDoneBtn;
-          if (pos.x >= dnb2.x-4 && pos.x <= dnb2.x+dnb2.w+4 && _py >= dnb2.y-4 && _py <= dnb2.y+dnb2.h+4) {
-            self.toggleEditor(); return;
-          }
-        }
-        // In tube editor mode — handle tube panel taps
-        if (self._editorTubeMode && inPanel) {
-          // Translate tap position into editor coordinate space
-          var _tpy = pos.y - (self._viewScrollY || 0);
-          var _tpx = pos.x;
-          // Type buttons
-          if (self._tubeBtns) for (var tbi=0;tbi<self._tubeBtns.length;tbi++) {
-            var tb=self._tubeBtns[tbi];
-            if (_tpx>=tb.x-4&&_tpx<=tb.x+tb.w+4&&_tpy>=tb.y-6&&_tpy<=tb.y+tb.h+6) {
-              self._tubeType=tb.val; if(window.Sound&&Sound.uiTap)Sound.uiTap(0.22); return;
-            }
-          }
-          // Style buttons
-          if (self._tubeStyleBtns) for (var tsb=0;tsb<self._tubeStyleBtns.length;tsb++) {
-            var tsbt=self._tubeStyleBtns[tsb];
-            if (_tpx>=tsbt.x&&_tpx<=tsbt.x+tsbt.w&&_tpy>=tsbt.y&&_tpy<=tsbt.y+tsbt.h) { self._tubeStyle=tsbt.val; if(self._tubeSelected)self._tubeSelected.style=tsbt.val; return; }
-          }
-          // Anchor buttons
-          if (self._tubeAnchorBtns) for (var tab2=0;tab2<self._tubeAnchorBtns.length;tab2++) {
-            var tabtn=self._tubeAnchorBtns[tab2];
-            if (_tpx>=tabtn.x&&_tpx<=tabtn.x+tabtn.w&&_tpy>=tabtn.y&&_tpy<=tabtn.y+tabtn.h) {
-              self._tubeAnchor=tabtn.val; return;
-            }
-          }
-          // Layer buttons
-          if (self._tubeLayerBtns) for (var tlb=0;tlb<self._tubeLayerBtns.length;tlb++) {
-            var tlbt=self._tubeLayerBtns[tlb];
-            if (_tpx>=tlbt.x&&_tpx<=tlbt.x+tlbt.w&&_tpy>=tlbt.y&&_tpy<=tlbt.y+tlbt.h) { self._tubeLayer=tlbt.val; if(self._tubeSelected)self._tubeSelected.layer=tlbt.val; return; }
-          }
-          // Delete tube button
-          if (self._tubeDelBtn) {
-            var tdb=self._tubeDelBtn;
-            if (_tpx>=tdb.x&&_tpx<=tdb.x+tdb.w&&_tpy>=tdb.y&&_tpy<=tdb.y+tdb.h) {
-              self._tubeDeleteMode = !self._tubeDeleteMode;
-              if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._tubeDeleteMode); return;
-            }
-          }
-          // Tube mode toolbar tap
-          if (self._tubeModeBtns) {
-            for (var tmbI2 = 0; tmbI2 < self._tubeModeBtns.length; tmbI2++) {
-              var tmb2 = self._tubeModeBtns[tmbI2];
-              if (pos.x>=tmb2.x-4 && pos.x<=tmb2.x+tmb2.w+4 && pos.y>=tmb2.y-6 && pos.y<=tmb2.y+tmb2.h+6) {
-                self._tubeToolMode = tmb2.id;
-                self._tubeSelectMode = (tmb2.id !== 'build');
-                self._tubeSelected = null;
-                self._tubeRotateState = null;
-                self._tubeLengthState = null;
-                if (window.Sound && Sound.uiTap) Sound.uiTap(0.2); return;
-              }
-            }
-          }
-          // Sliders
-          var tubeSliders = [
-            { sl:self._tubeSliderLen, cb:function(v){self._tubeLength=v;if(self._tubeSelected){self._tubeSelected.length=v;self._tubeSelected.rebuild();}} },
-            { sl:self._tubeSliderSpd, cb:function(v){self._tubeSpeedMod=v;if(self._tubeSelected)self._tubeSelected.speedMod=v;} },
-            { sl:self._tubeSliderRot, cb:function(v){self._tubeRotation=v*Math.PI/180;if(self._tubeSelected){self._tubeSelected.rotation=v*Math.PI/180;self._tubeSelected.rebuild();}} },
-          ];
-          for (var tsi=0;tsi<tubeSliders.length;tsi++) {
-            var tsl=tubeSliders[tsi].sl, tcb=tubeSliders[tsi].cb;
-            if (!tsl) continue;
-            // Use generous hit area — full row height around the slider track
-            if (_tpx>=tsl.trackX-16&&_tpx<=tsl.trackX+tsl.trackW+16&&
-                _tpy>=tsl.y-8&&_tpy<=tsl.y+tsl.h+8) {
-              self._tubeDragSlider={sl:tsl,cb:tcb}; return;
-            }
-          }
-          return;
-        }
-
-        // In tube editor mode — handle tube taps
-        if (self._editorTubeMode) {
-          // Tube placement and selection handled by _tubeEditorOnDown
-          // Must use scroll-corrected world position
-          var _tubeWorldPos = { x: pos.x, y: pos.y - (self._viewScrollY || 0) };
-          if (!inPanel) self._tubeEditorOnDown(_tubeWorldPos);
-          return;
-        }
-        // GRID toggle
-        if (self._editorGridBtn) {
-          var gb = self._editorGridBtn;
-          if (_px >= gb.x && _px <= gb.x+gb.w && _py >= gb.y && _py <= gb.y+gb.h) {
-            window._showEditorGrid = !window._showEditorGrid; return;
-          }
-        }
-        if (self._editorAdvBtn) {
-          var advb = self._editorAdvBtn;
-          if (_px >= advb.x && _px <= advb.x+advb.w && _py >= advb.y && _py <= advb.y+advb.h) {
-            window._editorAdvanced = (window._editorAdvanced === false) ? true : false;
-            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._editorAdvanced); return;
-          }
-        }
-        if (self._editorGridSizeBtn) {
-          var gsb = self._editorGridSizeBtn;
-          if (_px >= gsb.x && _px <= gsb.x+gsb.w && _py >= gsb.y && _py <= gsb.y+gsb.h) {
-            var gv = prompt('Grid size (5-100px):', String(window._gridSize||20));
-            if (gv !== null) { var gn = parseInt(gv); if (!isNaN(gn) && gn >= 5 && gn <= 100) window._gridSize = gn; }
-            return;
-          }
-        }
-        // SNAP-GRID toggle
-        if (self._editorSnapGridBtn) {
-          var sgb = self._editorSnapGridBtn;
-          if (_px >= sgb.x && _px <= sgb.x+sgb.w && _py >= sgb.y && _py <= sgb.y+sgb.h) {
-            window._snapToGrid = !window._snapToGrid; return;
-          }
-        }
-        // Snap selector cycle
-        if (self._editorSnapBtn) {
-          var sb = self._editorSnapBtn;
-          if (_px >= sb.x && _px <= sb.x + sb.w && _py >= sb.y && _py <= sb.y + sb.h) {
-            var snaps = [0, 15, 30, 45];
-            var cur = snaps.indexOf(self._editorSnapDeg || 0);
-            self._editorSnapDeg = snaps[(cur + 1) % snaps.length];
-            return;
-          }
-        }
-        // Movable toggle
-        if (self._editorMovBtn) {
-          var mb = self._editorMovBtn;
-          if (_px >= mb.x && _px <= mb.x + mb.w && _py >= mb.y && _py <= mb.y + mb.h) {
-            self._editorMovable = !self._editorMovable;
-            if (self._editorSelected) {
-              self._editorSelected._movable = self._editorMovable;
-            }
-            return;
-          }
-        }
-        if (self._editorDelBtn) {
-          var db = self._editorDelBtn;
-          if (_px >= db.x && _px <= db.x + db.w && _py >= db.y && _py <= db.y + db.h) {
-            self._editorBrickDeleteMode = !self._editorBrickDeleteMode;
-            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorBrickDeleteMode);
-            return;
-          }
-        }
-        if (self._editorUndoBtn) {
-          var ub = self._editorUndoBtn;
-          if (_px >= ub.x && _px <= ub.x+ub.w && _py >= ub.y && _py <= ub.y+ub.h) {
-            if (self._undoHistory && self._undoHistory.length > 0) {
-              self._redoHistory.push(self._undoHistory.pop());
-              var snap = self._undoHistory[self._undoHistory.length-1];
-              if (snap) self._undoApply(snap);
-              else self.bricks = [];
-            }
-            return;
-          }
-        }
-        if (self._editorRedoBtn) {
-          var rb = self._editorRedoBtn;
-          if (_px >= rb.x && _px <= rb.x+rb.w && _py >= rb.y && _py <= rb.y+rb.h) {
-            if (self._redoHistory && self._redoHistory.length > 0) {
-              var rSnap = self._redoHistory.pop();
-              self._undoHistory.push(rSnap);
-              self._undoApply(rSnap);
-            }
-            return;
-          }
-        }
-
-        if (self._editorDoneBtn) {
-          var dnb = self._editorDoneBtn;
-          if (_px >= dnb.x && _px <= dnb.x + dnb.w && _py >= dnb.y && _py <= dnb.y + dnb.h) {
-            self.toggleEditor(); return;
-          }
-        }
-        // Only place/select bricks in the play area (above floor)
-        // Only interact with play area for brick placement when NOT in tube mode
-        // Convert screen pos to world pos (account for scroll)
-        var _worldPos = { x: pos.x, y: pos.y - (self._viewScrollY || 0) };
-        if (!inPanel && !self._editorTubeMode) self._editorOnDown(_worldPos);
-        else if (!inPanel && self._editorTubeMode) self._tubeEditorOnDown(_worldPos);
+        // World taps (not in panel) — build/select/etc
+        var _screenFloorY=self.floorY();
+        if (!inPanel) self._editorOnDown({x:_px,y:_py});
         return;
       }
 
-      // ── Speed slider + chute buttons — only when editor is CLOSED ─────────
-      if (!self._editorMode) {
-      if (self._tubeSliderRect) {
-        var tsr2 = self._tubeSliderRect;
-        if (pos.y >= tsr2.y - 10 && pos.y <= tsr2.y + tsr2.h + 10 &&
-            pos.x >= tsr2.x - 15  && pos.x <= tsr2.x + tsr2.w + 15) {
-          self._draggingTubeSlider = true;
-          var tt2 = Math.max(0, Math.min(1, (pos.x - tsr2.x) / tsr2.w));
-          window._tubeSpeedMult = 0.1 + tt2 * 1.9;
-          return;
-        }
-      }
-      if (self._zoneSliderRect) {
-        var zsr = self._zoneSliderRect;
-        if (pos.y >= zsr.y - 10 && pos.y <= zsr.y + zsr.h + 10 &&
-            pos.x >= zsr.x - 15  && pos.x <= zsr.x + zsr.w + 15) {
-          self._draggingZoneSlider = true;
-          var zt = Math.max(0, Math.min(1, (pos.x - zsr.x) / zsr.w));
-          self._slingZoneH = Math.round(40 + zt * 260);
-          return;
-        }
-      }
-      if (self._brickSliderRect) {
-        var bsr = self._brickSliderRect;
-        if (pos.y >= bsr.y - 10 && pos.y <= bsr.y + bsr.h + 10 &&
-            pos.x >= bsr.x - 15  && pos.x <= bsr.x + bsr.w + 15) {
-          self._draggingBrickSlider = true;
-          self.brickSpeedMult = Math.max(0, Math.min(1, (pos.x - bsr.x) / bsr.w));
-          return;
-        }
-      }
-      if (self._sliderRect) {
-        var sr = self._sliderRect;
-        if (pos.y >= sr.y - 10 && pos.y <= sr.y + sr.h + 10 &&
-            pos.x >= sr.x - 15  && pos.x <= sr.x + sr.w + 15) {
-          self._draggingSlider = true;
-          var t = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
-          self.speedMult = 0.125 + t * 0.875;
-          return;
-        }
-      }
-      if (self._chuteButtonRects) {
-        for (var bi = 0; bi < self._chuteButtonRects.length; bi++) {
-          var br = self._chuteButtonRects[bi];
-          if (pos.x >= br.x && pos.x <= br.x + br.w &&
-              pos.y >= br.y && pos.y <= br.y + br.h) {
-            self._btnPressFlash = { type: br.type, frame: self.frame };
-            if (window.Sound && Sound.uiTap) Sound.uiTap(0.28);
-            self._chuteDropBall(br.type);
-            return;
-          }
-        }
-      }
-      if (self._chuteDeleteRect) {
-        var dr = self._chuteDeleteRect;
-        if (pos.x >= dr.x && pos.x <= dr.x + dr.w &&
-            pos.y >= dr.y && pos.y <= dr.y + dr.h) {
-          self._toggleDeleteMode();
-          if (window.Sound && Sound.uiToggle) Sound.uiToggle(self._deleteMode);
-          return;
-        }
-      }
-      // ── Aim mode toggle ──────────────────────────────────────────────────
-      if (self._chuteAimRect) {
-        var ar = self._chuteAimRect;
-        if (pos.x >= ar.x && pos.x <= ar.x + ar.w &&
-            pos.y >= ar.y && pos.y <= ar.y + ar.h) {
-          self._aimMode = self._aimMode === 'pull' ? 'push' : 'pull';
-          return;
-        }
-      }
-
-      } // end !editorMode speed/chute block
-
-      // ── Delete mode: tap a ball to remove it ─────────────────────────────
-      if (self._deleteMode) {
-        if (self._tryDeleteBall(pos.x, pos.y)) return;
-      }
-
-      // ── Tap stuck sticky ball — launch along stored surface normal ────────────
-      for (var si = 0; si < self.objects.length; si++) {
-        var sobj = self.objects[si];
-        if (sobj.type === BALL_TYPES.STICKY && sobj.stuckTo === '_wall_') {
-          if (Math.hypot(pos.x - sobj.x, pos.y - sobj.y) < sobj.r + 14) {
-            var bs_s = BallSettings.sticky;
-            // Direction = from ball toward tap point (flick in direction of tap)
-            var tapDX = pos.x - sobj.x, tapDY = pos.y - sobj.y;
-            var tapDist = Math.hypot(tapDX, tapDY) || 1;
-            var tapNX = tapDX / tapDist, tapNY = tapDY / tapDist;
-
-            // Surface normal (away from wall)
-            var nx = sobj._stickNx !== undefined ? sobj._stickNx : 0;
-            var ny = sobj._stickNy !== undefined ? sobj._stickNy : -1;
-
-            // If tap is on the same side as the wall (would go into wall), reflect
-            if (tapNX * nx + tapNY * ny < 0) { tapNX = -tapNX; tapNY = -tapNY; }
-
-            // Fixed launch speed (set velocity, not random)
-            var launchSpeed = (bs_s.bounceHeightY || 80) / 18;
-            sobj.vx = tapNX * launchSpeed;
-            sobj.vy = tapNY * launchSpeed;
-
-            // Nudge away from wall
-            sobj.x += nx * (sobj.r + 3);
-            sobj.y += ny * (sobj.r + 3);
-
-            sobj.stuckTo  = null;
-            sobj.inFlight = true;
-            sobj._stickNx = undefined;
-            sobj._stickNy = undefined;
-            if (window.Sound) Sound.thud(3);
-            return;
-          }
-        }
-      }
-
-      // Fall-through: in editor mode, start tentative scroll (committed after 6px drag)
-      if (self._editorMode) {
-        self._editorScrollPending  = true;
-        self._editorScrollDragging = false;
-        self._editorScrollStart    = self._viewScrollY || 0;
-        self._editorScrollDragY    = pos.y;
-        return;
-      }
 
       // ── Ball selection: resting balls + balls within sling zone ────────────
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
@@ -1171,6 +896,15 @@ class Game {
             return;
           }
         }
+        // New slider drag (v15)
+        if (self._editorDraggingSlider) {
+          var ds = self._editorDraggingSlider;
+          var t4 = Math.max(0, Math.min(1, (pos.x - ds.sl.trackX) / ds.sl.trackW));
+          var v4 = ds.sl.min + t4 * (ds.sl.max - ds.sl.min);
+          ds.apply(v4);
+          if (window.Sound && Sound.uiSlider) Sound.uiSlider();
+          return;
+        }
         self._editorOnMove(pos); return;
       }
       // If dragging from a floor ball, check if it's a real drag (> 8px = sling, not pop)
@@ -1211,10 +945,22 @@ class Game {
       if (dist > SLING_MIN_OFFSET && window.Sound) Sound.stretch(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
     }
 
+    // Long press state
+    var _lpTimer = null, _lpTarget = null;
+    function _startLongPress(target, delay, cb) {
+      _lpTimer = setTimeout(function() { cb(); _lpTimer = null; _lpTarget = null; }, delay || 600);
+      _lpTarget = target;
+    }
+    function _cancelLongPress() {
+      if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; _lpTarget = null; }
+    }
+
     function onUp(e) {
       e.preventDefault();
+      _cancelLongPress();
       self._draggingSlider = false;
       self._draggingBrickSlider = false;
+      self._editorDraggingSlider = null;
       self._draggingZoneSlider = false;
       self._draggingTubeSlider = false;
       // Release tube drag — apply snap if close enough
@@ -3434,670 +3180,548 @@ class Game {
     this._editorSelected = null;
   }
 
+// NEW _drawEditor — v15 layout
+// Replaces lines 3437-4103 in game.js
   _drawEditor() {
     var ctx = this.ctx, W = this.W, H = this.H;
     var floorY = this.floorY();
-    // Editor text brightness (0.3-1.0, default 1.0)
-    window._editorBF = 2.0;  // fixed at 200%
-
-    // Panel sits BELOW the floor line — play area fully visible above it
-    // Editor panel is fixed — tabs start flush with the floor line
-    var panelY = floorY;
-    this._editorPanelRect = { y: floorY };  // taps below this line go to panel
-
-    ctx.save();
-    // Apply brightness to entire editor panel
-    var _bf = window._editorBF || 1.5;
-    ctx.filter = 'brightness(' + _bf + ')';
-    ctx.fillStyle = 'rgba(0,8,22,0.97)';
-    ctx.fillRect(0, floorY, W, H - floorY + 400);  // extend down for scroll content
-    ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(0, floorY + 1); ctx.lineTo(W, floorY + 1); ctx.stroke();
-
-    // ── Quick-clear row above tabs ─────────────────────────────────────────
-    var qcH = 20, qcY = panelY + 2;
-    var qcW = Math.floor((W - 16) / 4);  // 4 buttons now
-    var qcLabels = ['CLR BRICKS','CLR BALLS','CLR TUBES','💾 SAVE'];
-    var qcColors = ['#ff6600','#ff4466','#00ffaa','#4488ff'];
-    this._editorQuickClearBtns = [];
-    var qcCount = 4; var qcW = Math.floor((W - 16) / qcCount);
-    for (var qci = 0; qci < qcCount; qci++) {
-      var qcx = 8 + qci * (qcW + 2);
-      ctx.fillStyle = 'rgba(20,5,0,0.75)';
-      ctx.beginPath(); ctx.roundRect(qcx, qcY, qcW, qcH, 3); ctx.fill();
-      ctx.strokeStyle = qcColors[qci] + '99'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(qcx, qcY, qcW, qcH, 3); ctx.stroke();
-      ctx.fillStyle = qcColors[qci]; ctx.font = "bold 9px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(qcLabels[qci], qcx + qcW/2, qcY + qcH/2);
-      this._editorQuickClearBtns.push({ x:qcx, y:qcY, w:qcW, h:qcH, type:qci });
-    }
-    // Tab row: BRICKS | TUBES
-    var tabW = 80, tabH = 22, tabY = panelY + 26 + 2;  // below quick-clear row
-    var isBrickTab = !this._editorTubeMode;
-    // Bricks tab
-    ctx.fillStyle = isBrickTab ? 'rgba(0,180,255,0.25)' : 'rgba(0,10,30,0.5)';
-    ctx.beginPath(); ctx.roundRect(8, tabY, tabW, tabH, [4,4,0,0]); ctx.fill();
-    ctx.strokeStyle = isBrickTab ? '#00ccff' : '#224466'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(8, tabY, tabW, tabH, [4,4,0,0]); ctx.stroke();
-    ctx.fillStyle = isBrickTab ? '#00ffee' : '#446688';
-    ctx.font = "bold 8px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🧱 BRICKS', 8 + tabW/2, tabY + tabH/2);
-    this._editorBrickTab = { x:8, y:tabY, w:tabW, h:tabH };
-    // Tubes tab
-    ctx.fillStyle = !isBrickTab ? 'rgba(0,200,120,0.25)' : 'rgba(0,10,30,0.5)';
-    ctx.beginPath(); ctx.roundRect(8 + tabW + 4, tabY, tabW, tabH, [4,4,0,0]); ctx.fill();
-    ctx.strokeStyle = !isBrickTab ? '#00ff88' : '#224466'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(8 + tabW + 4, tabY, tabW, tabH, [4,4,0,0]); ctx.stroke();
-    ctx.fillStyle = !isBrickTab ? '#00ff88' : '#446688';
-    ctx.fillText('🔧 TUBES', 8 + tabW + 4 + tabW/2, tabY + tabH/2);
-    this._editorTubeTab = { x:8+tabW+4, y:tabY, w:tabW, h:tabH };
-
-    // Brightness fixed at 200% — no slider needed
-    window._editorBrightness = 2.0;
-    this._editorBrightSlider = null;
-
-    // Branch to tube editor content if in tube mode
-    if (this._editorTubeMode) {
-      this._drawTubeEditor(ctx, panelY + 26 + 2 + tabH + 2);  // below qcRow + tabs
-      ctx.restore();
-      return;
-    }
-
-    var qcRowH = 26;  // quick-clear row height + gap
-    var btnH = 26, btnY = panelY + qcRowH + tabH + 4, startX = 8;
-    var isSelect = this._editorSelectMode || false;
-
-    // ── ROW 1 — left side: mode + build options, right side: CLR ALL + DONE ──────
-    // Right-anchored buttons first so we know available space
-    var doneX = W - 60;
-    this._editorDoneBtn = { x: doneX, y: btnY, w: 56, h: btnH };
-    ctx.fillStyle = 'rgba(0,60,30,0.85)'; ctx.beginPath(); ctx.roundRect(doneX, btnY, 56, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(doneX, btnY, 56, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#00ff88'; ctx.font = "bold 10px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DONE', doneX + 28, btnY + btnH/2);
-    var clearX = doneX - 56;
-    this._editorClearBtn = { x: clearX, y: btnY, w: 52, h: btnH };
-    ctx.fillStyle = 'rgba(80,20,0,0.8)'; ctx.beginPath(); ctx.roundRect(clearX, btnY, 52, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(clearX, btnY, 52, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#ff8844'; ctx.font = "bold 9px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('CLR ALL', clearX + 26, btnY + btnH/2);
-
-    // RESET DEF button
-    var rstX = clearX - 54;
-    this._editorResetDefBtn = { x: rstX, y: btnY, w: 50, h: btnH };
-    ctx.fillStyle = 'rgba(0,20,60,0.8)'; ctx.beginPath(); ctx.roundRect(rstX, btnY, 50, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#4488cc'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.roundRect(rstX, btnY, 50, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#88bbff'; ctx.font = "bold 9px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('RST DEF', rstX + 25, btnY + btnH/2);
-    // UNDO button
-    // UNDO/REDO moved to row 2 to avoid row 1 overflow
-    this._editorUndoBtn = null;
-    this._editorRedoBtn = null;
-
-    // ── Mode toolbar: BUILD | SEL | STR | WID | ROT ────────────────────────────
-    var editorMode = this._editorToolMode || 'build';  // 'build','select','stretch','width','rotate'
-    // Keep _editorSelectMode in sync for existing code
-    this._editorSelectMode = (editorMode !== 'build');
-    var modeTools = [
-      { id:'build',   label:'BLD', col:'#4488ff' },
-      { id:'select',  label:'SEL', col:'#ffcc00' },
-      { id:'stretch', label:'STR', col:'#00ff88' },
-      { id:'width',   label:'WID', col:'#ff8844' },
-      { id:'rotate',  label:'ROT', col:'#cc44ff' },
-    ];
-    var modeW = 26, modeGap = 2;
-    var totalModeW = modeTools.length * modeW + (modeTools.length-1) * modeGap;
-    this._editorModeBtns = [];
-    for (var mi = 0; mi < modeTools.length; mi++) {
-      var mt = modeTools[mi];
-      var mx = startX + mi * (modeW + modeGap);
-      var isActive = editorMode === mt.id;
-      ctx.fillStyle = isActive ? mt.col + '44' : 'rgba(0,10,30,0.7)';
-      ctx.beginPath(); ctx.roundRect(mx, btnY, modeW, btnH, 4); ctx.fill();
-      ctx.strokeStyle = isActive ? mt.col : mt.col + '55';
-      ctx.lineWidth = isActive ? 2 : 1;
-      if (isActive) { ctx.shadowColor = mt.col; ctx.shadowBlur = 8; }
-      ctx.beginPath(); ctx.roundRect(mx, btnY, modeW, btnH, 4); ctx.stroke();
-      ctx.shadowBlur = 0;
-      // Draw icon
-      ctx.save();
-      ctx.translate(mx + modeW/2, btnY + btnH/2);
-      var ic = mt.col;
-      if (mt.id === 'build') {
-        // Brick
-        ctx.fillStyle = ic + '88'; ctx.beginPath(); ctx.roundRect(-9,-5,18,10,2); ctx.fill();
-        ctx.strokeStyle = ic; ctx.lineWidth=1.4; ctx.shadowColor=ic; ctx.shadowBlur=isActive?6:0;
-        ctx.beginPath(); ctx.roundRect(-9,-5,18,10,2); ctx.stroke(); ctx.shadowBlur=0;
-        ctx.fillStyle=ic; [[-3,-2],[3,-2],[-3,2],[3,2]].forEach(function(d){ctx.beginPath();ctx.arc(d[0],d[1],1,0,Math.PI*2);ctx.fill();});
-      } else if (mt.id === 'select') {
-        // Arrow
-        ctx.save(); ctx.rotate(-Math.PI/4);
-        ctx.beginPath();
-        ctx.moveTo(-4,-10); ctx.lineTo(4,-10); ctx.lineTo(4,0); ctx.lineTo(8,0);
-        ctx.lineTo(0,9); ctx.lineTo(-8,0); ctx.lineTo(-4,0); ctx.closePath();
-        ctx.fillStyle='rgba(0,160,180,0.7)'; ctx.fill();
-        ctx.strokeStyle=ic; ctx.lineWidth=1.4; ctx.setLineDash([2,2]);
-        ctx.shadowColor=ic; ctx.shadowBlur=isActive?6:0; ctx.stroke();
-        ctx.setLineDash([]); ctx.shadowBlur=0; ctx.restore();
-      } else if (mt.id === 'stretch') {
-        // Brick with arrows pointing out from ends
-        ctx.strokeStyle=ic; ctx.lineWidth=1.4; ctx.shadowColor=ic; ctx.shadowBlur=isActive?5:0;
-        ctx.fillStyle=ic+'55'; ctx.beginPath(); ctx.roundRect(-7,-4,14,8,2); ctx.fill();
-        ctx.beginPath(); ctx.roundRect(-7,-4,14,8,2); ctx.stroke();
-        // Left arrow
-        ctx.beginPath(); ctx.moveTo(-7,-3); ctx.lineTo(-12,0); ctx.lineTo(-7,3); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(-12,0); ctx.stroke();
-        // Right arrow
-        ctx.beginPath(); ctx.moveTo(7,-3); ctx.lineTo(12,0); ctx.lineTo(7,3); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(7,0); ctx.lineTo(12,0); ctx.stroke();
-        ctx.shadowBlur=0;
-      } else if (mt.id === 'width') {
-        // Brick with arrows pointing out from top/bottom
-        ctx.strokeStyle=ic; ctx.lineWidth=1.4; ctx.shadowColor=ic; ctx.shadowBlur=isActive?5:0;
-        ctx.fillStyle=ic+'55'; ctx.beginPath(); ctx.roundRect(-8,-3,16,6,2); ctx.fill();
-        ctx.beginPath(); ctx.roundRect(-8,-3,16,6,2); ctx.stroke();
-        // Top arrow
-        ctx.beginPath(); ctx.moveTo(-3,-3); ctx.lineTo(0,-9); ctx.lineTo(3,-3); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0,-3); ctx.lineTo(0,-9); ctx.stroke();
-        // Bottom arrow
-        ctx.beginPath(); ctx.moveTo(-3,3); ctx.lineTo(0,9); ctx.lineTo(3,3); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0,3); ctx.lineTo(0,9); ctx.stroke();
-        ctx.shadowBlur=0;
-      } else if (mt.id === 'rotate') {
-        // Circular arrow
-        ctx.strokeStyle=ic; ctx.lineWidth=2; ctx.shadowColor=ic; ctx.shadowBlur=isActive?5:0;
-        ctx.beginPath(); ctx.arc(0,0,7,0.4,Math.PI*2-0.4);
-        ctx.stroke(); ctx.shadowBlur=0;
-        // Arrowhead at end
-        ctx.fillStyle=ic;
-        ctx.beginPath(); ctx.moveTo(6,5); ctx.lineTo(10,2); ctx.lineTo(6,-1); ctx.fill();
-        // Pivot dot
-        ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2);
-        ctx.fillStyle=ic; ctx.fill();
-      }
-      ctx.restore();
-      this._editorModeBtns.push({ x:mx, y:btnY, w:modeW, h:btnH, id:mt.id });
-    }
-    var curX = startX + totalModeW + 3;
-
-    this._editorTypeBtns = [];
-    this._editorSnapBtn = null;
-    this._editorMovBtn = null;
-
-    // DEL — fixed position right of mode buttons, never moves
-    var delW2 = 34;
-    var delX2 = startX + totalModeW + 4;
-    if (delX2 + delW2 > clearX - 6) delX2 = clearX - delW2 - 6;
-    {
-      var bDelActive = this._editorBrickDeleteMode || false;
-      this._editorDelBtn = { x: delX2, y: btnY, w: delW2, h: btnH };
-      ctx.fillStyle = bDelActive ? 'rgba(180,0,0,0.85)' : (this._editorSelected ? 'rgba(120,0,0,0.7)' : 'rgba(40,0,0,0.5)');
-      ctx.beginPath(); ctx.roundRect(delX2, btnY, delW2, btnH, 4); ctx.fill();
-      ctx.strokeStyle = bDelActive ? '#ff2222' : (this._editorSelected ? '#ff4444' : '#882222');
-      if (bDelActive) { ctx.shadowColor='#ff0000'; ctx.shadowBlur=8; }
-      ctx.lineWidth = bDelActive ? 2 : 1.5;
-      ctx.beginPath(); ctx.roundRect(delX2, btnY, delW2, btnH, 4); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = bDelActive ? '#ff4444' : (this._editorSelected ? '#ff6666' : '#884444');
-      ctx.font = "bold 10px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(bDelActive ? '✕DEL' : 'DEL', delX2 + delW2/2, btnY + btnH/2);
-    }
-    // ── Brick type sub-row: RECT brick | ROUND brick (only in BUILD mode) ──────
-    var typeRowH = 26;
-    var typeRowY = btnY + btnH + 4;
-    this._editorTypeBtns = [];
-    if ((this._editorToolMode || 'build') === 'build') {
-      var bTypes2  = ['breakable_brick', 'circular_brick'];
-      var bLabels2 = ['RECT', 'ROUND'];
-      var bColors2 = ['#4488ff', '#44ff88'];
-      var typeW = Math.floor((W - 16) / 2);
-      for (var ti2 = 0; ti2 < bTypes2.length; ti2++) {
-        var tx2 = startX + ti2 * (typeW + 4);
-        var active2 = this._editorBrickType === bTypes2[ti2];
-        ctx.fillStyle = active2 ? bColors2[ti2] + '33' : 'rgba(0,10,25,0.7)';
-        ctx.beginPath(); ctx.roundRect(tx2, typeRowY, typeW, typeRowH, 4); ctx.fill();
-        ctx.strokeStyle = active2 ? bColors2[ti2] : bColors2[ti2] + '44';
-        ctx.lineWidth = active2 ? 1.8 : 0.8;
-        if (active2) { ctx.shadowColor = bColors2[ti2]; ctx.shadowBlur = 6; }
-        ctx.beginPath(); ctx.roundRect(tx2, typeRowY, typeW, typeRowH, 4); ctx.stroke();
-        ctx.shadowBlur = 0;
-        // Icon + label
-        ctx.save();
-        ctx.translate(tx2 + typeW/2, typeRowY + typeRowH/2);
-        var ic2 = bColors2[ti2];
-        if (ti2 === 0) {
-          // Rect brick icon
-          ctx.fillStyle = ic2 + '66'; ctx.beginPath(); ctx.roundRect(-16,-6,32,12,2); ctx.fill();
-          ctx.strokeStyle = ic2; ctx.lineWidth = 1.3; ctx.shadowColor = ic2; ctx.shadowBlur = active2?5:0;
-          ctx.beginPath(); ctx.roundRect(-16,-6,32,12,2); ctx.stroke(); ctx.shadowBlur = 0;
-          ctx.fillStyle = ic2; [[-8,-3],[8,-3],[-8,3],[8,3]].forEach(function(d){ctx.beginPath();ctx.arc(d[0],d[1],1.2,0,Math.PI*2);ctx.fill();});
-        } else {
-          // Round brick icon
-          ctx.fillStyle = ic2 + '55'; ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.fill();
-          ctx.strokeStyle = ic2; ctx.lineWidth = 1.3; ctx.shadowColor = ic2; ctx.shadowBlur = active2?5:0;
-          ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.stroke(); ctx.shadowBlur = 0;
-          ctx.beginPath(); ctx.arc(-3, -3, 2, 0, Math.PI*2); ctx.fillStyle = ic2 + 'aa'; ctx.fill();
-        }
-        ctx.restore();
-        this._editorTypeBtns.push({ x: tx2, y: typeRowY, w: typeW, h: typeRowH, type: bTypes2[ti2] });
-      }
-    } else {
-      typeRowH = 0;  // no type row in other modes
-    }
-
-    // Row 2+3: Sliders for HP (with ∞), REGEN, DENS, DIST
-    var sliderRowH = 22;
-    var row2Y = typeRowY + typeRowH + (typeRowH > 0 ? 5 : 0) + 4;
-    var row3Y = row2Y + sliderRowH + 6;
-    var bd2   = window.BrickDefaults || {};
-    var sb2   = this._editorSelected;
-    var movActive2 = sb2 ? (sb2._movable || false) : (this._editorMovable || false);
-
-    var halfW  = Math.floor((W - 16) / 2);
-    var lblW   = 34;   // label area
-    var infW   = 26;   // ∞ button on HP slider — bigger so it's tappable
     var padding = 8;
 
-    // Helper to draw a labeled slider on canvas
-    // Returns the rect stored for interaction
-    var drawSlider = function(label, valRaw, min, max, isInf, infActive, grayed, sx, sy, sw) {
-      var lx = sx, ly = sy;
-      var slW = sw - lblW - (isInf ? infW + 3 : 0) - 2;
-      var slX = sx + lblW;
-      var slY = sy + sliderRowH / 2;
-      var alpha = grayed ? 0.30 : 1.0;
+    // ── Panel background ─────────────────────────────────────────────────────
+    var panelY = floorY;
+    this._editorPanelRect = { y: floorY };
+    ctx.save();
+    ctx.filter = 'brightness(2.0)';
+    ctx.fillStyle = 'rgba(0,8,22,0.97)';
+    ctx.fillRect(0, floorY, W, H - floorY + 400);
+    ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, floorY+1); ctx.lineTo(W, floorY+1); ctx.stroke();
+
+    var vSY   = this._viewScrollY || 0;  // editor scroll offset
+    var cY    = panelY - vSY;            // current Y cursor (advances downward)
+    var mono  = "Share Tech Mono,monospace";
+    var self  = this;
+
+    // ── Helper: draw one neon button ─────────────────────────────────────────
+    function btn(label, x, y, w, h, col, active, opts) {
+      opts = opts || {};
+      var bg   = active ? 'rgba(' + _hexToRgb(col) + ',0.22)' : 'rgba(0,10,28,0.80)';
+      var bc   = active ? col : col + '66';
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.roundRect(x, y, w, h, 3); ctx.fill();
+      ctx.strokeStyle = bc; ctx.lineWidth = active ? 1.8 : 1.0;
+      if (active) { ctx.shadowColor = col; ctx.shadowBlur = 7; }
+      ctx.beginPath(); ctx.roundRect(x, y, w, h, 3); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = active ? col : col + 'cc';
+      ctx.font = "bold " + (opts.fs || 9) + "px '" + mono + "'";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (opts.icon) {
+        ctx.save(); ctx.translate(x + w/2, y + h/2); opts.icon(ctx, active ? col : col+'99'); ctx.restore();
+      } else {
+        ctx.fillText(label, x + w/2, y + h/2);
+      }
+      return { x:x, y:y, w:w, h:h };
+    }
+
+    function _hexToRgb(hex) {
+      var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+      return r+','+g+','+b;
+    }
+
+    // ── Helper: new crosshatch slider ─────────────────────────────────────────
+    // Returns rect for hit testing
+    function slider(label, val, min, max, x, y, w, opts) {
+      opts = opts || {};
+      var trackH = 14, thumbW = 12, thumbH = 20;
+      var lblW2  = 36, valW = 36;
+      var trackX = x + lblW2;
+      var trackW = w - lblW2 - valW - 4;
+      var trackY = y + (opts.rowH||22)/2 - trackH/2;
+      var t      = Math.max(0, Math.min(1, (val - min)/(max - min)));
+      var col    = opts.col || '#00aaff';
+      var grayed = opts.grayed || false;
+      var alpha2 = grayed ? 0.3 : 1.0;
+      ctx.globalAlpha = alpha2;
 
       // Label
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#88aacc'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+      ctx.fillStyle = '#88aacc';
+      ctx.font = "bold 8px '" + mono + "'";
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText(label, lx + 2, slY);
+      ctx.fillText(label, x + 2, y + (opts.rowH||22)/2);
 
-      // Track background
-      ctx.fillStyle = grayed ? 'rgba(30,40,60,0.5)' : 'rgba(0,20,50,0.8)';
-      ctx.beginPath(); ctx.roundRect(slX, sy + 7, slW, 8, 4); ctx.fill();
-      ctx.strokeStyle = grayed ? '#334455' : 'rgba(0,150,255,0.4)'; ctx.lineWidth = 0.8;
-      ctx.beginPath(); ctx.roundRect(slX, sy + 7, slW, 8, 4); ctx.stroke();
-
-      // Fill (progress)
-      var t = isInf && infActive ? 1.0 : Math.max(0, Math.min(1, (valRaw - min) / (max - min)));
-      if (!grayed) {
-        var fillColor = infActive ? '#ff8800' : '#0088ff';
-        ctx.fillStyle = fillColor + (grayed ? '44' : 'cc');
-        ctx.beginPath(); ctx.roundRect(slX, sy + 7, slW * t, 8, 4); ctx.fill();
+      // Track — dark bg with crosshatch
+      ctx.fillStyle = 'rgba(0,15,40,0.9)';
+      ctx.beginPath(); ctx.roundRect(trackX, trackY, trackW, trackH, 3); ctx.fill();
+      // Crosshatch fill (only filled portion)
+      var fillW = trackW * t;
+      if (fillW > 0) {
+        ctx.save();
+        ctx.beginPath(); ctx.roundRect(trackX, trackY, fillW, trackH, 3); ctx.clip();
+        // Cross-hatch lines
+        ctx.strokeStyle = col + '44'; ctx.lineWidth = 1;
+        for (var xi = trackX - trackH; xi < trackX + fillW + trackH; xi += 5) {
+          ctx.beginPath(); ctx.moveTo(xi, trackY); ctx.lineTo(xi + trackH, trackY + trackH); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(xi, trackY + trackH); ctx.lineTo(xi + trackH, trackY); ctx.stroke();
+        }
+        // Lighter fill overlay
+        ctx.fillStyle = col + '22';
+        ctx.fillRect(trackX, trackY, fillW, trackH);
+        ctx.restore();
       }
-
-      // Thumb
-      var thumbX = slX + slW * t;
-      ctx.beginPath(); ctx.arc(thumbX, slY, 6, 0, Math.PI * 2);
-      ctx.fillStyle = grayed ? '#334455' : (infActive ? '#ffaa22' : '#00aaff');
-      ctx.shadowColor = grayed ? 'transparent' : (infActive ? '#ff8800' : '#0088ff');
-      ctx.shadowBlur  = grayed ? 0 : 6;
-      ctx.fill();
+      // Track border glow
+      ctx.strokeStyle = col + (grayed ? '33' : '88'); ctx.lineWidth = 1;
+      ctx.shadowColor = col; ctx.shadowBlur = grayed ? 0 : 4;
+      ctx.beginPath(); ctx.roundRect(trackX, trackY, trackW, trackH, 3); ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Value text right of thumb — clean formatting, max 2dp
-      var valText;
-      if (isInf && infActive) {
-        valText = '∞';
-      } else if (label === 'REGEN') {
-        valText = valRaw ? (valRaw/1000).toFixed(1)+'s' : 'OFF';
-      } else if (label === 'ROT') {
-        valText = Math.round(valRaw) + '°';
-      } else if (label === 'HP' || label === 'DIST' || label === 'LEN' || label === 'WID') {
-        valText = Math.round(valRaw) + (label === 'DIST' || label === 'LEN' || label === 'WID' ? 'px' : '');
-      } else if (label === 'DENS') {
-        valText = parseFloat(valRaw).toFixed(1);
-      } else if (label === 'STOP' || label === 'RSTOP' || label === 'RSPIN' || label === 'DECEL') {
-        valText = parseFloat(valRaw).toFixed(2);
-      } else {
-        var numVal = parseFloat(valRaw);
-        valText = isNaN(numVal) ? String(valRaw) : (Number.isInteger(numVal) ? String(numVal) : numVal.toFixed(2));
-      }
-      ctx.fillStyle = grayed ? '#445566' : '#ccddff';
-      ctx.font = "7px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.fillText(valText, thumbX + 8, slY);
-
-      // ∞/✕ button — ∞ for HP (invincible), red ✕ for REGEN (no-regen)
-      var infRect = null;
-      if (isInf) {
-        var ix = slX + slW + 6;
-        var iH = sliderRowH - 2;
-        var isNoRegen = (label === 'REGEN');
-        if (isNoRegen) {
-          ctx.fillStyle = infActive ? 'rgba(200,20,20,0.50)' : 'rgba(0,15,40,0.85)';
-        } else {
-          ctx.fillStyle = infActive ? 'rgba(255,140,0,0.45)' : 'rgba(0,15,40,0.85)';
+      // Thumb — rect with grip lines
+      var thumbX = trackX + trackW * t - thumbW/2;
+      ctx.fillStyle = grayed ? '#334455' : col;
+      ctx.shadowColor = col; ctx.shadowBlur = grayed ? 0 : 8;
+      ctx.beginPath(); ctx.roundRect(thumbX, trackY - (thumbH-trackH)/2, thumbW, thumbH, 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      // Grip lines on thumb
+      if (!grayed) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+        for (var gi = -2; gi <= 2; gi += 2) {
+          ctx.beginPath();
+          ctx.moveTo(thumbX + thumbW/2 + gi, trackY - (thumbH-trackH)/2 + 3);
+          ctx.lineTo(thumbX + thumbW/2 + gi, trackY + trackH + (thumbH-trackH)/2 - 3);
+          ctx.stroke();
         }
-        ctx.beginPath(); ctx.roundRect(ix, sy + 1, infW, iH, 4); ctx.fill();
-        ctx.strokeStyle = isNoRegen ? (infActive ? '#ff4444' : '#884444') : (infActive ? '#ffaa00' : '#4477aa'); ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.roundRect(ix, sy + 1, infW, iH, 4); ctx.stroke();
-        ctx.fillStyle = isNoRegen ? (infActive ? '#ff8888' : '#aa5555') : (infActive ? '#ffdd44' : '#7799bb');
-        ctx.font = "bold " + (isNoRegen ? "11" : "12") + "px 'Share Tech Mono',monospace";
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(isNoRegen ? '✕' : '∞', ix + infW/2, sy + sliderRowH/2);
-        infRect = { x: ix, y: sy, w: infW, h: sliderRowH };
       }
+
+      // VAL window
+      var valText = _fmtVal(label, val, opts);
+      ctx.fillStyle = 'rgba(0,10,30,0.9)';
+      ctx.beginPath(); ctx.roundRect(trackX + trackW + 2, y + (opts.rowH||22)/2 - 8, valW, 16, 2); ctx.fill();
+      ctx.strokeStyle = col + '55'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.roundRect(trackX + trackW + 2, y + (opts.rowH||22)/2 - 8, valW, 16, 2); ctx.stroke();
+      ctx.fillStyle = col; ctx.font = "bold 7px '" + mono + "'";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(valText, trackX + trackW + 2 + valW/2, y + (opts.rowH||22)/2);
 
       ctx.globalAlpha = 1.0;
-      return {
-        x: slX, y: sy, w: slW, h: sliderRowH,
-        trackX: slX, trackW: slW, min: min, max: max,
-        infRect: infRect,
-      };
-    };
+      return { x: trackX, y: trackY - 4, w: trackW, h: trackH + 8,
+               trackX: trackX, trackW: trackW, min: min, max: max,
+               valX: trackX+trackW+2, valY: y+(opts.rowH||22)/2-8, valW: valW, valH: 16,
+               label: label };
+    }
 
-    // ── Values from selected brick or defaults ────────────────────────────────
-    var HPval    = (sb2 && sb2.maxHealth   !== undefined) ? sb2.maxHealth   : (bd2.rectHP    || 100);
-    var REGval   = (sb2 && sb2.regenAfter  !== undefined) ? sb2.regenAfter  : (bd2.rectRegen || 2000);
-    var DENSval  = (sb2 && sb2._density    !== undefined) ? sb2._density    : (bd2.density   || 1.0);
-    var DISTval  = (sb2 && sb2._maxTravel  !== undefined) ? sb2._maxTravel  : (bd2.maxTravel || 60);
-    var DECELval = (sb2 && sb2._decel      !== undefined) ? sb2._decel      : (bd2.decel     || 0.88);
-    var ROTSPDval= (sb2 && sb2._rotSpeed   !== undefined) ? sb2._rotSpeed   : (bd2.rotSpeed  || 0.3);
-    var ROTDECval= (sb2 && sb2._rotDecel   !== undefined) ? sb2._rotDecel   : (bd2.rotDecel  || 0.88);
-    var HPinf    = (sb2 && sb2._invincible) || false;
-    var noRegen  = (sb2 && sb2._noRegen)    || false;
-    var LENval   = sb2 ? (sb2.w || sb2.r * 2 || 70) : (bd2.rectW || 70);
-    var WIDval   = sb2 ? (sb2.h || sb2.r * 2 || 22) : (bd2.rectH || 22);
-    var ROTval   = sb2 ? ((sb2._rotation || 0) * 180 / Math.PI) : 0;
-    // Normalise rotation to [-180, 180]
-    while (ROTval >  180) ROTval -= 360;
-    while (ROTval < -180) ROTval += 360;
+    function _fmtVal(label, val, opts) {
+      if (label === 'REGEN') return val ? (val/1000).toFixed(1)+'s' : 'OFF';
+      if (label === 'ROT')   return Math.round(val) + '°';
+      if (label === 'HP' || label === 'LEN' || label === 'WID' || label === 'DIST') return Math.round(val)+'px';
+      if (label === 'DENS')  return parseFloat(val).toFixed(1);
+      if (label === 'DECEL' || label === 'RDECEL' || label === 'RSPIN' || label === 'BNCE') return parseFloat(val).toFixed(2);
+      if (label === 'SPIN/DIST') return Math.round(val*100)+'%';
+      var n = parseFloat(val); return isNaN(n) ? String(val) : (Number.isInteger(n) ? String(n) : n.toFixed(2));
+    }
 
-    var transOn3 = sb2 ? (sb2._translateOnRotate !== false) : (this._editorTranslate !== false);
+    // ── Helper: collapsible panel header ─────────────────────────────────────
+    function panelHeader(label, key, x, y, w, col) {
+      var collapsed = window['_edCollapse_'+key] || false;
+      var hH = 18;
+      ctx.fillStyle = 'rgba(0,10,28,0.9)';
+      ctx.beginPath(); ctx.roundRect(x, y, w, hH, 3); ctx.fill();
+      ctx.strokeStyle = col + '66'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(x, y, w, hH, 3); ctx.stroke();
+      // Arrow
+      ctx.fillStyle = col;
+      ctx.font = "bold 9px '" + mono + "'";
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(collapsed ? '▶ '+label : '▼ '+label, x+6, y+hH/2);
+      return { x:x, y:y, w:w, h:hH, key:key, collapsed:collapsed };
+    }
 
-    // ── ROW 2: UNDO/REDO | MOV | ↔ROT | PIVOT 3×3 | 🎵 | GRID | SNAP-GRID ───
-    // row2Y must be below the type sub-row (typeRowY + typeRowH + gap)
-    var _typeRowEnd = btnY + btnH + 4 + 26 + 5;  // matches typeRowY + typeRowH + gap
-    var row2Y = _typeRowEnd + 4;
-    var rH2   = 22;
-    // MOV offset: after undo(38) + redo(38) + gaps
-    var movW3 = 46;
-    var movInX = padding + 38 + 3 + 38 + 6;  // after undo + redo buttons
-    ctx.fillStyle = movActive2 ? 'rgba(255,140,0,0.25)' : 'rgba(0,15,40,0.8)';
-    ctx.beginPath(); ctx.roundRect(movInX, row2Y, movW3, rH2, 3); ctx.fill();
-    ctx.strokeStyle = movActive2 ? '#ffaa00' : '#446688'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.roundRect(movInX, row2Y, movW3, rH2, 3); ctx.stroke();
-    ctx.fillStyle = movActive2 ? '#ffcc44' : '#668899';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(movActive2 ? '● MOV' : '■ STAT', movInX + movW3/2, row2Y + rH2/2);
+    // ── ROW 1: CLR ALL | DEL | UNDO | REDO | (space) | DONE ─────────────────
+    var r1H = 24, r1Y = cY + 4;
+    var btnW1 = Math.floor((W - 16) / 6);
 
-    // ↔ROT
-    var transX3 = movInX + movW3 + 4;
-    this._editorTransRect = { x: transX3, y: row2Y, w: 40, h: rH2 };
-    ctx.fillStyle = transOn3 ? 'rgba(0,200,100,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(transX3, row2Y, 40, rH2, 3); ctx.fill();
-    ctx.strokeStyle = transOn3 ? '#00ff88' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(transX3, row2Y, 40, rH2, 3); ctx.stroke();
-    ctx.fillStyle = transOn3 ? '#00ff88' : '#445566';
-    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(transOn3 ? '↔ROT' : '⊕ROT', transX3 + 20, row2Y + rH2/2);
+    this._editorClearBtn      = btn('CLR ALL', padding,                  r1Y, btnW1, r1H, '#ff4400', false);
+    this._editorDelBtn        = btn((this._editorBrickDeleteMode?'✕DEL':'DEL'),
+                                    padding + btnW1 + 2,                 r1Y, btnW1, r1H,
+                                    '#ff2222', this._editorBrickDeleteMode||false);
+    this._editorUndoBtn       = btn('↩UNDO', padding + (btnW1+2)*2,     r1Y, btnW1, r1H,
+                                    '#0088ff', false,
+                                    {grayed:!(this._undoHistory&&this._undoHistory.length)});
+    this._editorRedoBtn       = btn('REDO↪', padding + (btnW1+2)*3,     r1Y, btnW1, r1H,
+                                    '#0088ff', false,
+                                    {grayed:!(this._redoHistory&&this._redoHistory.length)});
+    // Space intentionally empty in position 4
+    this._editorDoneBtn       = btn('DONE',  W - padding - btnW1,        r1Y, btnW1, r1H, '#00ff88', false);
 
-    // PIVOT 3×3 grid — advanced only (↔ROT button always available)
-    var pivX3 = transX3 + 44;
-    if (!advOn) { this._editorPivotRects = []; }  // transRect stays
-    var pivCols = ['L','C','R'], pivRows = ['T','M','B'];
-    var pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
-    var curPiv3 = sb2 ? (sb2._pivot || 'CM') : (this._editorPivot || 'CM');
-    var pivEnabled = transOn3;
+    cY = r1Y + r1H + 3;
+
+    // ── ROW 2: CLR BRICKS | CLR TUBES | CLR AFFECTORS | CLR RAMPS | CLR MOTORS
+    var r2H = 18;
+    var clrLabels = ['CLR BRICKS','CLR TUBES','CLR AFFECT','CLR RAMPS','CLR MOTORS'];
+    var clrCols   = ['#ff6600','#00ffaa','#ff44cc','#ffcc00','#4488ff'];
+    var clrW = Math.floor((W - 16 - 4*2) / 5);
+    this._editorClrBtns = [];
+    for (var ci2 = 0; ci2 < clrLabels.length; ci2++) {
+      var cbx = padding + ci2 * (clrW + 2);
+      this._editorClrBtns.push(btn(clrLabels[ci2], cbx, cY, clrW, r2H, clrCols[ci2], false, {fs:7}));
+      this._editorClrBtns[ci2].type = ci2;
+      this._editorClrBtns[ci2]._needsLongPress = true;
+    }
+    cY += r2H + 3;
+
+    // ── ROW 3: Tab bar — BRICKS | TUBES | AFFECTORS | RAMPS | MOTORS ─────────
+    var tabH = 22, tabLabels = ['🧱 BRICKS','🔧 TUBES','⚡ AFFECT','📐 RAMPS','⚙ MOTORS'];
+    var tabCols  = ['#00ccff','#00ff88','#ff44cc','#ffcc00','#4488ff'];
+    var activeTab = this._editorActiveTab || 'bricks';
+    var tabW2 = Math.floor((W - 16 - 4*2) / 5);
+    this._editorTabBtns = [];
+    for (var ti3 = 0; ti3 < tabLabels.length; ti3++) {
+      var tabId = ['bricks','tubes','affectors','ramps','motors'][ti3];
+      var tbx = padding + ti3 * (tabW2 + 2);
+      var tbActive = activeTab === tabId;
+      this._editorTabBtns.push(btn(tabLabels[ti3], tbx, cY, tabW2, tabH, tabCols[ti3], tbActive, {fs:7}));
+      this._editorTabBtns[ti3].id = tabId;
+    }
+    // Keep backward compat
+    this._editorBrickTab = this._editorTabBtns[0];
+    this._editorTubeTab  = this._editorTabBtns[1];
+    cY += tabH + 3;
+
+    // ── Branch: tube editor ──────────────────────────────────────────────────
+    if (this._editorTubeMode) {
+      this._drawTubeEditor(ctx, cY + vSY);
+      ctx.filter = 'none'; ctx.restore(); return;
+    }
+
+    // ── ROW 4: Tool buttons + Snap controls ──────────────────────────────────
+    var r4H = 26;
+    var tools = [
+      { id:'build',   col:'#4488ff', icon: function(c,col) {
+        c.fillStyle=col+'66'; c.beginPath(); c.roundRect(-9,-5,18,10,2); c.fill();
+        c.strokeStyle=col; c.lineWidth=1.4; c.beginPath(); c.roundRect(-9,-5,18,10,2); c.stroke();
+        c.fillStyle=col; [[-3,-2],[3,-2],[-3,2],[3,2]].forEach(function(d){c.beginPath();c.arc(d[0],d[1],1.2,0,Math.PI*2);c.fill();}); }},
+      { id:'select',  col:'#ffcc00', icon: function(c,col) {
+        c.save(); c.rotate(-Math.PI/4);
+        c.beginPath(); c.moveTo(-3,-9);c.lineTo(3,-9);c.lineTo(3,-1);c.lineTo(7,-1);c.lineTo(0,8);c.lineTo(-7,-1);c.lineTo(-3,-1);c.closePath();
+        c.fillStyle='rgba(0,160,180,0.6)'; c.fill();
+        c.strokeStyle=col; c.lineWidth=1.3; c.setLineDash([2,2]); c.stroke(); c.setLineDash([]); c.restore(); }},
+      { id:'scale',   col:'#00ff88', icon: function(c,col) {
+        c.strokeStyle=col; c.lineWidth=1.4;
+        c.fillStyle=col+'33'; c.beginPath(); c.roundRect(-9,-5,18,10,2); c.fill();
+        c.beginPath(); c.roundRect(-9,-5,18,10,2); c.stroke();
+        c.beginPath(); c.moveTo(-9,-2);c.lineTo(-14,0);c.lineTo(-9,2);c.moveTo(-9,0);c.lineTo(-14,0); c.stroke();
+        c.beginPath(); c.moveTo(9,-2);c.lineTo(14,0);c.lineTo(9,2);c.moveTo(9,0);c.lineTo(14,0); c.stroke(); }},
+      { id:'rotate',  col:'#cc44ff', icon: function(c,col) {
+        c.strokeStyle=col; c.lineWidth=1.8;
+        c.beginPath(); c.arc(0,0,7,0.5,Math.PI*2-0.5); c.stroke();
+        c.fillStyle=col; c.beginPath(); c.moveTo(5,5);c.lineTo(9,2);c.lineTo(5,-1); c.fill();
+        c.beginPath(); c.arc(0,0,2,0,Math.PI*2); c.fill(); }},
+    ];
+    var edMode = this._editorToolMode || 'build';
+    var toolW  = 36;
+    this._editorModeBtns = [];
+    for (var tli = 0; tli < tools.length; tli++) {
+      var tl = tools[tli];
+      var tlx = padding + tli * (toolW + 3);
+      var tlRect = btn('', tlx, cY, toolW, r4H, tl.col, edMode===tl.id, {icon:tl.icon});
+      tlRect.id = tl.id;
+      this._editorModeBtns.push(tlRect);
+    }
+
+    // Right side snap controls
+    var snapRightX = padding + tools.length * (toolW+3) + 6;
+    var snapW = Math.floor((W - snapRightX - padding) / 4) - 2;
+
+    // 3x3 pivot grid for grid-snap (which point snaps to grid)
+    var gridPivCols = ['L','C','R'], gridPivRows = ['T','M','B'];
+    var curGridPiv = window._editorGridSnapPivot || 'CM';
+    var gpW = 12, gpG = 2;
+    var gpStartX = snapRightX;
+    var gpStartY = cY + 1;
+    this._editorGridPivRects = [];
+    for (var gpc = 0; gpc < 3; gpc++) {
+      for (var gpr = 0; gpr < 3; gpr++) {
+        var gpKey = gridPivCols[gpc] + gridPivRows[gpr];
+        var gpx   = gpStartX + gpc*(gpW+gpG);
+        var gpy   = gpStartY + gpr*(gpW+gpG)*0.7;
+        var gpAct = curGridPiv === gpKey;
+        ctx.fillStyle = gpAct ? 'rgba(0,200,255,0.3)' : 'rgba(0,10,30,0.7)';
+        ctx.beginPath(); ctx.roundRect(gpx,gpy,gpW,gpW*0.7,1); ctx.fill();
+        ctx.strokeStyle = gpAct ? '#00ccff' : '#334455'; ctx.lineWidth = gpAct?1.5:0.6;
+        ctx.beginPath(); ctx.roundRect(gpx,gpy,gpW,gpW*0.7,1); ctx.stroke();
+        if (gpAct) { ctx.fillStyle='#00ccff'; ctx.beginPath(); ctx.arc(gpx+gpW/2,gpy+gpW*0.35,2,0,Math.PI*2); ctx.fill(); }
+        this._editorGridPivRects.push({x:gpx,y:gpy,w:gpW,h:gpW*0.7,val:gpKey});
+      }
+    }
+    var afterGrid = gpStartX + 3*(gpW+gpG) + 4;
+
+    // GRID SNAP button
+    var gsOn = window._snapToGrid||false;
+    this._editorSnapGridBtn = btn('GRID\nSNAP', afterGrid, cY, snapW, r4H, '#00ccff', gsOn, {fs:7});
+
+    // ROTATE SNAP
+    var rotSnapOn = (this._editorSnapDeg||0) > 0;
+    var rotSnapLabels = {0:'ROT\nFREE',15:'ROT\n15°',30:'ROT\n30°',45:'ROT\n45°',90:'ROT\n90°'};
+    this._editorSnapBtn = btn(rotSnapLabels[this._editorSnapDeg||0]||'ROT\nFREE',
+      afterGrid+snapW+2, cY, snapW, r4H, '#ffaa00', rotSnapOn, {fs:7});
+
+    // LEN SNAP
+    var lsOn = window._editorLenSnap > 0;
+    this._editorLenSnapBtn = btn('LEN\nSNAP', afterGrid+(snapW+2)*2, cY, snapW, r4H, '#00ff88', lsOn, {fs:7});
+
+    // WID SNAP
+    var wsOn = window._editorWidSnap > 0;
+    this._editorWidSnapBtn = btn('WID\nSNAP', afterGrid+(snapW+2)*3, cY, snapW, r4H, '#ff8844', wsOn, {fs:7});
+
+    cY += r4H + 3;
+
+    // ── ROW 5: Sub-type buttons (RECT | ROUND | TRI | CUSTOM) ────────────────
+    var r5H = 24;
+    var subTypes = [
+      { id:'breakable_brick',  label:'RECT',   icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.roundRect(-12,-5,24,10,2); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.beginPath(); c.roundRect(-12,-5,24,10,2); c.stroke(); }},
+      { id:'circular_brick',   label:'ROUND',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.arc(0,0,7,0,Math.PI*2); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.beginPath(); c.arc(0,0,7,0,Math.PI*2); c.stroke(); }},
+      { id:'triangle_brick',   label:'TRI',    icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.moveTo(0,-8);c.lineTo(9,6);c.lineTo(-9,6);c.closePath(); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.stroke(); }},
+      { id:'custom_brick',     label:'CUSTOM', icon: function(c,col){ c.strokeStyle=col; c.lineWidth=1.2; c.setLineDash([2,2]); c.beginPath(); c.roundRect(-9,-6,18,12,2); c.stroke(); c.setLineDash([]); c.fillStyle=col; c.font="bold 6px monospace"; c.textAlign='center'; c.textBaseline='middle'; c.fillText('+',0,0); }},
+    ];
+    var stW = Math.floor((W - 16 - 3*3) / 4);
+    var curType = this._editorBrickType || 'breakable_brick';
+    this._editorTypeBtns = [];
+    for (var sti = 0; sti < subTypes.length; sti++) {
+      var st = subTypes[sti];
+      var stx = padding + sti*(stW+3);
+      var stRect = btn('', stx, cY, stW, r5H, '#4488ff', curType===st.id, {icon:st.icon});
+      stRect.type = st.id;
+      this._editorTypeBtns.push(stRect);
+    }
+    cY += r5H + 4;
+
+    // ── BEHAVIOR + PRESET panels (side by side) ───────────────────────────────
+    var bpH_base = 88;  // approximate — may grow
+    var bpW = Math.floor((W - 16 - 4) / 2);
+    var bpY = cY;
+
+    // Left: behavior panel — STATIC/ROTATE/♪ | MOVEABLE | pivot
+    ctx.fillStyle = 'rgba(0,8,22,0.95)';
+    ctx.beginPath(); ctx.roundRect(padding, bpY, bpW, bpH_base, 3); ctx.fill();
+    ctx.strokeStyle = '#224466'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(padding, bpY, bpW, bpH_base, 3); ctx.stroke();
+
+    var sb2    = this._editorSelected;
+    var bd2    = window.BrickDefaults || {};
+    var movActive2 = sb2 ? (sb2._movable||false) : (this._editorMovable||false);
+    var transOn3   = sb2 ? (sb2._translateOnRotate!==false) : (this._editorTranslate!==false);
+
+    var bRow1Y = bpY + 5;
+    var bRowH  = 20;
+    var statW  = Math.floor(bpW/3) - 3;
+
+    // STATIC / MOV toggle
+    this._editorMovInlineRect = btn(movActive2?'● MOV':'■ STAT', padding+4, bRow1Y, statW*1.1, bRowH,
+      movActive2?'#ffaa00':'#4488ff', movActive2, {fs:8});
+    // ROTATE mode indicator (↔ROT)
+    this._editorTransRect = btn(transOn3?'↔ROT':'⊕ROT', padding+4+statW*1.1+3, bRow1Y, statW*0.9, bRowH,
+      transOn3?'#00ff88':'#446688', transOn3, {fs:8});
+    // ♪ Note
+    var noteOn2 = sb2&&sb2._noteConfig;
+    this._editorNoteBtn = btn('🎵', padding+4+statW*2+6, bRow1Y, bRowH, bRowH,
+      noteOn2?'#cc44ff':'#446688', noteOn2||false);
+
+    // 3x3 pivot grid
+    var pivX3  = padding + 4;
+    var pivY3  = bRow1Y + bRowH + 4;
+    var pW9=18, pG9=2;
+    var pivCols=['L','C','R'], pivRows2=['T','M','B'];
+    var pivColors3=['#ffcc44','#44ccff','#ff8844'];
+    var curPiv3 = sb2?(sb2._pivot||'CM'):(this._editorPivot||'CM');
+    var pivEnabled2 = transOn3;
     this._editorPivotRects = [];
-    var pW9 = 18, pG9 = 2;
-    for (var pc = 0; pc < 3; pc++) {
-      for (var pr = 0; pr < 3; pr++) {
-        var pivKey = pivCols[pc] + pivRows[pr];
-        var px9 = pivX3 + pc * (pW9 + pG9);
-        var py9 = row2Y + pr * (pW9 * 0.55 + pG9);
-        var pAct9 = pivEnabled && curPiv3 === pivKey;
-        ctx.globalAlpha = pivEnabled ? 1.0 : 0.28;
-        ctx.fillStyle = pAct9 ? pivColors3[pc] + '44' : 'rgba(0,10,30,0.6)';
-        ctx.beginPath(); ctx.roundRect(px9, py9, pW9, pW9 * 0.55, 2); ctx.fill();
-        ctx.strokeStyle = pAct9 ? pivColors3[pc] : '#334455'; ctx.lineWidth = pAct9 ? 1.5 : 0.6;
-        ctx.beginPath(); ctx.roundRect(px9, py9, pW9, pW9 * 0.55, 2); ctx.stroke();
-        // Center dot if active
-        if (pAct9) {
-          ctx.fillStyle = pivColors3[pc];
-          ctx.beginPath(); ctx.arc(px9 + pW9/2, py9 + pW9*0.275, 2, 0, Math.PI*2); ctx.fill();
-        }
-        ctx.globalAlpha = 1.0;
-        this._editorPivotRects.push({ x: px9, y: py9, w: pW9, h: pW9*0.55, val: pivKey, enabled: pivEnabled });
+    for (var pc=0; pc<3; pc++) {
+      for (var pr=0; pr<3; pr++) {
+        var pivKey=pivCols[pc]+pivRows2[pr];
+        var px9=pivX3+pc*(pW9+pG9), py9=pivY3+pr*(pW9*0.6+pG9);
+        var pAct9=pivEnabled2&&curPiv3===pivKey;
+        ctx.globalAlpha=pivEnabled2?1.0:0.28;
+        ctx.fillStyle=pAct9?pivColors3[pc]+'44':'rgba(0,10,30,0.6)';
+        ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.6,2); ctx.fill();
+        ctx.strokeStyle=pAct9?pivColors3[pc]:'#334455'; ctx.lineWidth=pAct9?1.5:0.6;
+        ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.6,2); ctx.stroke();
+        if(pAct9){ctx.fillStyle=pivColors3[pc];ctx.beginPath();ctx.arc(px9+pW9/2,py9+pW9*0.3,2,0,Math.PI*2);ctx.fill();}
+        ctx.globalAlpha=1.0;
+        this._editorPivotRects.push({x:px9,y:py9,w:pW9,h:pW9*0.6,val:pivKey,enabled:pivEnabled2});
       }
     }
 
-    // 🎵 Note button
-    var noteX = pivX3 + 3 * (pW9 + pG9) + 6;
-    var noteOn = sb2 && sb2._noteConfig;
-    this._editorNoteBtn = { x: noteX, y: row2Y, w: 26, h: rH2 };
-    ctx.fillStyle = noteOn ? 'rgba(180,50,255,0.30)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(noteX, row2Y, 26, rH2, 3); ctx.fill();
-    ctx.strokeStyle = noteOn ? '#cc44ff' : '#334466'; ctx.lineWidth = noteOn ? 1.5 : 0.8;
-    ctx.beginPath(); ctx.roundRect(noteX, row2Y, 26, rH2, 3); ctx.stroke();
-    ctx.fillStyle = noteOn ? '#dd88ff' : '#557788';
-    ctx.font = "10px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🎵', noteX + 13, row2Y + rH2/2);
-    if (noteOn) {
-      var nc = sb2._noteConfig;
-      ctx.fillStyle = '#dd88ff'; ctx.font = "5px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText((nc.note||'C')+(nc.octave||4), noteX+1, row2Y+1);
-    }
+    // Right: preset panel — LOAD | SAVE | preset name | DEFAULT
+    var ppX = padding + bpW + 4;
+    ctx.fillStyle = 'rgba(0,8,22,0.95)';
+    ctx.beginPath(); ctx.roundRect(ppX, bpY, bpW, bpH_base, 3); ctx.fill();
+    ctx.strokeStyle = '#224466'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(ppX, bpY, bpW, bpH_base, 3); ctx.stroke();
 
-    // ── Row 2b: GRID | SNAP | ROT SNAP | GR SIZE | ADV ─────────────────────
-    var row2bY = row2Y + rH2 + 5;
-    var rH2b = 24;  // row2b taller buttons
-    // GRID toggle
-    var gridX = padding;
-    var gridOn = window._showEditorGrid || false;
-    this._editorGridBtn = { x: gridX, y: row2bY, w: 32, h: rH2b };
-    ctx.fillStyle = gridOn ? 'rgba(0,180,100,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(gridX, row2bY, 32, rH2b, 3); ctx.fill();
-    ctx.strokeStyle = gridOn ? '#00cc66' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(gridX, row2bY, 32, rH2, 3); ctx.stroke();
-    ctx.fillStyle = gridOn ? '#00ff88' : '#446655';
-    ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace";
-    ctx.fillText('GRID', gridX + 16, row2bY + rH2b/2);
+    var ppBW = Math.floor(bpW/2) - 5;
+    this._editorLoadPresetBtn = btn('LOAD', ppX+4,        bpY+5, ppBW, bRowH, '#00ccff', false, {fs:8});
+    this._editorSavePresetBtn = btn('SAVE', ppX+4+ppBW+3, bpY+5, ppBW, bRowH, '#00ff88', false, {fs:8});
 
-    // SNAP-GRID toggle
-    var snapGX = gridX + 36;
-    var snapGOn = window._snapToGrid || false;
-    this._editorSnapGridBtn = { x: snapGX, y: row2bY, w: 34, h: rH2b };
-    ctx.fillStyle = snapGOn ? 'rgba(0,150,255,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(snapGX, row2bY, 34, rH2b, 3); ctx.fill();
-    ctx.strokeStyle = snapGOn ? '#00aaff' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(snapGX, row2bY, 34, rH2, 3); ctx.stroke();
-    ctx.fillStyle = snapGOn ? '#44ccff' : '#445566';
-    ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 8px 'Share Tech Mono',monospace";
-    ctx.fillText('SNAP', snapGX + 17, row2bY + rH2b/2 - 3);
-    ctx.fillText('GRID', snapGX + 17, row2bY + rH2b/2 + 4);
-
-    // UNDO/REDO buttons at start of row 2
-    var undoW2 = 38;
-    var canUndo2 = this._undoHistory && this._undoHistory.length > 0;
-    this._editorUndoBtn = { x: padding, y: row2Y, w: undoW2, h: rH2 };
-    ctx.fillStyle = canUndo2 ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
-    ctx.beginPath(); ctx.roundRect(padding, row2Y, undoW2, rH2, 3); ctx.fill();
-    ctx.strokeStyle = canUndo2 ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(padding, row2Y, undoW2, rH2, 3); ctx.stroke();
-    ctx.fillStyle = canUndo2 ? '#44aaff' : '#334455';
-    ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('↩UNDO', padding + undoW2/2, row2Y + rH2/2);
-    var canRedo2 = this._redoHistory && this._redoHistory.length > 0;
-    this._editorRedoBtn = { x: padding + undoW2 + 3, y: row2Y, w: undoW2, h: rH2 };
-    ctx.fillStyle = canRedo2 ? 'rgba(0,40,80,0.85)' : 'rgba(0,10,20,0.5)';
-    ctx.beginPath(); ctx.roundRect(padding + undoW2 + 3, row2Y, undoW2, rH2, 3); ctx.fill();
-    ctx.strokeStyle = canRedo2 ? '#0088ff' : '#223344'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(padding + undoW2 + 3, row2Y, undoW2, rH2, 3); ctx.stroke();
-    ctx.fillStyle = canRedo2 ? '#44aaff' : '#334455';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('REDO↪', padding + undoW2 + 3 + undoW2/2, row2Y + rH2/2);
-
-    // MOV inline rect (position already defined above)
-    this._editorMovInlineRect = { x: movInX, y: row2Y, w: movW3, h: rH2 };
-    var rotSnapX = snapGX + 38;
-    var snaps3 = [0, 15, 30, 45]; var sLabels3 = ['ROT:FREE','ROT:15°','ROT:30°','ROT:45°'];
-    var sIdx3 = snaps3.indexOf(this._editorSnapDeg || 0);
-    var rotSnapW = 52;
-    this._editorSnapBtn = { x: rotSnapX, y: row2bY, w: rotSnapW, h: rH2b };
-    ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? 'rgba(255,170,0,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(rotSnapX, row2bY, rotSnapW, rH2b, 3); ctx.fill();
-    ctx.strokeStyle = (this._editorSnapDeg||0) > 0 ? '#ffaa00' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(rotSnapX, row2bY, rotSnapW, rH2, 3); ctx.stroke();
-    ctx.fillStyle = (this._editorSnapDeg||0) > 0 ? '#ffcc44' : '#556677';
-    ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace";
-    ctx.fillText(sLabels3[sIdx3], rotSnapX + rotSnapW/2, row2bY + rH2b/2);
-
-    // Grid size value display (tap to edit) — beside SNAP-GRID
-    var gSizeX = rotSnapX + rotSnapW + 4;
-    var gSizeW = 36;
-    var gSizeVal = window._gridSize || 20;
-    this._editorGridSizeBtn = { x: gSizeX, y: row2bY, w: gSizeW, h: rH2b };
-    ctx.fillStyle = 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(gSizeX, row2bY, gSizeW, rH2b, 3); ctx.fill();
-    ctx.strokeStyle = '#334466'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(gSizeX, row2bY, gSizeW, rH2, 3); ctx.stroke();
-    ctx.fillStyle = '#88aabb'; ctx.font = "bold 6px 'Share Tech Mono',monospace";
+    // Current preset name display
+    var presetName = this._editorCurrentPreset || '— none —';
+    ctx.fillStyle = 'rgba(0,10,30,0.8)';
+    ctx.beginPath(); ctx.roundRect(ppX+4, bpY+5+bRowH+3, bpW-8, bRowH, 2); ctx.fill();
+    ctx.strokeStyle = '#334466'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.roundRect(ppX+4, bpY+5+bRowH+3, bpW-8, bRowH, 2); ctx.stroke();
+    ctx.fillStyle = '#88aabb'; ctx.font = "7px '"+mono+"'";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace";
-    ctx.fillText('GR:' + gSizeVal, gSizeX + gSizeW/2, row2bY + rH2b/2);
+    ctx.fillText(presetName.slice(0,16), ppX+4+(bpW-8)/2, bpY+5+bRowH+3+bRowH/2);
 
-    // ADV/BASIC toggle — end of row 2
-    var advOn = (window._editorAdvanced !== false);  // default true
-    var advX = W - 44, advW = 40;
-    this._editorAdvBtn = { x: advX, y: row2bY, w: advW, h: rH2b };
-    ctx.fillStyle = advOn ? 'rgba(255,100,0,0.20)' : 'rgba(0,10,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(advX, row2bY, advW, rH2b, 3); ctx.fill();
-    ctx.strokeStyle = advOn ? '#ff8800' : '#334455'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(advX, row2bY, advW, rH2, 3); ctx.stroke();
-    ctx.fillStyle = advOn ? '#ffaa44' : '#556677';
-    ctx.font = "bold 6px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace";
-    ctx.fillText(advOn ? 'ADV' : 'BASIC', advX + advW/2, row2bY + rH2b/2 - 3);
-    ctx.fillText(advOn ? '▲' : '▼', advX + advW/2, row2bY + rH2b/2 + 4);
+    // DEFAULT button
+    var defMode = this._editorDefaultMode || false;
+    this._editorDefaultBtn = btn(defMode?'CANCEL\nDEF':'DEFAULT', ppX+4, bpY+5+bRowH*2+8,
+      bpW-8, bRowH*1.4, '#ffcc00', defMode, {fs:8});
 
-    // ── ROWS 3–7: sliders ────────────────────────────────────────────────────
-    var sliderRowH = 22;
-    var padding    = 8;
-    var halfW      = Math.floor((W - 16) / 2);
-    var thirdW     = Math.floor((W - 16) / 3);
-    var halfW2     = Math.floor((W - 16) / 2);
+    cY = bpY + bpH_base + 5;
 
-    var advOn2 = (window._editorAdvanced !== false);
-    var row3Y = row2bY + rH2b + 6;  // below row2b
-    var row4Y = row3Y + (advOn2 ? sliderRowH + 5 : 0);
-    var row5Y = row4Y + sliderRowH + 5;
-    var row6Y = row5Y + (advOn2 ? sliderRowH + 5 : 0);
-    var row7Y = row6Y + sliderRowH + 5;
+    // ── SLIDER PANELS ─────────────────────────────────────────────────────────
+    var slRH  = 26;  // row height per slider
+    var slGap = 4;
+
+    // Read values
+    var LENval   = sb2?(sb2.w||sb2.r*2||70):(bd2.rectW||70);
+    var WIDval   = sb2?(sb2.h||sb2.r*2||22):(bd2.rectH||22);
+    var ROTval   = sb2?((sb2._rotation||0)*180/Math.PI):0;
+    while (ROTval>180) ROTval-=360; while (ROTval<-180) ROTval+=360;
+    var HPval    = (sb2&&sb2.maxHealth!==undefined)?sb2.maxHealth:(bd2.rectHP||100);
+    var REGval   = (sb2&&sb2.regenAfter!==undefined)?sb2.regenAfter:(bd2.rectRegen||2000);
+    var DENSval  = (sb2&&sb2._density!==undefined)?sb2._density:(bd2.density||1.0);
+    var DISTval  = (sb2&&sb2._maxTravel!==undefined)?sb2._maxTravel:(bd2.maxTravel||60);
+    var DECELval = (sb2&&sb2._decel!==undefined)?sb2._decel:(bd2.decel||0.88);
+    var ROTSPDval= (sb2&&sb2._rotSpeed!==undefined)?sb2._rotSpeed:(bd2.rotSpeed||0.3);
+    var ROTDECval= (sb2&&sb2._rotDecel!==undefined)?sb2._rotDecel:(bd2.rotDecel||0.88);
+    var WBOUNCEval=(sb2&&sb2._wallBounce!==undefined)?sb2._wallBounce:(bd2.wallBounce||0.45);
+    var SPINDISTval=(sb2&&sb2._spinDist!==undefined)?sb2._spinDist:(bd2.spinDist||0.5);
+    var HPinf    = (sb2&&sb2._invincible)||false;
+    var noRegen  = (sb2&&sb2._noRegen)||false;
 
     this._editorSliders = {};
-    // Row 3: HP | REGEN (always shown)
-    this._editorSliders.hp    = drawSlider('HP',    HPval,   10, 400, true,  HPinf,  false, padding,         row3Y, halfW);
-    this._editorSliders.regen = drawSlider('REGEN', noRegen ? 0 : Math.max(200,REGval), 200, 10000, true, noRegen, false, padding + halfW, row3Y, halfW);
-    // Row 4: DENS | DIST | STOP — advanced only
-    if (advOn2) {
-    this._editorSliders.dens  = drawSlider('DENS',  DENSval,      0.5, 5.0,  false, false, !movActive2, padding,              row4Y, thirdW);
-    this._editorSliders.dist  = drawSlider('DIST',  DISTval,      0,   900,  false, false, !movActive2, padding + thirdW,     row4Y, thirdW);
-    this._editorSliders.decel = drawSlider('STOP',  1-DECELval,   0.01,0.5,  false, false, !movActive2, padding + thirdW * 2, row4Y, thirdW);
-    // Row 5: RSPIN | RSTOP — advanced only
-    this._editorSliders.rotspd = drawSlider('RSPIN', ROTSPDval,    0.0, 1.0, false, false, !movActive2, padding,              row5Y, halfW2);
-    this._editorSliders.rotdec = drawSlider('RSTOP', 1-ROTDECval,  0.05,0.95, false, false, !movActive2, padding + halfW2,     row5Y, halfW2);
-    } else {
-      this._editorSliders.dens=null; this._editorSliders.dist=null;
-      this._editorSliders.decel=null; this._editorSliders.rotspd=null; this._editorSliders.rotdec=null;
+
+    // ── Panel 1: TRANSFORM ────────────────────────────────────────────────────
+    var ph1 = panelHeader('TRANSFORM', 'transform', padding, cY, W-16, '#00ccff');
+    this._editorPanelHeaders = this._editorPanelHeaders || [];
+    this._editorPanelHeaders[0] = ph1;
+    cY += ph1.h + 2;
+
+    if (!ph1.collapsed) {
+      var p1W2 = Math.floor((W-16-4)/2);
+      this._editorSliders.blen = slider('LEN', LENval, 5, 900, padding, cY, p1W2, {rowH:slRH,col:'#00ccff'});
+      this._editorSliders.bwid = slider('WID', WIDval, 2, 200, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff'});
+      cY += slRH + slGap;
+
+      var rotW2 = Math.floor((W-16)*0.6);
+      this._editorSliders.rot = slider('ROT', ROTval, -180, 180, padding, cY, rotW2, {rowH:slRH,col:'#cc44ff'});
+      // pivot grid beside rotation slider
+      var rPivX = padding+rotW2+6, rPivY = cY+2;
+      var rpW=14, rpG=2;
+      this._editorRotPivRects = this._editorRotPivRects||[];
+      this._editorRotPivRects = [];
+      for (var rpc=0; rpc<3; rpc++) {
+        for (var rpr=0; rpr<3; rpr++) {
+          var rpKey=pivCols[rpc]+pivRows2[rpr];
+          var rpx=rPivX+rpc*(rpW+rpG), rpy=rPivY+rpr*(rpW*0.65+rpG);
+          var rpAct=curPiv3===rpKey;
+          ctx.fillStyle=rpAct?pivColors3[rpc]+'44':'rgba(0,10,30,0.6)';
+          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.fill();
+          ctx.strokeStyle=rpAct?pivColors3[rpc]:'#334455'; ctx.lineWidth=rpAct?1.2:0.5;
+          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.stroke();
+          if(rpAct){ctx.fillStyle=pivColors3[rpc];ctx.beginPath();ctx.arc(rpx+rpW/2,rpy+rpW*0.32,1.5,0,Math.PI*2);ctx.fill();}
+          this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW,h:rpW*0.65,val:rpKey});
+        }
+      }
+      cY += slRH + slGap;
     }
-    // Row 6: LENGTH | WIDTH (always shown)
-    this._editorSliders.blen  = drawSlider('LEN',   LENval,       5,   900,  false, false, false,       padding,              row6Y, halfW);
-    this._editorSliders.bwid  = drawSlider('WID',   WIDval,       2,   200,  false, false, false,       padding + halfW,      row6Y, halfW);
-    // Row 7: ROTATION | BOUNCE (always shown)
-    var WBOUNCEval = (sb2 && sb2._wallBounce !== undefined) ? sb2._wallBounce : (bd2.wallBounce || 0.45);
-    var rotW = Math.floor((W - 16) * 0.65);
-    var wbW  = W - 16 - rotW - 4;
-    this._editorSliders.rot     = drawSlider('ROT',    ROTval,      -180, 180,  false, false, false, padding,         row7Y, rotW);
-    this._editorSliders.wbounce = drawSlider('BNCE',   WBOUNCEval,  0.0,  1.0,  false, false, false, padding + rotW + 4, row7Y, wbW);
 
-    // ── Note picker popup ────────────────────────────────────────────────────
-    if (this._editorNotePopup && sb2) {
-      this._drawNotePopup(ctx, sb2);
+    // ── Panel 2: BRICK SETTINGS ───────────────────────────────────────────────
+    var ph2 = panelHeader('BRICK SETTINGS', 'brickset', padding, cY, W-16, '#ffaa00');
+    this._editorPanelHeaders[1] = ph2;
+    cY += ph2.h + 2;
+
+    if (!ph2.collapsed) {
+      var p2W = Math.floor((W-16-8)/3);
+      this._editorSliders.hp    = slider('HP',    HPval,   10, 400, padding,          cY, p2W, {rowH:slRH,col:'#ff4444'});
+      this._editorSliders.regen = slider('REGEN', noRegen?0:Math.max(200,REGval), 200, 10000, padding+p2W+4, cY, p2W, {rowH:slRH,col:'#ff8844'});
+      this._editorSliders.dens  = slider('DENS',  DENSval, 0.5, 5.0, padding+(p2W+4)*2, cY, p2W, {rowH:slRH,col:'#ffcc44'});
+
+      // ∞ HP button and ✕ REGEN button
+      var hpInfX  = this._editorSliders.hp.valX    + this._editorSliders.hp.valW + 1;
+      var regenCX = this._editorSliders.regen.valX + this._editorSliders.regen.valW + 1;
+      this._editorInfHPBtn    = btn(HPinf?'∞':'∞',   hpInfX,  cY+slRH/2-8, 16, 16, '#ff8800', HPinf, {fs:9});
+      this._editorNoRegenBtn  = btn(noRegen?'✕':'∞', regenCX, cY+slRH/2-8, 16, 16, noRegen?'#ff4444':'#ff8800', noRegen, {fs:9});
+      cY += slRH + slGap;
     }
 
+    // ── Panel 3: BRICK PHYSICS ────────────────────────────────────────────────
+    var ph3 = panelHeader('BRICK PHYSICS', 'brickphys', padding, cY, W-16, '#cc44ff');
+    this._editorPanelHeaders[2] = ph3;
+    cY += ph3.h + 2;
 
-    // Highlight selected brick
+    if (!ph3.collapsed) {
+      var p3W2 = Math.floor((W-16-8)/3);
+      var p3W3 = Math.floor((W-16-4)/2);
+      var grayed3 = !movActive2;
+      this._editorSliders.dist    = slider('DIST',     DISTval,         0, 900, padding,           cY, p3W2, {rowH:slRH,col:'#00ccff',grayed:grayed3});
+      this._editorSliders.decel   = slider('DECEL',    1-DECELval,   0.01, 0.5, padding+p3W2+4,    cY, p3W2, {rowH:slRH,col:'#00aaff',grayed:grayed3});
+      this._editorSliders.spinDist= slider('SPIN/DIST',SPINDISTval,     0, 1.0, padding+(p3W2+4)*2,cY, p3W2, {rowH:slRH,col:'#44ccff',grayed:grayed3});
+      cY += slRH + slGap;
+      this._editorSliders.rotspd  = slider('RSPIN',    ROTSPDval,     0.0, 1.0, padding,           cY, p3W3, {rowH:slRH,col:'#ff8844',grayed:grayed3});
+      this._editorSliders.rotdec  = slider('RDECEL',   1-ROTDECval, 0.05,0.95, padding+p3W3+4,     cY, p3W3, {rowH:slRH,col:'#ff6644',grayed:grayed3});
+      cY += slRH + slGap;
+      this._editorSliders.wbounce = slider('BNCE',     WBOUNCEval,    0.0, 1.0, padding,           cY, W-16, {rowH:slRH,col:'#4488ff'});
+      cY += slRH + slGap;
+    }
+
+    // ── Note picker popup ─────────────────────────────────────────────────────
+    if (this._editorNotePopup && sb2) this._drawNotePopup(ctx, sb2);
+
+    // ── Selected brick highlight ──────────────────────────────────────────────
     if (this._editorSelected) {
       var sb = this._editorSelected;
-      // Color selection outline by current tool mode
       var toolMode2 = this._editorToolMode || 'build';
       var modeColors = { build:'rgba(255,255,100,0.85)', select:'rgba(255,200,0,0.85)',
-                         stretch:'rgba(0,255,136,0.85)', width:'rgba(255,136,68,0.85)',
-                         rotate:'rgba(200,68,255,0.85)' };
+                         scale:'rgba(0,255,136,0.85)', rotate:'rgba(200,68,255,0.85)' };
       ctx.strokeStyle = modeColors[toolMode2] || 'rgba(255,255,100,0.85)';
-      ctx.lineWidth   = 2;
-      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 2; ctx.setLineDash([4,4]);
       ctx.save();
-      if (sb._rotation) { ctx.translate(sb.x, sb.y); ctx.rotate(sb._rotation); ctx.translate(-sb.x, -sb.y); }
+      if (sb._rotation) { ctx.translate(sb.x,sb.y); ctx.rotate(sb._rotation); ctx.translate(-sb.x,-sb.y); }
       if (sb instanceof CircularBrick) {
-        ctx.beginPath(); ctx.arc(sb.x, sb.y, sb.r + 6, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(sb.x,sb.y,sb.r+6,0,Math.PI*2); ctx.stroke();
       } else {
-        ctx.beginPath(); ctx.roundRect(sb.x - sb.w/2 - 5, sb.y - sb.h/2 - 5, sb.w + 10, sb.h + 10, 4); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(sb.x-sb.w/2-5,sb.y-sb.h/2-5,sb.w+10,sb.h+10,4); ctx.stroke();
       }
-      ctx.restore();
-      ctx.setLineDash([]);
+      ctx.restore(); ctx.setLineDash([]);
 
-      // ROTATE mode: show pivot crosshair
-      if (toolMode2 === 'rotate' || this._editorRotateState) {
-        var pivotSrc = this._editorRotateState || null;
-        var pivot3 = sb._pivot || 'CM';
-        var pOff3 = this._getPivotOffset(sb, pivot3);
-        var pvX = sb.x + Math.cos(sb._rotation||0)*pOff3.x - Math.sin(sb._rotation||0)*pOff3.y;
-        var pvY = sb.y + Math.sin(sb._rotation||0)*pOff3.x + Math.cos(sb._rotation||0)*pOff3.y;
-        ctx.save();
-        ctx.strokeStyle = '#cc44ff'; ctx.lineWidth = 1.5;
-        ctx.shadowColor = '#cc44ff'; ctx.shadowBlur = 8;
-        ctx.beginPath(); ctx.arc(pvX, pvY, 6, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(pvX-9,pvY); ctx.lineTo(pvX+9,pvY);
-        ctx.moveTo(pvX,pvY-9); ctx.lineTo(pvX,pvY+9); ctx.stroke();
-        ctx.shadowBlur = 0; ctx.restore();
+      if (toolMode2==='rotate'||this._editorRotateState) {
+        var pivot4 = sb._pivot||'CM';
+        var pOff4  = this._getPivotOffset(sb, pivot4);
+        var pvX4   = sb.x+Math.cos(sb._rotation||0)*pOff4.x-Math.sin(sb._rotation||0)*pOff4.y;
+        var pvY4   = sb.y+Math.sin(sb._rotation||0)*pOff4.x+Math.cos(sb._rotation||0)*pOff4.y;
+        ctx.save(); ctx.strokeStyle='#cc44ff'; ctx.lineWidth=1.5;
+        ctx.shadowColor='#cc44ff'; ctx.shadowBlur=8;
+        ctx.beginPath(); ctx.arc(pvX4,pvY4,6,0,Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(pvX4-9,pvY4);ctx.lineTo(pvX4+9,pvY4);
+        ctx.moveTo(pvX4,pvY4-9);ctx.lineTo(pvX4,pvY4+9); ctx.stroke();
+        ctx.shadowBlur=0; ctx.restore();
       }
-
-      // STRETCH mode: glow the active end
-      if (toolMode2 === 'stretch' || this._editorStretchState) {
-        var bRot8 = sb._rotation || 0;
-        var hw2 = (sb.w || 40) / 2;
-        var side8 = this._editorStretchState ? this._editorStretchState.side : null;
-        var ends = side8 ? [side8] : ['left','right'];
-        ends.forEach(function(s) {
-          var ex = sb.x + Math.cos(bRot8) * hw2 * (s==='right'?1:-1);
-          var ey = sb.y + Math.sin(bRot8) * hw2 * (s==='right'?1:-1);
-          ctx.save();
-          ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2;
-          ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 10;
-          ctx.beginPath(); ctx.arc(ex, ey, 6, 0, Math.PI * 2); ctx.stroke();
-          ctx.shadowBlur = 0; ctx.restore();
-        });
-      }
-
-      // WIDTH mode: glow top/bottom edges
-      if (toolMode2 === 'width' || this._editorWidthState) {
-        var bRot9 = sb._rotation || 0;
-        var hh2 = (sb.h || 22) / 2;
-        var perpA = bRot9 + Math.PI/2;
-        ['top','bottom'].forEach(function(s) {
-          var sign = s==='bottom' ? 1 : -1;
-          var ex2 = sb.x + Math.cos(perpA) * hh2 * sign;
-          var ey2 = sb.y + Math.sin(perpA) * hh2 * sign;
-          ctx.save();
-          ctx.strokeStyle = '#ff8844'; ctx.lineWidth = 2;
-          ctx.shadowColor = '#ff8844'; ctx.shadowBlur = 8;
-          ctx.beginPath(); ctx.moveTo(ex2 - Math.cos(bRot9)*10, ey2 - Math.sin(bRot9)*10);
-          ctx.lineTo(ex2 + Math.cos(bRot9)*10, ey2 + Math.sin(bRot9)*10); ctx.stroke();
-          ctx.shadowBlur = 0; ctx.restore();
+      if (toolMode2==='scale'||this._editorStretchState) {
+        var bRot8=sb._rotation||0, hw2=(sb.w||40)/2;
+        var side8=this._editorStretchState?this._editorStretchState.side:null;
+        var ends8=side8?[side8]:['left','right'];
+        ends8.forEach(function(s){
+          var ex=sb.x+Math.cos(bRot8)*hw2*(s==='right'?1:-1);
+          var ey=sb.y+Math.sin(bRot8)*hw2*(s==='right'?1:-1);
+          ctx.save(); ctx.strokeStyle='#00ff88'; ctx.lineWidth=2;
+          ctx.shadowColor='#00ff88'; ctx.shadowBlur=10;
+          ctx.beginPath(); ctx.arc(ex,ey,6,0,Math.PI*2); ctx.stroke();
+          ctx.shadowBlur=0; ctx.restore();
         });
       }
     }
+
     ctx.filter = 'none';
     ctx.restore();
   }
@@ -4818,6 +4442,30 @@ class Game {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(labels2[ci], bx2 + btnW/2, btnY2 + btnH/2);
       this._hudClearBtns.push({ x:bx2, y:btnY2, w:btnW, h:btnH, type:ci });
+    }
+    // SAVE/LOAD level buttons — visible outside editor, left of settings gear
+    if (!this._editorMode) {
+      var slBtnW = 44, slBtnH = 20, slY = 10, slGap = 4;
+      // Gear icon is drawn by UI at roughly W-36; place these left of it
+      var saveLX = W - 36 - (slBtnW + slGap) * 2;
+      var loadLX = saveLX + slBtnW + slGap;
+      ctx.fillStyle = 'rgba(0,8,22,0.85)';
+      ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.fill();
+      ctx.strokeStyle = '#00ff8899'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
+      ctx.fillStyle = '#00ff88'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('💾 SAVE', saveLX + slBtnW/2, slY + slBtnH/2);
+      this._hudSaveLevelBtn = { x:saveLX, y:slY, w:slBtnW, h:slBtnH };
+
+      ctx.fillStyle = 'rgba(0,8,22,0.85)';
+      ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.fill();
+      ctx.strokeStyle = '#4488ff99'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
+      ctx.fillStyle = '#88bbff'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('📂 LOAD', loadLX + slBtnW/2, slY + slBtnH/2);
+      this._hudLoadLevelBtn = { x:loadLX, y:slY, w:slBtnW, h:slBtnH };
     }
   }
 
