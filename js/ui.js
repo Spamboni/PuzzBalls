@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1527;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1529;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1527</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1529</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -529,7 +529,7 @@ class UI {
         if (t.id==='cube') {
           window.Settings.cube = window.Settings.cube || {hp:4,spin:1.0,chaos:0.6,mass:1.4};
           _addSlider(pane,'HP (hits to shatter)','Settings','cube.hp',1,12,1,function(v){return v+' hits';});
-          _addSlider(pane,'Spin Speed','Settings','cube.spin',0.1,3.0,0.1,function(v){return v.toFixed(1)+'x';});
+          _addSlider(pane,'Spin Speed','Settings','cube.spin',0.1,8.0,0.1,function(v){return v.toFixed(1)+'x';});
           _addSlider(pane,'Chaos (spin randomness)','Settings','cube.chaos',0,1,0.05,function(v){return Math.round(v*100)+'%';});
           _addSlider(pane,'Mass','Settings','cube.mass',0.5,3.0,0.1,function(v){return v.toFixed(1)+'x';});
         }
