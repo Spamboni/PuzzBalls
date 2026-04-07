@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1524;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1525;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -55,6 +55,24 @@ var BallSettings = {
     splitCount: 3, childDensity: 1.8,
     baseDamage: 15,
     bounceDecay: 0.75,
+  },
+  squiggly: {
+    label: 'SQUIGGLY', color: '#ffcc00', glow: '#ffee44',
+    r: 14, mass: 1.0, bounceMult: 0.65, gravMult: 0.9, dampMult: 1.0,
+    size: 14, velocity: 1.0, bounciness: 0.65, density: 1.0,
+    groundFriction: 0.88, baseDamage: 15, bounceDecay: 0.70,
+  },
+  splatter: {
+    label: 'SPLATTER', color: '#884400', glow: '#cc6600',
+    r: 13, mass: 1.2, bounceMult: 0.0, gravMult: 1.0, dampMult: 0.0,
+    size: 13, velocity: 0.9, bounciness: 0.0, density: 1.2,
+    groundFriction: 0.0, baseDamage: 0, bounceDecay: 0.0,
+  },
+  cube: {
+    label: 'CUBE', color: '#00ddff', glow: '#00ffff',
+    r: 15, mass: 1.4, bounceMult: 0.72, gravMult: 1.0, dampMult: 0.95,
+    size: 15, velocity: 1.1, bounciness: 0.72, density: 1.4,
+    groundFriction: 0.88, baseDamage: 22, bounceDecay: 0.72,
   },
   gravity: {
     label: 'GRAV WELL', color: '#005555', glow: '#00ffee',
