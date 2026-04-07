@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1515;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1516;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -652,6 +652,38 @@ class Game {
           if (_px>=def.x&&_px<=def.x+def.w&&_py>=def.y&&_py<=def.y+def.h) {
             self._editorDefaultMode=!self._editorDefaultMode;
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+          }
+        }
+        // DEFAULT ALL button (only visible in default mode)
+        if (self._editorDefaultMode && self._editorDefaultAllBtn) {
+          var dab=self._editorDefaultAllBtn;
+          if (_px>=dab.x&&_px<=dab.x+dab.w&&_py>=dab.y&&_py<=dab.y+dab.h) {
+            self._applyDefaults(['blen','bwid','rot','hp','regen','dens','dist','decel','rotspd','rotdec','wbounce','spinDist']);
+            self._editorDefaultMode=false; return;
+          }
+        }
+        // DEFAULT mode: tap panel header to reset section
+        if (self._editorDefaultMode && self._editorPanelHeaders) {
+          for (var phi=0; phi<self._editorPanelHeaders.length; phi++) {
+            var ph=self._editorPanelHeaders[phi];
+            if (_px>=ph.x&&_px<=ph.x+ph.w&&_py>=ph.y&&_py<=ph.y+ph.h) {
+              if (ph.key==='transform') self._applyDefaults(['blen','bwid','rot']);
+              else if (ph.key==='brickset') self._applyDefaults(['hp','regen','dens']);
+              else if (ph.key==='brickphys') self._applyDefaults(['dist','decel','rotspd','rotdec','wbounce','spinDist']);
+              self._editorDefaultMode=false; return;
+            }
+          }
+        }
+        // DEFAULT mode: tap individual VAL to reset just that slider
+        if (self._editorDefaultMode) {
+          var _defKeys=['blen','bwid','rot','hp','regen','dens','dist','decel','rotspd','rotdec','wbounce','spinDist'];
+          for (var dki=0; dki<_defKeys.length; dki++) {
+            var dksl=self._editorSliders&&self._editorSliders[_defKeys[dki]];
+            if (!dksl||!dksl.valX) continue;
+            if (_px>=dksl.valX&&_px<=dksl.valX+dksl.valW&&_py>=dksl.valY&&_py<=dksl.valY+dksl.valH) {
+              self._applyDefaults([_defKeys[dki]]);
+              return;
+            }
           }
         }
         // LOAD/SAVE preset
@@ -3405,6 +3437,45 @@ class Game {
 
 // NEW _drawEditor — v15 layout
 // Replaces lines 3437-4103 in game.js
+  _factoryDefaults() {
+    return {
+      rectW: 70, rectH: 22, rotation: 0,
+      rectHP: 100, regenAfter: 0, density: 1.0,
+      maxTravel: 60, decel: 0.88, rotSpeed: 0.30,
+      rotDecel: 0.88, wallBounce: 0.45, spinDist: 0.5,
+    };
+  }
+
+  _applyDefaults(keys) {
+    var fd = this._factoryDefaults();
+    var bd = window.BrickDefaults = window.BrickDefaults || {};
+    var sb = this._editorSelected;
+    var map = {
+      blen:    function(v){ bd.rectW=v;       if(sb)sb.w=v; },
+      bwid:    function(v){ bd.rectH=v;       if(sb)sb.h=v; },
+      rot:     function(v){ bd.rotation=v;    if(sb)sb._rotation=v*Math.PI/180; },
+      hp:      function(v){ bd.rectHP=v;      if(sb){sb.maxHealth=v;sb.health=v;} },
+      regen:   function(v){ bd.regenAfter=v;  if(sb)sb.regenAfter=v; },
+      dens:    function(v){ bd.density=v;     if(sb)sb._density=v; },
+      dist:    function(v){ bd.maxTravel=v;   if(sb)sb._maxTravel=v; },
+      decel:   function(v){ bd.decel=1-v;     if(sb)sb._decel=1-v; },
+      rotspd:  function(v){ bd.rotSpeed=v;    if(sb)sb._rotSpeed=v; },
+      rotdec:  function(v){ bd.rotDecel=1-v;  if(sb)sb._rotDecel=1-v; },
+      wbounce: function(v){ bd.wallBounce=v;  if(sb)sb._wallBounce=v; },
+      spinDist:function(v){ bd.spinDist=v;    if(sb)sb._spinDist=v; },
+    };
+    var fdMap = {
+      blen:fd.rectW, bwid:fd.rectH, rot:fd.rotation,
+      hp:fd.rectHP, regen:fd.regenAfter, dens:fd.density,
+      dist:fd.maxTravel, decel:1-fd.decel, rotspd:fd.rotSpeed,
+      rotdec:1-fd.rotDecel, wbounce:fd.wallBounce, spinDist:fd.spinDist,
+    };
+    for (var i=0; i<keys.length; i++) {
+      if (map[keys[i]] && fdMap[keys[i]] !== undefined) map[keys[i]](fdMap[keys[i]]);
+    }
+    if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15);
+  }
+
   _drawEditor() {
     var ctx = this.ctx, W = this.W, H = this.H;
     var floorY = this.floorY();
@@ -3546,15 +3617,24 @@ class Game {
     function panelHeader(label, key, x, y, w, col) {
       var collapsed = window['_edCollapse_'+key] || false;
       var hH = 18;
-      ctx.fillStyle = 'rgba(0,10,28,0.9)';
+      var defMode = self._editorDefaultMode || false;
+      // In default mode: highlight headers orange to show they're tappable
+      ctx.fillStyle = defMode ? 'rgba(255,140,0,0.25)' : 'rgba(0,10,28,0.9)';
       ctx.beginPath(); ctx.roundRect(x, y, w, hH, 3); ctx.fill();
-      ctx.strokeStyle = col + '66'; ctx.lineWidth = 1;
+      ctx.strokeStyle = defMode ? '#ff8800' : col + '66'; ctx.lineWidth = defMode ? 1.5 : 1;
+      if (defMode) { ctx.shadowColor='#ff8800'; ctx.shadowBlur=6; }
       ctx.beginPath(); ctx.roundRect(x, y, w, hH, 3); ctx.stroke();
-      // Arrow
-      ctx.fillStyle = col;
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = defMode ? '#ffaa44' : col;
       ctx.font = "bold 9px '" + mono + "'";
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillText(collapsed ? '▶ '+label : '▼ '+label, x+6, y+hH/2);
+      if (defMode) {
+        ctx.fillStyle = '#ff8800'; ctx.font = "bold 8px '" + mono + "'";
+        ctx.textAlign = 'right';
+        ctx.fillText('RESET SECTION', x+w-6, y+hH/2);
+        ctx.textAlign = 'left';
+      }
       return { x:x, y:y, w:w, h:hH, key:key, collapsed:collapsed };
     }
 
@@ -4031,6 +4111,36 @@ class Game {
       cY += slRH + slGap;
       this._editorSliders.wbounce = slider('BNCE',     WBOUNCEval,    0.0, 1.0, padding,           cY, W-16, {rowH:slRH,col:'#4488ff'});
       cY += slRH + slGap;
+    }
+
+    // ── DEFAULT mode: RESET ALL button + VAL window highlights ───────────────
+    this._editorDefaultAllBtn = null;
+    if (this._editorDefaultMode) {
+      // RESET ALL button
+      var dabW = Math.floor((W-16)/2), dabH = 26;
+      var dabX = padding + (W-16-dabW)/2;
+      ctx.fillStyle = 'rgba(255,100,0,0.3)';
+      ctx.beginPath(); ctx.roundRect(dabX, cY+4, dabW, dabH, 4); ctx.fill();
+      ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 2;
+      ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.roundRect(dabX, cY+4, dabW, dabH, 4); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffaa44'; ctx.font = "bold 10px '" + mono + "'";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('⟳ RESET ALL', dabX + dabW/2, cY+4+dabH/2);
+      this._editorDefaultAllBtn = { x:dabX, y:cY+4, w:dabW, h:dabH };
+      cY += dabH + 8;
+
+      // Highlight all VAL windows orange
+      var _allSliderKeys = ['blen','bwid','rot','hp','regen','dens','dist','decel','rotspd','rotdec','wbounce','spinDist'];
+      for (var dhi=0; dhi<_allSliderKeys.length; dhi++) {
+        var dhsl = this._editorSliders[_allSliderKeys[dhi]];
+        if (!dhsl || !dhsl.valX) continue;
+        ctx.fillStyle = 'rgba(255,140,0,0.35)';
+        ctx.beginPath(); ctx.roundRect(dhsl.valX, dhsl.valY, dhsl.valW, dhsl.valH, 2); ctx.fill();
+        ctx.strokeStyle = '#ff8800'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(dhsl.valX, dhsl.valY, dhsl.valW, dhsl.valH, 2); ctx.stroke();
+      }
     }
 
     // ── Note picker popup ─────────────────────────────────────────────────────
