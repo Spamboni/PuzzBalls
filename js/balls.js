@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1529;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1530;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -70,7 +70,7 @@ var BallSettings = {
   },
   cube: {
     label: 'CUBE', color: '#00ddff', glow: '#00ffff',
-    r: 15, mass: 1.4, bounceMult: 0.72, gravMult: 1.0, dampMult: 0.95,
+    r: 12, mass: 1.4, bounceMult: 0.72, gravMult: 1.0, dampMult: 0.95,
     size: 15, velocity: 1.1, bounciness: 0.72, density: 1.4,
     groundFriction: 0.88, baseDamage: 22, bounceDecay: 0.72,
   },
