@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1501;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1502;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -2644,7 +2644,6 @@ class Game {
     if (this.sling) this._drawSling();
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
-    if (vSY !== 0) ctx.restore();
     this._drawHudClearButtons();
     if (!this._editorMode) {
       this._drawSpeedSlider();
@@ -2894,7 +2893,7 @@ class Game {
     if (!this._editorMode || !this._editorSelected || touches.length < 2) return;
     if (this._editorTubeMode) return;
     var rect = this.canvas.getBoundingClientRect();
-    var vSY  = this._viewScrollY || 0;
+    var vSY  = this._editorScrollY || 0;
     var t0 = touches[0], t1 = touches[1];
     var p0 = { x: t0.clientX - rect.left, y: t0.clientY - rect.top };
     var p1 = { x: t1.clientX - rect.left, y: t1.clientY - rect.top };
@@ -3417,7 +3416,7 @@ class Game {
 
     // ── Branch: tube editor ──────────────────────────────────────────────────
     if (this._editorTubeMode) {
-      this._drawTubeEditor(ctx, cY + vSY);
+      this._drawTubeEditor(ctx, cY);
       ctx.filter = 'none'; ctx.restore(); return;
     }
 
