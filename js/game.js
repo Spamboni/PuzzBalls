@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1527;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1529;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -303,12 +303,19 @@ class Game {
       obj._cubeSpin   = cset.spin  !== undefined ? cset.spin  : 1.0;
       obj._cubeChaos  = cset.chaos !== undefined ? cset.chaos : 0.6;
       // 3D rotation matrix (starts as identity)
-      obj._cubeRot = [1,0,0, 0,1,0, 0,0,1];
-      // Angular velocities on 3 axes
-      var spd = 0.04 + Math.random() * 0.05;
+      // Start with random tilt so multiple faces show immediately
+      var _ca = 0.3 + Math.random() * 0.5, _cb = Math.random() * 0.4;
+      var _cx=Math.cos(_ca),_sx=Math.sin(_ca),_cy=Math.cos(_cb),_sy=Math.sin(_cb);
+      obj._cubeRot = [
+        _cy, 0, _sy,
+        _sx*_sy, _cx, -_sx*_cy,
+        -_cx*_sy, _sx, _cx*_cy
+      ];
+      // Angular velocities on 3 axes — start spinning visibly
+      var spd = 0.025 + Math.random() * 0.035;
       obj._cubeRX = (Math.random()-0.5) * spd * 2;
-      obj._cubeRY = (Math.random()-0.5) * spd * 2;
-      obj._cubeRZ = (Math.random()-0.5) * spd * 0.5;
+      obj._cubeRY = (Math.random()-0.5) * spd * 3;
+      obj._cubeRZ = (Math.random()-0.5) * spd * 0.8;
       obj._cubeShattering = false;
       obj._cubeShards = null;
       obj.r = 15;
@@ -1855,13 +1862,13 @@ class Game {
         if (obj.type === BALL_TYPES.SQUIGGLY && obj.inFlight && !obj.stuckTo && !obj._fromChute) {
           var sqT = (obj._sqT || 0) + 1;
           obj._sqT = sqT;
-          // Re-read settings each frame so slider changes take effect live
+          // Re-read ALL settings live from Settings object
           var _sqSet2 = (window.Settings && window.Settings.squiggly) || {};
-          var sqAmp  = _sqSet2.amp  !== undefined ? _sqSet2.amp  : (obj._sqAmp  || 18);
-          var sqFreq = _sqSet2.freq !== undefined ? _sqSet2.freq : (obj._sqFreq || 0.08);
-          var sqFade = obj._sqFade || 0;
-          var sqDelay= obj._sqDelay|| 0;
-          var sqWave = obj._sqWave || 'sine';
+          var sqAmp  = _sqSet2.amp   !== undefined ? _sqSet2.amp   : 18;
+          var sqFreq = _sqSet2.freq  !== undefined ? _sqSet2.freq  : 0.08;
+          var sqFade = _sqSet2.fade  !== undefined ? _sqSet2.fade  : 0;
+          var sqDelay= _sqSet2.delay !== undefined ? _sqSet2.delay : 0;
+          var sqWave = _sqSet2.wave  !== undefined ? _sqSet2.wave  : 'sine';
           // Travel distance so far
           var tDist = Math.hypot(obj.x - (obj._sqStartX||obj.x), obj.y - (obj._sqStartY||obj.y));
           var totalDist = obj._sqTotalDist || 400;
@@ -1887,7 +1894,7 @@ class Game {
               } else if (sqWave === 'chaos') {
                 waveVal = Math.sin(phase) + 0.5 * Math.sin(phase * 2.7 + 1.3) + 0.25 * (Math.random()-0.5);
               }
-              var force = waveVal * sqAmp * fadeScale * 0.12;
+              var force = waveVal * sqAmp * fadeScale * 0.55;  // stronger zigzag
               obj.vx += perpX * force;
               obj.vy += perpY * force;
             }
@@ -1981,17 +1988,17 @@ class Game {
             this._tryKnockSticky(b, Math.hypot(a.vx, a.vy));
           }
           // Exploder countdown — only after manually slung
+          // Cube hit by any ball — spin + damage
           if (a.type === BALL_TYPES.CUBE && !a._fromChute && !a._cubeShattering) {
-            var impactSpd = Math.hypot(a.vx, a.vy);
-            this._cubeOnHit(a, impactSpd * 0.15);
-            // Take damage
-            a._cubeHP = (a._cubeHP || 1) - Math.max(0.5, impactSpd * 0.08);
+            var impactSpd = Math.hypot(b.vx - a.vx, b.vy - a.vy);
+            this._cubeOnHit(a, impactSpd * 0.12);
+            a._cubeHP = (a._cubeHP || 1) - Math.max(0.3, impactSpd * 0.06);
             if (a._cubeHP <= 0) this._cubeShatter(a);
           }
           if (b.type === BALL_TYPES.CUBE && !b._fromChute && !b._cubeShattering) {
-            var impactSpdB = Math.hypot(b.vx, b.vy);
-            this._cubeOnHit(b, impactSpdB * 0.15);
-            b._cubeHP = (b._cubeHP || 1) - Math.max(0.5, impactSpdB * 0.08);
+            var impactSpdB = Math.hypot(a.vx - b.vx, a.vy - b.vy);
+            this._cubeOnHit(b, impactSpdB * 0.12);
+            b._cubeHP = (b._cubeHP || 1) - Math.max(0.3, impactSpdB * 0.06);
             if (b._cubeHP <= 0) this._cubeShatter(b);
           }
           if (a.type === BALL_TYPES.SPLATTER && !a._splattered && !a._fromChute) {
@@ -2726,28 +2733,30 @@ class Game {
       var ex=v1.x-v0.x, ey=v1.y-v0.y;
       var fx2=v2.x-v0.x, fy2=v2.y-v0.y;
       var cross = ex*fy2 - ey*fx2;
-      if (cross > 0) return;  // back face, skip
-
-      // Shading based on face orientation
+      var isFront = cross <= 0;
+      // Back faces: draw very dimly (always visible as faint wireframe)
       var shade = 0.5;
       if (f.nz) shade = f.nz > 0 ? 0.9 : 0.3;
       if (f.ny) shade = f.ny > 0 ? 0.45 : 0.75;
       if (f.nx) shade = 0.6;
+      if (!isFront) shade *= 0.12;  // back faces: very faint
 
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
       for (var pi=1; pi<pts.length; pi++) ctx.lineTo(pts[pi].x, pts[pi].y);
       ctx.closePath();
 
-      // Glass fill — very transparent
-      ctx.fillStyle = 'rgba(0,200,240,' + (shade * 0.08) + ')';
-      ctx.fill();
-
-      // Glowing edges
-      ctx.strokeStyle = 'rgba(0,220,255,' + (shade * 0.85) + ')';
-      ctx.lineWidth = 1.4;
-      ctx.shadowColor = '#00ffff';
-      ctx.shadowBlur = shade * 8;
+      // Glass fill — front faces only
+      if (isFront) {
+        ctx.fillStyle = 'rgba(0,200,240,' + (shade * 0.08) + ')';
+        ctx.fill();
+      }
+      // Edges — front bright, back very faint
+      ctx.strokeStyle = isFront
+        ? 'rgba(0,220,255,' + (shade * 0.85) + ')'
+        : 'rgba(0,180,220,0.12)';
+      ctx.lineWidth = isFront ? 1.4 : 0.7;
+      if (isFront) { ctx.shadowColor = '#00ffff'; ctx.shadowBlur = shade * 8; }
       ctx.stroke();
       ctx.shadowBlur = 0;
 
@@ -2794,51 +2803,61 @@ class Game {
     var sqSet = (window.Settings && window.Settings.splatter) || {};
     var type    = sqSet.type     || 'dead';
     var coreR   = sqSet.size     || 28;
-    var drips   = sqSet.drips    || 3;
-    var duration= (sqSet.duration|| 8) * 60;  // frames
+    var numDrips= Math.round(sqSet.drips    || 3);
+    var duration= (sqSet.duration|| 8) * 60;
     this.splats = this.splats || [];
-    // Cap at 10 splats — remove oldest if over
     if (this.splats.length >= 10) this.splats.shift();
-    // If attached to brick, store offset from brick center
+
     var offX = brick ? (wx - brick.x) : 0;
     var offY = brick ? (wy - brick.y) : 0;
-    // If no brick, wx/wy are world coords directly
-    // Build drip objects
+    // Unrotate offset so it's in brick-local space
+    if (brick && brick._rotation) {
+      var br = -(brick._rotation);
+      var rx2 = offX * Math.cos(br) - offY * Math.sin(br);
+      var ry2 = offX * Math.sin(br) + offY * Math.cos(br);
+      offX = rx2; offY = ry2;
+    }
+
+    // Drips: spread horizontally relative to impact, then fall down
     var dripArr = [];
-    for (var di = 0; di < drips; di++) {
-      var dAngle = Math.PI/2 + (Math.random()-0.5) * 1.2;  // mostly downward
+    for (var di = 0; di < numDrips; di++) {
+      var spread = (di / Math.max(1, numDrips-1) - 0.5) * coreR * 2.2;
       dripArr.push({
-        ox: nx * coreR * 0.3 + (Math.random()-0.5) * coreR * 0.6,
-        oy: ny * coreR * 0.3 + (Math.random()-0.5) * coreR * 0.4,
-        vy: 0.4 + Math.random() * 0.6,
-        len: 4 + Math.random() * 8,
-        age: 0, maxAge: 60 + Math.random() * 60,
-        r: 2 + Math.random() * 2,
+        ox: spread + (Math.random()-0.5) * coreR * 0.4,
+        oy: coreR * 0.2,        // start just below impact center
+        vy: 0.8 + Math.random() * 0.8,
+        len: coreR * (0.6 + Math.random() * 0.8),
+        age: 0,
+        maxAge: 90 + Math.random() * 60,
+        r: 2.5 + Math.random() * 2,
       });
     }
+
     this.splats.push({
-      wx: wx, wy: wy,        // world position (wall splats)
-      offX: offX, offY: offY, // offset from brick
-      nx: nx, ny: ny,         // normal direction (for splat shape)
+      wx: wx, wy: wy,
+      offX: offX, offY: offY,
+      nx: nx, ny: ny,
       brick: brick || null,
       type: type,
       coreR: coreR,
-      outerR: coreR * 1.8,
+      outerR: coreR * 2.0,
       timer: duration,
       maxTimer: duration,
       drips: dripArr,
     });
+
+    // Wet splat thud sound
     if (window.Sound && Sound.getCtx) {
       var sc3 = Sound.getCtx();
       if (sc3) {
         var g3s = sc3.createGain(); g3s.connect(sc3.destination);
-        g3s.gain.setValueAtTime(0.3, sc3.currentTime);
-        g3s.gain.exponentialRampToValueAtTime(0.001, sc3.currentTime + 0.4);
+        g3s.gain.setValueAtTime(0.28, sc3.currentTime);
+        g3s.gain.exponentialRampToValueAtTime(0.001, sc3.currentTime + 0.35);
         var o3 = sc3.createOscillator(); o3.connect(g3s);
         o3.type = 'sawtooth';
-        o3.frequency.setValueAtTime(80, sc3.currentTime);
-        o3.frequency.exponentialRampToValueAtTime(30, sc3.currentTime + 0.4);
-        o3.start(sc3.currentTime); o3.stop(sc3.currentTime + 0.4);
+        o3.frequency.setValueAtTime(90, sc3.currentTime);
+        o3.frequency.exponentialRampToValueAtTime(30, sc3.currentTime + 0.35);
+        o3.start(sc3.currentTime); o3.stop(sc3.currentTime + 0.35);
       }
     }
   }
@@ -2865,94 +2884,161 @@ class Game {
   _drawSplats() {
     if (!this.splats || this.splats.length === 0) return;
     var ctx = this.ctx;
-    var splatCols = { dead:'#553300', boost:'#886600', goo:'#224400' };
-    var splatGlows = { dead:'#aa6600', boost:'#ffdd00', goo:'#44ff44' };
+    // Colors per type: [core bright, core mid, glow, outer]
+    var splatPalette = {
+      dead:  { c1:'#cc8833', c2:'#774400', glow:'#ffaa44', outer:'#442200' },
+      boost: { c1:'#ffee00', c2:'#ccaa00', glow:'#ffff44', outer:'#886600' },
+      goo:   { c1:'#88ff44', c2:'#44aa00', glow:'#aaffaa', outer:'#224400' },
+    };
+
     for (var si = 0; si < this.splats.length; si++) {
       var sp = this.splats[si];
-      // World position (brick-attached or world)
-      var wx = sp.brick ? sp.brick.x + (function(sp2) {
-        // Rotate offset with brick rotation
-        var rot = sp2.brick._rotation || 0;
-        return sp2.offX * Math.cos(rot) - sp2.offY * Math.sin(rot);
-      })(sp) : sp.wx;
-      var wy = sp.brick ? sp.brick.y + (function(sp2) {
-        var rot = sp2.brick._rotation || 0;
-        return sp2.offX * Math.sin(rot) + sp2.offY * Math.cos(rot);
-      })(sp) : sp.wy;
-      var alpha = Math.min(1, sp.timer / Math.min(sp.maxTimer, 60)) * 0.92;
-      var col   = splatCols[sp.type]  || '#553300';
-      var glow  = splatGlows[sp.type] || '#aa6600';
+      var pal = splatPalette[sp.type] || splatPalette.goo;
 
-      ctx.save();
+      // Get world position — rotate offset with brick
+      var brot = (sp.brick && sp.brick._rotation) || 0;
+      var wx = sp.brick
+        ? sp.brick.x + sp.offX * Math.cos(brot) - sp.offY * Math.sin(brot)
+        : sp.wx;
+      var wy = sp.brick
+        ? sp.brick.y + sp.offX * Math.sin(brot) + sp.offY * Math.cos(brot)
+        : sp.wy;
 
-      // Outer feathered ring — visual only, no effect
-      var outerGrad = ctx.createRadialGradient(wx, wy, sp.coreR * 0.7, wx, wy, sp.outerR);
-      var r16 = parseInt(col.slice(1,3),16), g16 = parseInt(col.slice(3,5),16), b16 = parseInt(col.slice(5,7),16);
-      outerGrad.addColorStop(0, 'rgba('+r16+','+g16+','+b16+','+(alpha*0.55)+')');
-      outerGrad.addColorStop(1, 'rgba('+r16+','+g16+','+b16+',0)');
-      // Irregular blob shape using multiple arcs
+      // Fade alpha
+      var fadeIn  = Math.min(1, (sp.maxTimer - sp.timer) / 8);
+      var fadeOut = Math.min(1, sp.timer / Math.min(sp.maxTimer * 0.3, 40));
+      var alpha   = fadeIn * fadeOut * 0.95;
+      if (alpha <= 0) continue;
+
+      // Impact normal in world space (rotated with brick)
+      var inx = sp.nx * Math.cos(brot) - sp.ny * Math.sin(brot);
+      var iny = sp.nx * Math.sin(brot) + sp.ny * Math.cos(brot);
+
+      // Spread direction: perpendicular to normal = horizontal spread
+      var tx = -iny, ty = inx;  // tangent (horizontal along surface)
+
+      var cr = sp.coreR;
+
       ctx.save();
       ctx.translate(wx, wy);
-      // Rotate with brick
-      if (sp.brick && sp.brick._rotation) ctx.rotate(sp.brick._rotation);
-      // Outer blob
+      // Rotate canvas so normal points "up" (0,-1)
+      var normAngle = Math.atan2(iny, inx) - Math.atan2(-1, 0);
+      ctx.rotate(normAngle);
+
+      // ── Outer spread — wide flat ellipse, feathered ──────────────────────
+      var spreadW = cr * 2.2, spreadH = cr * 0.7;
+      var r1 = parseInt(pal.outer.slice(1,3),16),
+          g1 = parseInt(pal.outer.slice(3,5),16),
+          b1 = parseInt(pal.outer.slice(5,7),16);
+      ctx.save();
+      ctx.scale(1, 0.35);  // squash vertically = flat ellipse
+      var outerGrad = ctx.createRadialGradient(0, 0, cr * 0.3, 0, 0, spreadW);
+      outerGrad.addColorStop(0,   'rgba('+r1+','+g1+','+b1+','+(alpha*0.7)+')');
+      outerGrad.addColorStop(0.6, 'rgba('+r1+','+g1+','+b1+','+(alpha*0.35)+')');
+      outerGrad.addColorStop(1,   'rgba('+r1+','+g1+','+b1+',0)');
+      // Irregular splat outline
       ctx.beginPath();
-      for (var ai = 0; ai < 12; ai++) {
-        var angle = (ai / 12) * Math.PI * 2;
-        var wobble = sp.outerR * (0.7 + 0.3 * Math.sin(ai * 2.3 + si));
-        var px2 = Math.cos(angle) * wobble;
-        var py2 = Math.sin(angle) * wobble;
-        ai === 0 ? ctx.moveTo(px2, py2) : ctx.lineTo(px2, py2);
+      var pts = 16;
+      for (var pi = 0; pi < pts; pi++) {
+        var a = (pi / pts) * Math.PI * 2;
+        var wobR = spreadW * (0.65 + 0.35 * Math.sin(pi * 2.7 + si * 1.3));
+        var px = Math.cos(a) * wobR;
+        var py = Math.sin(a) * wobR;
+        pi === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
       }
       ctx.closePath();
       ctx.fillStyle = outerGrad;
       ctx.fill();
+      ctx.restore();
 
-      // Core blob — solid colored
-      ctx.shadowColor = glow; ctx.shadowBlur = 10;
+      // ── Impact streaks — thin radial lines spreading outward ─────────────
+      var r2 = parseInt(pal.c2.slice(1,3),16),
+          g2 = parseInt(pal.c2.slice(3,5),16),
+          b2 = parseInt(pal.c2.slice(5,7),16);
+      var numStreaks = 5 + (si % 4);
+      for (var sti = 0; sti < numStreaks; sti++) {
+        var stA = (sti / numStreaks) * Math.PI + (si * 0.4);  // mostly horizontal
+        var stLen = cr * (0.8 + 0.6 * Math.sin(sti * 1.9 + si));
+        var stW   = 1.5 + Math.sin(sti * 2.1) * 1;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(stA) * cr * 0.2, Math.sin(stA) * cr * 0.1);
+        ctx.lineTo(Math.cos(stA) * stLen, Math.sin(stA) * stLen * 0.4);
+        ctx.strokeStyle = 'rgba('+r2+','+g2+','+b2+','+(alpha*0.6)+')';
+        ctx.lineWidth = stW;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+
+      // ── Core blob — bright center ─────────────────────────────────────────
+      var r3 = parseInt(pal.c1.slice(1,3),16),
+          g3 = parseInt(pal.c1.slice(3,5),16),
+          b3 = parseInt(pal.c1.slice(5,7),16);
+      var gr3 = parseInt(pal.glow.slice(1,3),16),
+          gg3 = parseInt(pal.glow.slice(3,5),16),
+          gb3 = parseInt(pal.glow.slice(5,7),16);
+      ctx.save();
+      ctx.scale(1.6, 0.55);  // wide flat core
+      ctx.shadowColor = pal.glow; ctx.shadowBlur = 8;
       ctx.beginPath();
-      for (var ai2 = 0; ai2 < 10; ai2++) {
-        var angle2 = (ai2 / 10) * Math.PI * 2;
-        var wobble2 = sp.coreR * (0.75 + 0.25 * Math.sin(ai2 * 3.1 + si * 1.7));
-        var px3 = Math.cos(angle2) * wobble2;
-        var py3 = Math.sin(angle2) * wobble2;
-        ai2 === 0 ? ctx.moveTo(px3, py3) : ctx.lineTo(px3, py3);
+      var cpts = 10;
+      for (var ci2 = 0; ci2 < cpts; ci2++) {
+        var ca = (ci2 / cpts) * Math.PI * 2;
+        var cw = cr * (0.55 + 0.2 * Math.sin(ci2 * 3.1 + si * 2));
+        ci2 === 0 ? ctx.moveTo(Math.cos(ca)*cw, Math.sin(ca)*cw)
+                  : ctx.lineTo(Math.cos(ca)*cw, Math.sin(ca)*cw);
       }
       ctx.closePath();
-      var gr16 = parseInt(glow.slice(1,3),16), gg16 = parseInt(glow.slice(3,5),16), gb16 = parseInt(glow.slice(5,7),16);
-      ctx.fillStyle = 'rgba('+gr16+','+gg16+','+gb16+','+(alpha*0.85)+')';
+      var coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, cr * 0.6);
+      coreGrad.addColorStop(0,   'rgba('+gr3+','+gg3+','+gb3+','+(alpha*0.98)+')');
+      coreGrad.addColorStop(0.5, 'rgba('+r3+','+g3+','+b3+','+(alpha*0.85)+')');
+      coreGrad.addColorStop(1,   'rgba('+r2+','+g2+','+b2+','+(alpha*0.5)+')');
+      ctx.fillStyle = coreGrad;
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.restore();
 
-      // Drips
+      ctx.restore();  // undo normAngle rotation
+
+      // ── Drips — drawn in world space, gravity always pulls down ──────────
       if (sp.drips) {
         for (var di2 = 0; di2 < sp.drips.length; di2++) {
           var d2 = sp.drips[di2];
-          var dAlpha = alpha * Math.max(0, 1 - d2.age / d2.maxAge);
-          if (dAlpha <= 0) continue;
-          // Drip is relative to splat world pos
-          var dBrX = sp.brick ? wx : sp.wx;
-          var dBrY = sp.brick ? wy : sp.wy;
-          var dpx = dBrX + d2.ox;
-          var dpy = dBrY + d2.oy;
-          // Drip teardrop
-          ctx.beginPath();
-          ctx.arc(dpx, dpy, d2.r * dAlpha, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba('+gr16+','+gg16+','+gb16+','+dAlpha+')';
-          ctx.fill();
-          // Drip tail
-          if (d2.len > 1) {
+          var dAge = Math.min(1, d2.age / d2.maxAge);
+          var dAlpha = alpha * (1 - dAge * dAge);
+          if (dAlpha <= 0.02) continue;
+
+          // Drip position in world space
+          var dpx = wx + d2.ox;
+          var dpy = wy + d2.oy;
+
+          // Drip stem — tapers toward tip
+          var stemLen = d2.len * dAlpha;
+          if (stemLen > 2) {
+            var stemGrad = ctx.createLinearGradient(dpx, dpy, dpx, dpy + stemLen);
+            stemGrad.addColorStop(0, 'rgba('+r3+','+g3+','+b3+','+(dAlpha*0.9)+')');
+            stemGrad.addColorStop(0.5,'rgba('+r2+','+g2+','+b2+','+(dAlpha*0.6)+')');
+            stemGrad.addColorStop(1, 'rgba('+r2+','+g2+','+b2+',0)');
             ctx.beginPath();
-            ctx.moveTo(dpx, dpy);
-            ctx.lineTo(dpx, dpy - d2.len * dAlpha);
-            ctx.strokeStyle = 'rgba('+gr16+','+gg16+','+gb16+','+(dAlpha*0.5)+')';
-            ctx.lineWidth = d2.r * 0.8;
+            ctx.moveTo(dpx - d2.r*0.5, dpy);
+            ctx.quadraticCurveTo(dpx, dpy + stemLen * 0.6, dpx, dpy + stemLen);
+            ctx.lineWidth = d2.r * (1 - dAge * 0.5);
+            ctx.strokeStyle = stemGrad;
+            ctx.lineCap = 'round';
             ctx.stroke();
+          }
+
+          // Drip bulb at tip
+          var bulbR = d2.r * (0.6 + 0.4 * Math.sin(d2.age * 0.3)) * dAlpha;
+          if (bulbR > 1) {
+            ctx.shadowColor = pal.glow; ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(dpx, dpy + stemLen, bulbR, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba('+r3+','+g3+','+b3+','+(dAlpha*0.85)+')';
+            ctx.fill();
+            ctx.shadowBlur = 0;
           }
         }
       }
-      ctx.restore();
     }
   }
 
@@ -2963,7 +3049,7 @@ class Game {
     var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 300;  // just below BRICKS/BALLS/TUBES HTML tabs
+    var TOP_Y    = 240;  // shaft starts here; cap drawn above this
     var DIAG_Y   = TOP_Y;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, DIAG_Y };
   }
@@ -2975,7 +3061,7 @@ class Game {
       var obj = this.objects[i];
       if (obj.dead || obj._inChute) continue;
       // Only enforce below the diagonal start — above that, full screen width is open
-      if (obj.y < g.TOP_Y) continue;
+      if (obj.y < g.TOP_Y + 30) continue;  // allow some overlap at top
       if (obj.x + obj.r > g.LEFT_X) {
         obj.x = g.LEFT_X - obj.r;
         if (obj.vx > 0) {
@@ -3680,7 +3766,6 @@ class Game {
     }
 
     this._drawFloor(floorY);
-    this._drawSplats();
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
@@ -3691,6 +3776,7 @@ class Game {
     this.tubes.draw(ctx, 'main', this.frame, this._tubeSelected);
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
     for (var i = 0; i < this.bricks.length; i++) this.bricks[i].draw(ctx);
+    this._drawSplats();  // draw ON TOP of bricks, before balls
     for (var i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].draw(ctx);
     for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
     for (var i = 0; i < this.spawners.length;   i++) this.spawners[i].draw(ctx);
