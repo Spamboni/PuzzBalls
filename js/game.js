@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1514;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1515;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -780,6 +780,72 @@ class Game {
           { key:'wbounce', apply:function(v){if(self._editorSelected)self._editorSelected._wallBounce=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.wallBounce=v;} },
           { key:'spinDist',apply:function(v){if(self._editorSelected)self._editorSelected._spinDist=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.spinDist=v;} },
         ];
+        // ── VAL window tap-to-type ────────────────────────────────────────────
+        var _sliderDefsForVal = [
+          { key:'blen',  min:5,    max:900,   label:'Length (px)',      fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'bwid',  min:2,    max:200,   label:'Width (px)',       fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'rot',   min:-180, max:180,   label:'Rotation (°)',     fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'hp',    min:10,   max:400,   label:'HP (10-400)',      fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'regen', min:200,  max:10000, label:'Regen ms (200-10000)', fmt:function(v){return Math.round(v);}, parse:function(s){return parseFloat(s);} },
+          { key:'dens',  min:0.5,  max:5.0,   label:'Density (0.5-5)', fmt:function(v){return v.toFixed(1);},    parse:function(s){return parseFloat(s);} },
+          { key:'dist',  min:0,    max:900,   label:'Distance (px)',    fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'decel', min:0.01, max:0.5,   label:'Decel (0.01-0.5)',fmt:function(v){return v.toFixed(2);},    parse:function(s){return parseFloat(s);} },
+          { key:'rotspd',min:0,    max:1.0,   label:'Spin (0-1)',       fmt:function(v){return v.toFixed(2);},    parse:function(s){return parseFloat(s);} },
+          { key:'rotdec',min:0.05, max:0.95,  label:'Spin decel (0.05-0.95)', fmt:function(v){return v.toFixed(2);}, parse:function(s){return parseFloat(s);} },
+          { key:'wbounce',min:0,   max:1.0,   label:'Bounce (0-1)',     fmt:function(v){return v.toFixed(2);},    parse:function(s){return parseFloat(s);} },
+          { key:'spinDist',min:0,  max:1.0,   label:'Spin/Dist (0-1)', fmt:function(v){return Math.round(v*100)+'%';}, parse:function(s){return parseFloat(s.replace('%',''))/100;} },
+        ];
+        for (var vdi=0; vdi<_sliderDefsForVal.length; vdi++) {
+          var vd=_sliderDefsForVal[vdi];
+          var vsl=self._editorSliders&&self._editorSliders[vd.key];
+          if (!vsl || !vsl.valX) continue;
+          if (_px>=vsl.valX&&_px<=vsl.valX+vsl.valW&&_py>=vsl.valY&&_py<=vsl.valY+vsl.valH) {
+            // Get current value
+            var sb_v = self._editorSelected;
+            var bd_v = window.BrickDefaults||{};
+            var curVals = {
+              blen: sb_v?(sb_v.w||70):(bd_v.rectW||70),
+              bwid: sb_v?(sb_v.h||22):(bd_v.rectH||22),
+              rot:  sb_v?((sb_v._rotation||0)*180/Math.PI):0,
+              hp:   sb_v?(sb_v.maxHealth||100):(bd_v.rectHP||100),
+              regen:sb_v?(sb_v.regenAfter||2000):(bd_v.rectRegen||2000),
+              dens: sb_v?(sb_v._density||1.0):(bd_v.density||1.0),
+              dist: sb_v?(sb_v._maxTravel||60):(bd_v.maxTravel||60),
+              decel:sb_v?(1-(sb_v._decel||0.88)):(1-(bd_v.decel||0.88)),
+              rotspd:sb_v?(sb_v._rotSpeed||0.3):(bd_v.rotSpeed||0.3),
+              rotdec:sb_v?(1-(sb_v._rotDecel||0.88)):(1-(bd_v.rotDecel||0.88)),
+              wbounce:sb_v?(sb_v._wallBounce||0.45):(bd_v.wallBounce||0.45),
+              spinDist:sb_v?(sb_v._spinDist||0.5):(bd_v.spinDist||0.5),
+            };
+            var curVal = curVals[vd.key];
+            var result = window.prompt(vd.label + '\nRange: ' + vd.min + ' – ' + vd.max, vd.fmt(curVal));
+            if (result !== null && result.trim() !== '') {
+              var parsed = vd.parse(result.trim());
+              if (!isNaN(parsed)) {
+                parsed = Math.max(vd.min, Math.min(vd.max, parsed));
+                // Apply via the same slider apply functions
+                var applyFns = {
+                  blen:   function(v){if(self._editorSelected){self._editorSelected.w=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectW=v;},
+                  bwid:   function(v){if(self._editorSelected){self._editorSelected.h=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;},
+                  rot:    function(v){if(self._editorSelected)self._editorSelected._rotation=v*Math.PI/180;},
+                  hp:     function(v){if(self._editorSelected){self._editorSelected.maxHealth=v;self._editorSelected.health=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectHP=v;},
+                  regen:  function(v){if(self._editorSelected)self._editorSelected.regenAfter=v;},
+                  dens:   function(v){if(self._editorSelected)self._editorSelected._density=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.density=v;},
+                  dist:   function(v){if(self._editorSelected)self._editorSelected._maxTravel=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.maxTravel=v;},
+                  decel:  function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._decel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.decel=dv;},
+                  rotspd: function(v){if(self._editorSelected)self._editorSelected._rotSpeed=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotSpeed=v;},
+                  rotdec: function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._rotDecel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotDecel=dv;},
+                  wbounce:function(v){if(self._editorSelected)self._editorSelected._wallBounce=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.wallBounce=v;},
+                  spinDist:function(v){if(self._editorSelected)self._editorSelected._spinDist=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.spinDist=v;},
+                };
+                if (applyFns[vd.key]) applyFns[vd.key](parsed);
+                if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+              }
+            }
+            return;
+          }
+        }
+
         for (var sdi=0; sdi<sliderDefs.length; sdi++) {
           var sd2=sliderDefs[sdi];
           var sl2=self._editorSliders&&self._editorSliders[sd2.key];
