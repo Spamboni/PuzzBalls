@@ -69,7 +69,9 @@ var Menu = (function() {
 
     // ── Header ──────────────────────────────────────────────────────────────
     var header = _el('div', 'menu-header');
-    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">v15.10</div>';
+    var _ver = window.PUZZBALLS_FILE_VERSION && window.PUZZBALLS_FILE_VERSION['game.js'];
+    var _verStr = _ver ? ('v' + String(_ver).slice(0,2) + '.' + String(_ver).slice(2)) : 'v?';
+    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">' + _verStr + '</div>';
     _container.appendChild(header);
 
     // ── Preset selector ──────────────────────────────────────────────────────
