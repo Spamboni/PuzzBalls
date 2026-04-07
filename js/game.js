@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1516;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1517;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -576,10 +576,62 @@ class Game {
           for (var snbi=0; snbi<self._editorSnapBoxBtns.length; snbi++) {
             var snb=self._editorSnapBoxBtns[snbi];
             if (_px>=snb.x&&_px<=snb.x+snb.w&&_py>=snb.y&&_py<=snb.y+snb.h) {
-              if (snb.snapKey==='snapGrid') { window._snapToGrid=!window._snapToGrid; if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._snapToGrid); }
-              else if (snb.snapKey==='rotSnap') { var snaps2=[0,15,30,45,90]; var cur2=snaps2.indexOf(self._editorSnapDeg||0); self._editorSnapDeg=snaps2[(cur2+1)%snaps2.length]; if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); }
-              else if (snb.snapKey==='lenSnap') { window._editorLenSnap=(window._editorLenSnap||0)>0?0:10; if(window.Sound&&Sound.uiToggle)Sound.uiToggle((window._editorLenSnap||0)>0); }
-              else if (snb.snapKey==='widSnap') { window._editorWidSnap=(window._editorWidSnap||0)>0?0:5; if(window.Sound&&Sound.uiToggle)Sound.uiToggle((window._editorWidSnap||0)>0); }
+              if (snb.snapKey==='snapGrid') {
+                // Short tap = toggle, long press = enter grid spacing
+                _startLongPress('snapgrid', 600, function() {
+                  var cur = window._snapGridSize || 20;
+                  var r = window.prompt('Grid snap size (px):', String(cur));
+                  if (r !== null && r.trim() !== '') {
+                    var v = parseInt(r.trim());
+                    if (!isNaN(v) && v > 0) { window._snapGridSize = v; window._snapToGrid = true; }
+                  }
+                });
+                window._snapToGrid=!window._snapToGrid;
+                if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._snapToGrid);
+              }
+              else if (snb.snapKey==='rotSnap') {
+                // Short tap = cycle, long press = pick from list
+                _startLongPress('rotsnap', 600, function() {
+                  var r = window.prompt('Rotation snap:\n1. Free (0°)\n2. 15°\n3. 30°\n4. 45°\n5. 90°\n\nEnter number:', '3');
+                  if (r !== null) {
+                    var opts = [0,15,30,45,90];
+                    var idx = parseInt(r.trim()) - 1;
+                    if (!isNaN(idx) && opts[idx] !== undefined) {
+                      self._editorSnapDeg = opts[idx];
+                      if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+                    }
+                  }
+                });
+                var snaps2=[0,15,30,45,90]; var cur2=snaps2.indexOf(self._editorSnapDeg||0);
+                self._editorSnapDeg=snaps2[(cur2+1)%snaps2.length];
+                if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+              }
+              else if (snb.snapKey==='lenSnap') {
+                // Short tap = toggle, long press = enter snap value
+                _startLongPress('lensnap', 600, function() {
+                  var cur = window._editorLenSnap || 10;
+                  var r = window.prompt('Length snap (px):', String(cur));
+                  if (r !== null && r.trim() !== '') {
+                    var v = parseFloat(r.trim());
+                    if (!isNaN(v) && v > 0) { window._editorLenSnap = v; }
+                  }
+                });
+                window._editorLenSnap=(window._editorLenSnap||0)>0?0:10;
+                if(window.Sound&&Sound.uiToggle)Sound.uiToggle((window._editorLenSnap||0)>0);
+              }
+              else if (snb.snapKey==='widSnap') {
+                // Short tap = toggle, long press = enter snap value
+                _startLongPress('widsnap', 600, function() {
+                  var cur = window._editorWidSnap || 5;
+                  var r = window.prompt('Width snap (px):', String(cur));
+                  if (r !== null && r.trim() !== '') {
+                    var v = parseFloat(r.trim());
+                    if (!isNaN(v) && v > 0) { window._editorWidSnap = v; }
+                  }
+                });
+                window._editorWidSnap=(window._editorWidSnap||0)>0?0:5;
+                if(window.Sound&&Sound.uiToggle)Sound.uiToggle((window._editorWidSnap||0)>0);
+              }
               return;
             }
           }
@@ -588,10 +640,39 @@ class Game {
         if (self._editorSnapBtn) {
           var rsb=self._editorSnapBtn;
           if (_px>=rsb.x&&_px<=rsb.x+rsb.w&&_py>=rsb.y&&_py<=rsb.y+rsb.h) {
+            _startLongPress('rotsnap2', 600, function() {
+              var r = window.prompt('Rotation snap:\n1. Free\n2. 15°\n3. 30°\n4. 45°\n5. 90°', '3');
+              if (r !== null) { var opts=[0,15,30,45,90]; var i=parseInt(r.trim())-1; if(!isNaN(i)&&opts[i]!==undefined) self._editorSnapDeg=opts[i]; }
+            });
             var snaps=[0,15,30,45,90];
             var cur=snaps.indexOf(self._editorSnapDeg||0);
             self._editorSnapDeg=snaps[(cur+1)%snaps.length];
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+          }
+        }
+        // Row 4 GRID SNAP — long press for grid size + major line freq
+        if (self._editorSnapGridBtn) {
+          var sgb=self._editorSnapGridBtn;
+          if (_px>=sgb.x&&_px<=sgb.x+sgb.w&&_py>=sgb.y&&_py<=sgb.y+sgb.h) {
+            _startLongPress('gridsnap', 600, function() {
+              var curSize = window._snapGridSize || 20;
+              var curMajor = window._snapGridMajor || 5;
+              var r = window.prompt(
+                'Grid settings:\nLine 1: grid size (px)\nLine 2: major line every N cells\n\nCurrent: '+curSize+'px, major every '+curMajor,
+                curSize+'\n'+curMajor
+              );
+              if (r !== null && r.trim() !== '') {
+                var parts = r.trim().split(/[\n,\s]+/);
+                var sz = parseInt(parts[0]);
+                var mj = parseInt(parts[1]);
+                if (!isNaN(sz) && sz > 0) window._snapGridSize = sz;
+                if (!isNaN(mj) && mj > 0) window._snapGridMajor = mj;
+                window._snapToGrid = true;
+                if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+              }
+            });
+            window._snapToGrid=!window._snapToGrid;
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._snapToGrid); return;
           }
         }
         // MOV / STAT
@@ -690,15 +771,70 @@ class Game {
         if (self._editorLoadPresetBtn) {
           var lp=self._editorLoadPresetBtn;
           if (_px>=lp.x&&_px<=lp.x+lp.w&&_py>=lp.y&&_py<=lp.y+lp.h) {
-            // TODO phase 2: open preset list
-            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            // Load preset list from localStorage
+            var savedPresets = {};
+            try { savedPresets = JSON.parse(localStorage.getItem('_pb_brick_presets')||'{}'); } catch(e){}
+            var names = Object.keys(savedPresets);
+            if (names.length === 0) {
+              window.alert('No saved presets yet.\nUse SAVE to save the current settings as a preset.');
+            } else {
+              var list = names.map(function(n,i){return (i+1)+'. '+n;}).join('\n');
+              var choice = window.prompt('Select preset:\n'+list+'\n\nEnter number or name:', '1');
+              if (choice !== null && choice.trim() !== '') {
+                var picked = null;
+                var idx = parseInt(choice.trim()) - 1;
+                if (!isNaN(idx) && names[idx]) picked = names[idx];
+                else picked = choice.trim();
+                if (savedPresets[picked]) {
+                  var p = savedPresets[picked];
+                  window.BrickDefaults = window.BrickDefaults || {};
+                  var bd = window.BrickDefaults;
+                  if (p.rectW    !== undefined) bd.rectW    = p.rectW;
+                  if (p.rectH    !== undefined) bd.rectH    = p.rectH;
+                  if (p.rectHP   !== undefined) bd.rectHP   = p.rectHP;
+                  if (p.density  !== undefined) bd.density  = p.density;
+                  if (p.maxTravel!== undefined) bd.maxTravel= p.maxTravel;
+                  if (p.decel    !== undefined) bd.decel    = p.decel;
+                  if (p.rotSpeed !== undefined) bd.rotSpeed = p.rotSpeed;
+                  if (p.rotDecel !== undefined) bd.rotDecel = p.rotDecel;
+                  if (p.wallBounce!==undefined) bd.wallBounce=p.wallBounce;
+                  if (p.spinDist !== undefined) bd.spinDist = p.spinDist;
+                  self._editorCurrentPreset = picked;
+                  if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
+                } else {
+                  window.alert('Preset "'+picked+'" not found.');
+                }
+              }
+            }
+            return;
           }
         }
         if (self._editorSavePresetBtn) {
           var sp2=self._editorSavePresetBtn;
           if (_px>=sp2.x&&_px<=sp2.x+sp2.w&&_py>=sp2.y&&_py<=sp2.y+sp2.h) {
-            // TODO phase 2: save preset with name prompt
-            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            var defName = self._editorCurrentPreset && self._editorCurrentPreset !== '— none —' ? self._editorCurrentPreset : '';
+            var pname = window.prompt('Save preset as:', defName);
+            if (pname !== null && pname.trim() !== '') {
+              var bd2 = window.BrickDefaults || {};
+              var savedPresets2 = {};
+              try { savedPresets2 = JSON.parse(localStorage.getItem('_pb_brick_presets')||'{}'); } catch(e){}
+              savedPresets2[pname.trim()] = {
+                rectW:     bd2.rectW     || 70,
+                rectH:     bd2.rectH     || 22,
+                rectHP:    bd2.rectHP    || 100,
+                density:   bd2.density   || 1.0,
+                maxTravel: bd2.maxTravel || 60,
+                decel:     bd2.decel     || 0.88,
+                rotSpeed:  bd2.rotSpeed  || 0.30,
+                rotDecel:  bd2.rotDecel  || 0.88,
+                wallBounce:bd2.wallBounce|| 0.45,
+                spinDist:  bd2.spinDist  || 0.5,
+              };
+              localStorage.setItem('_pb_brick_presets', JSON.stringify(savedPresets2));
+              self._editorCurrentPreset = pname.trim();
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
+            }
+            return;
           }
         }
         // ∞ HP / ✕ REGEN
@@ -939,6 +1075,12 @@ class Game {
           } else {
             self._editorOnDown({x:_px, y:_py});
           }
+        }
+        // Tap landed in panel but hit nothing — start scroll
+        if (inPanel) {
+          self._editorScrollPending=true; self._editorScrollDragging=false;
+          self._editorScrollStart=self._editorScrollY||0;
+          self._editorScrollDragY=pos.y;
         }
         return;
       }
@@ -3653,7 +3795,7 @@ class Game {
                                     '#0088ff', false,
                                     {grayed:!(this._redoHistory&&this._redoHistory.length)});
     // Space intentionally empty in position 4
-    this._editorDoneBtn       = btn('DONE',  W - padding - btnW1,        r1Y, btnW1, r1H, '#00ff88', false);
+    this._editorDoneBtn       = btn('DONE',  W - padding - btnW1,        r1Y, btnW1, r1H, '#00ff88', true);
 
     cY = r1Y + r1H + 6;
 
@@ -4391,14 +4533,7 @@ class Game {
       this._tubeModeBtns.push({ x:tmx, y:row0Y, w:tmW, h:btnH, id:tm.id });
     }
 
-    this._editorDoneBtn = { x: W - 64, y: row0Y, w: 56, h: btnH };
-    ctx.fillStyle = 'rgba(0,60,30,0.85)';
-    ctx.beginPath(); ctx.roundRect(W - 64, row0Y, 56, btnH, 4); ctx.fill();
-    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.roundRect(W - 64, row0Y, 56, btnH, 4); ctx.stroke();
-    ctx.fillStyle = '#00ff88'; ctx.font = "bold 11px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('DONE', W - 64 + 28, row0Y + btnH/2);
+    // No DONE button in tube editor — use main DONE in row 1
 
     // Shift all content rows down past the mode row
     var row1Y = row0Y + btnH + gap;
