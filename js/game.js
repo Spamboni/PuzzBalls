@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1517;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1518;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -716,14 +716,23 @@ class Game {
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
           }
         }
-        // Panel headers — toggle collapse
+        // Panel headers — toggle collapse (blocked in default mode)
         if (self._editorPanelHeaders) {
           for (var phi=0; phi<self._editorPanelHeaders.length; phi++) {
             var ph=self._editorPanelHeaders[phi];
             if (!ph) continue;
             if (_px>=ph.x&&_px<=ph.x+ph.w&&_py>=ph.y&&_py<=ph.y+ph.h) {
-              window['_edCollapse_'+ph.key]=!ph.collapsed;
-              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
+              if (self._editorDefaultMode) {
+                // In default mode: reset that section instead of collapsing
+                if (ph.key==='transform') self._applyDefaults(['blen','bwid','rot']);
+                else if (ph.key==='brickset') self._applyDefaults(['hp','regen','dens']);
+                else if (ph.key==='brickphys') self._applyDefaults(['dist','decel','rotspd','rotdec','wbounce','spinDist']);
+                self._editorDefaultMode=false;
+              } else {
+                window['_edCollapse_'+ph.key]=!ph.collapsed;
+                if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15);
+              }
+              return;
             }
           }
         }
@@ -741,18 +750,6 @@ class Game {
           if (_px>=dab.x&&_px<=dab.x+dab.w&&_py>=dab.y&&_py<=dab.y+dab.h) {
             self._applyDefaults(['blen','bwid','rot','hp','regen','dens','dist','decel','rotspd','rotdec','wbounce','spinDist']);
             self._editorDefaultMode=false; return;
-          }
-        }
-        // DEFAULT mode: tap panel header to reset section
-        if (self._editorDefaultMode && self._editorPanelHeaders) {
-          for (var phi=0; phi<self._editorPanelHeaders.length; phi++) {
-            var ph=self._editorPanelHeaders[phi];
-            if (_px>=ph.x&&_px<=ph.x+ph.w&&_py>=ph.y&&_py<=ph.y+ph.h) {
-              if (ph.key==='transform') self._applyDefaults(['blen','bwid','rot']);
-              else if (ph.key==='brickset') self._applyDefaults(['hp','regen','dens']);
-              else if (ph.key==='brickphys') self._applyDefaults(['dist','decel','rotspd','rotdec','wbounce','spinDist']);
-              self._editorDefaultMode=false; return;
-            }
           }
         }
         // DEFAULT mode: tap individual VAL to reset just that slider
