@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['events.js'] = 1524;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['events.js'] = 1525;
 // events.js — PuzzBalls Event & Trigger System
 // Decoupled event dispatcher: objects don't know about each other;
 // the EventManager connects them via level-defined triggers.
