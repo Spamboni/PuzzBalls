@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1527;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1529;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -58,8 +58,8 @@ var BallSettings = {
   },
   squiggly: {
     label: 'SQUIGGLY', color: '#ffcc00', glow: '#ffee44',
-    r: 14, mass: 1.0, bounceMult: 0.65, gravMult: 0.9, dampMult: 1.0,
-    size: 14, velocity: 1.0, bounciness: 0.65, density: 1.0,
+    r: 11, mass: 1.0, bounceMult: 0.65, gravMult: 0.9, dampMult: 1.0,
+    size: 11, velocity: 1.0, bounciness: 0.65, density: 1.0,
     groundFriction: 0.88, baseDamage: 15, bounceDecay: 0.70,
   },
   splatter: {
