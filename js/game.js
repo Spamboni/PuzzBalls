@@ -834,9 +834,14 @@ class Game {
           self._editorScrollStart=self._editorScrollY||0;
           self._editorScrollDragY=pos.y; return;
         }
-        // World taps (not in panel) — build/select/etc
-        var _screenFloorY=self.floorY();
-        if (!inPanel) self._editorOnDown({x:_px,y:_py});
+        // World taps (not in panel) — route to tube or brick editor
+        if (!inPanel) {
+          if (self._editorTubeMode) {
+            self._tubeEditorOnDown({x:_px, y:_py});
+          } else {
+            self._editorOnDown({x:_px, y:_py});
+          }
+        }
         return;
       }
 
