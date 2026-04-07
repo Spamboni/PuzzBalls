@@ -60,7 +60,7 @@ var BallSettings = {
     label: 'SQUIGGLY', color: '#ffcc00', glow: '#ffee44',
     r: 11, mass: 1.0, bounceMult: 0.65, gravMult: 0.9, dampMult: 1.0,
     size: 11, velocity: 1.0, bounciness: 0.65, density: 1.0,
-    groundFriction: 0.88, baseDamage: 15, bounceDecay: 0.70,
+    groundFriction: 0.82, baseDamage: 15, bounceDecay: 0.52,
   },
   splatter: {
     label: 'SPLATTER', color: '#884400', glow: '#cc6600',
