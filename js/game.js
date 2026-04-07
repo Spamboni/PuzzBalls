@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1509;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1510;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -3440,18 +3440,84 @@ class Game {
     }
     cY += r2H + 5;
 
-    // ── ROW 3: Tab bar — BRICKS | TUBES | AFFECTORS | RAMPS | MOTORS ─────────
-    var tabH = 22, tabLabels = ['🧱 BRICKS','🔧 TUBES','⚡ AFFECT','📐 RAMPS','⚙ MOTORS'];
-    var tabCols  = ['#00ccff','#00ff88','#ff44cc','#ffcc00','#4488ff'];
+    // ── ROW 3: Tab bar — proper tabs attached to panel below ─────────────────
+    var tabH = 24;
+    var tabLabels = ['🧱 BRICKS','🔧 TUBES','⚡ AFFECT','📐 RAMPS','⚙ MOTORS'];
+    var tabCols   = ['#00ccff','#00ff88','#ff44cc','#ffcc00','#4488ff'];
     var activeTab = this._editorActiveTab || 'bricks';
     var tabW2 = Math.floor((W - 16 - 4*2) / 5);
+    var panelBgCol = 'rgba(0,8,22,0.97)';
+
+    // Draw panel top edge line UNDER tabs (so active tab can hide it)
+    ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, cY + tabH); ctx.lineTo(W, cY + tabH); ctx.stroke();
+
     this._editorTabBtns = [];
     for (var ti3 = 0; ti3 < tabLabels.length; ti3++) {
       var tabId = ['bricks','tubes','affectors','ramps','motors'][ti3];
       var tbx = padding + ti3 * (tabW2 + 2);
+      var tby = cY;
       var tbActive = activeTab === tabId;
-      this._editorTabBtns.push(btn(tabLabels[ti3], tbx, cY, tabW2, tabH, tabCols[ti3], tbActive, {fs:7}));
-      this._editorTabBtns[ti3].id = tabId;
+      var tcol = tabCols[ti3];
+
+      ctx.save();
+      if (tbActive) {
+        // Active tab: brighter, no bottom border, flush with panel
+        ctx.fillStyle = panelBgCol;
+        ctx.beginPath();
+        ctx.moveTo(tbx, tby + tabH + 1);        // bottom-left (below line)
+        ctx.lineTo(tbx, tby + 4);               // left side
+        ctx.quadraticCurveTo(tbx, tby, tbx + 4, tby);  // top-left curve
+        ctx.lineTo(tbx + tabW2 - 4, tby);       // top
+        ctx.quadraticCurveTo(tbx + tabW2, tby, tbx + tabW2, tby + 4); // top-right
+        ctx.lineTo(tbx + tabW2, tby + tabH + 1); // bottom-right
+        ctx.closePath();
+        ctx.fill();
+        // Colored top + sides only (no bottom)
+        ctx.strokeStyle = tcol; ctx.lineWidth = 1.8;
+        ctx.shadowColor = tcol; ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(tbx, tby + tabH + 1);
+        ctx.lineTo(tbx, tby + 4);
+        ctx.quadraticCurveTo(tbx, tby, tbx + 4, tby);
+        ctx.lineTo(tbx + tabW2 - 4, tby);
+        ctx.quadraticCurveTo(tbx + tabW2, tby, tbx + tabW2, tby + 4);
+        ctx.lineTo(tbx + tabW2, tby + tabH + 1);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Label bright
+        ctx.fillStyle = tcol;
+        ctx.font = "bold 8px '" + mono + "'";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(tabLabels[ti3], tbx + tabW2/2, tby + tabH/2);
+      } else {
+        // Inactive tab: darker, slightly shorter, has bottom border
+        ctx.fillStyle = 'rgba(0,5,15,0.7)';
+        ctx.beginPath();
+        ctx.moveTo(tbx, tby + tabH);
+        ctx.lineTo(tbx, tby + 4);
+        ctx.quadraticCurveTo(tbx, tby + 2, tbx + 3, tby + 2);
+        ctx.lineTo(tbx + tabW2 - 3, tby + 2);
+        ctx.quadraticCurveTo(tbx + tabW2, tby + 2, tbx + tabW2, tby + 4);
+        ctx.lineTo(tbx + tabW2, tby + tabH);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = tcol + '55'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(tbx, tby + tabH);
+        ctx.lineTo(tbx, tby + 4);
+        ctx.quadraticCurveTo(tbx, tby + 2, tbx + 3, tby + 2);
+        ctx.lineTo(tbx + tabW2 - 3, tby + 2);
+        ctx.quadraticCurveTo(tbx + tabW2, tby + 2, tbx + tabW2, tby + 4);
+        ctx.lineTo(tbx + tabW2, tby + tabH);
+        ctx.stroke();
+        ctx.fillStyle = tcol + '99';
+        ctx.font = "bold 7px '" + mono + "'";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(tabLabels[ti3], tbx + tabW2/2, tby + 2 + (tabH-2)/2);
+      }
+      ctx.restore();
+      this._editorTabBtns.push({ x:tbx, y:tby, w:tabW2, h:tabH, id:tabId });
     }
     // Keep backward compat
     this._editorBrickTab = this._editorTabBtns[0];
