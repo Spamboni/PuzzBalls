@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1524;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1525;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -2973,7 +2973,7 @@ class Game {
     var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 268;  // just below BRICKS/BALLS/TUBES HTML tabs
+    var TOP_Y    = 300;  // just below BRICKS/BALLS/TUBES HTML tabs
     var DIAG_Y   = TOP_Y;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, DIAG_Y };
   }
@@ -3280,7 +3280,7 @@ class Game {
     ctx.stroke();
 
     // ── BALL GENERATOR CAP — redesigned ─────────────────────────────────────
-    var capH   = 52;                 // taller to fit new layout
+    var capH   = 70;                 // tall cap, sits above BRICKS/BALLS/TUBES tabs
     var capY   = topY - capH;
     var capX   = leftX;
     var capW   = CW;
