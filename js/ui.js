@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1501;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1502;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -227,7 +227,7 @@ class UI {
           if (loaded === undefined) {
             verEl.textContent = f === 'index.html' ? 'v15.00 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1501) {
+          } else if (loaded === 1502) {
             verEl.textContent = 'v15.00 ✓';
             verEl.style.color = '#44ff88';
           } else {
@@ -244,7 +244,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1501</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1502</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
