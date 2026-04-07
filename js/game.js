@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1525;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1526;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1831,53 +1831,34 @@ class Game {
           var rx = obj._cubeRX || 0, ry = obj._cubeRY || 0, rz = obj._cubeRZ || 0;
           var spMult = obj._cubeSpin || 1.0;
           rx *= spMult; ry *= spMult; rz *= spMult;
-          // Multiply current rotation matrix by small rotation increments
+          // Apply incremental rotations to matrix
           var m = obj._cubeRot;
-          // Rotate around X
-          if (Math.abs(rx) > 0.0001) {
-            var cx=Math.cos(rx),sx=Math.sin(rx);
-            var nm=[m[0],m[1],m[2],
-                    m[3]*cx-m[6]*sx, m[4]*cx-m[7]*sx, m[5]*cx-m[8]*sx,
-                    m[3]*sx+m[6]*cx, m[4]*sx+m[7]*cx, m[5]*sx+m[8]*cx];
-            m=nm;
-          }
-          // Rotate around Y
-          if (Math.abs(ry) > 0.0001) {
-            var cy=Math.cos(ry),sy=Math.sin(ry);
-            var nm=[m[0]*cy+m[6]*sy, m[1]*cy+m[7]*sy, m[2]*cy+m[8]*sy,
-                    m[3],m[4],m[5],
-                    -m[0]*sy+m[6]*cy,-m[1]*sy+m[7]*cy,-m[2]*sy+m[8]*cy];
-            m=nm;
-          }
-          // Rotate around Z
-          if (Math.abs(rz) > 0.0001) {
-            var cz=Math.cos(rz),sz=Math.sin(rz);
-            var nm=[m[0]*cz-m[3]*sz,m[1]*cz-m[4]*sz,m[2]*cz-m[5]*sz,
-                    m[0]*sz+m[3]*cz,m[1]*sz+m[4]*cz,m[2]*sz+m[5]*cz,
-                    m[6],m[7],m[8]];
-            m=nm;
-          }
-          obj._cubeRot = m;
-          // Update shards if shattering
-          if (obj._cubeShards) {
-            for (var shi=0; shi<obj._cubeShards.length; shi++) {
-              var sh = obj._cubeShards[shi];
-              sh.x += sh.vx; sh.y += sh.vy; sh.vy += 0.3;
-              sh.rot += sh.rotV; sh.age++;
-              sh.alpha = Math.max(0, 1 - sh.age/sh.maxAge);
-            }
-            if (obj._cubeShards[0] && obj._cubeShards[0].age >= obj._cubeShards[0].maxAge) {
-              obj._cubeShards = null;
-              obj.dead = true;
-            }
-          }
+          // Rotate X axis
+          var cx=Math.cos(rx),sx=Math.sin(rx);
+          var m1=[m[0],m[1],m[2],
+                  m[3]*cx+m[6]*sx, m[4]*cx+m[7]*sx, m[5]*cx+m[8]*sx,
+                  -m[3]*sx+m[6]*cx,-m[4]*sx+m[7]*cx,-m[5]*sx+m[8]*cx];
+          // Rotate Y axis
+          var cy=Math.cos(ry),sy=Math.sin(ry);
+          var m2=[m1[0]*cy-m1[6]*sy, m1[1]*cy-m1[7]*sy, m1[2]*cy-m1[8]*sy,
+                  m1[3],m1[4],m1[5],
+                  m1[0]*sy+m1[6]*cy, m1[1]*sy+m1[7]*cy, m1[2]*sy+m1[8]*cy];
+          // Rotate Z axis
+          var cz=Math.cos(rz),sz=Math.sin(rz);
+          var m3=[m2[0]*cz+m2[3]*sz, m2[1]*cz+m2[4]*sz, m2[2]*cz+m2[5]*sz,
+                  -m2[0]*sz+m2[3]*cz,-m2[1]*sz+m2[4]*cz,-m2[2]*sz+m2[5]*cz,
+                  m2[6],m2[7],m2[8]];
+          obj._cubeRot = m3;
+          // Shards updated in _drawCube since obj.dead may be true
         }
         // ── Squiggly ball: apply sine-wave perpendicular velocity ───────────
         if (obj.type === BALL_TYPES.SQUIGGLY && obj.inFlight && !obj.stuckTo && !obj._fromChute) {
           var sqT = (obj._sqT || 0) + 1;
           obj._sqT = sqT;
-          var sqAmp  = obj._sqAmp  || 18;
-          var sqFreq = obj._sqFreq || 0.08;
+          // Re-read settings each frame so slider changes take effect live
+          var _sqSet2 = (window.Settings && window.Settings.squiggly) || {};
+          var sqAmp  = _sqSet2.amp  !== undefined ? _sqSet2.amp  : (obj._sqAmp  || 18);
+          var sqFreq = _sqSet2.freq !== undefined ? _sqSet2.freq : (obj._sqFreq || 0.08);
           var sqFade = obj._sqFade || 0;
           var sqDelay= obj._sqDelay|| 0;
           var sqWave = obj._sqWave || 'sine';
@@ -2667,6 +2648,17 @@ class Game {
 
     // Draw shards if shattering
     if (obj._cubeShards) {
+      // Update shard physics here since obj may be dead
+      var allDone = true;
+      for (var si=0; si<obj._cubeShards.length; si++) {
+        var sh = obj._cubeShards[si];
+        sh.x += sh.vx; sh.y += sh.vy; sh.vy += 0.25;
+        sh.vx *= 0.99;
+        sh.rot += sh.rotV; sh.age++;
+        sh.alpha = Math.max(0, 1 - sh.age/sh.maxAge);
+        if (sh.age < sh.maxAge) allDone = false;
+      }
+      if (allDone) { obj._cubeShards = null; obj.dead = true; return; }
       for (var si=0; si<obj._cubeShards.length; si++) {
         var sh = obj._cubeShards[si];
         if (sh.alpha <= 0) continue;
@@ -2895,8 +2887,6 @@ class Game {
 
       // Outer feathered ring — visual only, no effect
       var outerGrad = ctx.createRadialGradient(wx, wy, sp.coreR * 0.7, wx, wy, sp.outerR);
-      outerGrad.addColorStop(0, col.replace('#', 'rgba(') + ',' + (alpha * 0.55) + ')');
-      // Parse hex color for rgba
       var r16 = parseInt(col.slice(1,3),16), g16 = parseInt(col.slice(3,5),16), b16 = parseInt(col.slice(5,7),16);
       outerGrad.addColorStop(0, 'rgba('+r16+','+g16+','+b16+','+(alpha*0.55)+')');
       outerGrad.addColorStop(1, 'rgba('+r16+','+g16+','+b16+',0)');
@@ -5696,10 +5686,13 @@ class Game {
   }
 
   _drawBall(obj) {
+    // Cube ball: allow draw even if dead (for shard animation)
+    if (obj.type === BALL_TYPES.CUBE) {
+      if (!obj.exploded && (!obj.dead || obj._cubeShards)) this._drawCube(obj);
+      return;
+    }
     if (obj.dead || obj.exploded) return;
     if (obj._inTube) return;  // drawn by tube's own draw method, not here
-    // Cube ball has its own full 3D draw routine
-    if (obj.type === BALL_TYPES.CUBE) { this._drawCube(obj); return; }
     var ctx = this.ctx, bs = BallSettings[obj.type] || BallSettings.bouncer;
     var pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.06 + obj.r);
 
