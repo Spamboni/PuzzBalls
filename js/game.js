@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1504;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1505;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -439,7 +439,7 @@ class Game {
       }
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
-        var _py  = pos.y - (self._editorScrollY || 0);
+        var _py  = pos.y + Math.abs(self._editorScrollY || 0);
         var _px  = pos.x;
         var inPanel = _py >= self.floorY();
 
@@ -921,8 +921,8 @@ class Game {
             self._editorScrollPending  = false;
           }
           if (self._editorScrollDragging) {
-            var rawScroll = self._editorScrollStart - dragDelta;  // inverted: drag up reveals more
-            var maxScroll = 340;   // max scroll distance to reveal full editor
+            var rawScroll = self._editorScrollStart - dragDelta;
+            var maxScroll = -340;  // negative = panel slides up revealing more
             self._editorScrollY = Math.max(maxScroll, Math.min(0, rawScroll));
             return;
           }
@@ -3455,72 +3455,79 @@ class Game {
       this._editorModeBtns.push(tlRect);
     }
 
-    // Right side snap controls
+    // Snap buttons — right side of row 4, no mini grid
     var snapRightX = padding + tools.length * (toolW+3) + 6;
-    var snapW = Math.floor((W - snapRightX - padding) / 4) - 2;
+    var snapW = Math.floor((W - snapRightX - padding) / 3) - 2;
+    this._editorGridPivRects = [];  // grid piv moved to row 5 under ROT mode
 
-    // 3x3 pivot grid for grid-snap (which point snaps to grid)
-    var gridPivCols = ['L','C','R'], gridPivRows = ['T','M','B'];
-    var curGridPiv = window._editorGridSnapPivot || 'CM';
-    var gpW = 12, gpG = 2;
-    var gpStartX = snapRightX;
-    var gpStartY = cY + 1;
-    this._editorGridPivRects = [];
-    for (var gpc = 0; gpc < 3; gpc++) {
-      for (var gpr = 0; gpr < 3; gpr++) {
-        var gpKey = gridPivCols[gpc] + gridPivRows[gpr];
-        var gpx   = gpStartX + gpc*(gpW+gpG);
-        var gpy   = gpStartY + gpr*(gpW+gpG)*0.7;
-        var gpAct = curGridPiv === gpKey;
-        ctx.fillStyle = gpAct ? 'rgba(0,200,255,0.3)' : 'rgba(0,10,30,0.7)';
-        ctx.beginPath(); ctx.roundRect(gpx,gpy,gpW,gpW*0.7,1); ctx.fill();
-        ctx.strokeStyle = gpAct ? '#00ccff' : '#334455'; ctx.lineWidth = gpAct?1.5:0.6;
-        ctx.beginPath(); ctx.roundRect(gpx,gpy,gpW,gpW*0.7,1); ctx.stroke();
-        if (gpAct) { ctx.fillStyle='#00ccff'; ctx.beginPath(); ctx.arc(gpx+gpW/2,gpy+gpW*0.35,2,0,Math.PI*2); ctx.fill(); }
-        this._editorGridPivRects.push({x:gpx,y:gpy,w:gpW,h:gpW*0.7,val:gpKey});
-      }
-    }
-    var afterGrid = gpStartX + 3*(gpW+gpG) + 4;
-
-    // GRID SNAP button
     var gsOn = window._snapToGrid||false;
-    this._editorSnapGridBtn = btn('GRID\nSNAP', afterGrid, cY, snapW, r4H, '#00ccff', gsOn, {fs:7});
+    this._editorSnapGridBtn = btn('GRID SNAP', snapRightX, cY, snapW, r4H, '#00ccff', gsOn, {fs:7});
 
-    // ROTATE SNAP
     var rotSnapOn = (this._editorSnapDeg||0) > 0;
-    var rotSnapLabels = {0:'ROT\nFREE',15:'ROT\n15°',30:'ROT\n30°',45:'ROT\n45°',90:'ROT\n90°'};
-    this._editorSnapBtn = btn(rotSnapLabels[this._editorSnapDeg||0]||'ROT\nFREE',
-      afterGrid+snapW+2, cY, snapW, r4H, '#ffaa00', rotSnapOn, {fs:7});
+    var _rslR={0:'ROT FREE',15:'ROT 15',30:'ROT 30',45:'ROT 45',90:'ROT 90'};
+    this._editorSnapBtn = btn(_rslR[this._editorSnapDeg||0]||'ROT FREE',
+      snapRightX+snapW+2, cY, snapW, r4H, '#ffaa00', rotSnapOn, {fs:7});
 
-    // LEN SNAP
     var lsOn = window._editorLenSnap > 0;
-    this._editorLenSnapBtn = btn('LEN\nSNAP', afterGrid+(snapW+2)*2, cY, snapW, r4H, '#00ff88', lsOn, {fs:7});
-
-    // WID SNAP
-    var wsOn = window._editorWidSnap > 0;
-    this._editorWidSnapBtn = btn('WID\nSNAP', afterGrid+(snapW+2)*3, cY, snapW, r4H, '#ff8844', wsOn, {fs:7});
+    this._editorLenSnapBtn = btn('LEN SNAP', snapRightX+(snapW+2)*2, cY, snapW, r4H, '#00ff88', lsOn, {fs:7});
+    this._editorWidSnapBtn = null;
 
     cY += r4H + 3;
 
-    // ── ROW 5: Sub-type buttons (RECT | ROUND | TRI | CUSTOM) ────────────────
-    var r5H = 24;
-    var subTypes = [
-      { id:'breakable_brick',  label:'RECT',   icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.roundRect(-12,-5,24,10,2); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.beginPath(); c.roundRect(-12,-5,24,10,2); c.stroke(); }},
-      { id:'circular_brick',   label:'ROUND',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.arc(0,0,7,0,Math.PI*2); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.beginPath(); c.arc(0,0,7,0,Math.PI*2); c.stroke(); }},
-      { id:'triangle_brick',   label:'TRI',    icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.moveTo(0,-8);c.lineTo(9,6);c.lineTo(-9,6);c.closePath(); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.stroke(); }},
-      { id:'custom_brick',     label:'CUSTOM', icon: function(c,col){ c.strokeStyle=col; c.lineWidth=1.2; c.setLineDash([2,2]); c.beginPath(); c.roundRect(-9,-6,18,12,2); c.stroke(); c.setLineDash([]); c.fillStyle=col; c.font="bold 6px monospace"; c.textAlign='center'; c.textBaseline='middle'; c.fillText('+',0,0); }},
-    ];
-    // Sub-type buttons only span left half of screen — snap controls stay right
-    var stW = Math.floor((W/2 - 16 - 3*3) / 4);
-    var curType = this._editorBrickType || 'breakable_brick';
+
+    // ── ROW 5: Contextual — BLD=subtypes, SEL/SCL=empty, ROT=big pivot grid ────
+    var r5H = 50;  // taller row for bigger targets
     this._editorTypeBtns = [];
-    for (var sti = 0; sti < subTypes.length; sti++) {
-      var st = subTypes[sti];
-      var stx = padding + sti*(stW+3);
-      var stRect = btn('', stx, cY, stW, r5H, '#4488ff', curType===st.id, {icon:st.icon});
-      stRect.type = st.id;
-      this._editorTypeBtns.push(stRect);
+
+    if (edMode === 'build') {
+      // RECT / ROUND / TRI / CUSTOM
+      var subTypes = [
+        { id:'breakable_brick', icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.roundRect(-14,-6,28,12,2); c.fill(); c.strokeStyle=col; c.lineWidth=1.4; c.beginPath(); c.roundRect(-14,-6,28,12,2); c.stroke(); c.fillStyle=col; [[-7,-3],[7,-3],[-7,3],[7,3]].forEach(function(d){c.beginPath();c.arc(d[0],d[1],1.5,0,Math.PI*2);c.fill();}); }},
+        { id:'circular_brick',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.arc(0,0,10,0,Math.PI*2); c.fill(); c.strokeStyle=col; c.lineWidth=1.4; c.beginPath(); c.arc(0,0,10,0,Math.PI*2); c.stroke(); c.fillStyle=col; c.beginPath(); c.arc(-3,-3,2.5,0,Math.PI*2); c.fill(); }},
+        { id:'triangle_brick',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.moveTo(0,-11);c.lineTo(12,8);c.lineTo(-12,8);c.closePath(); c.fill(); c.strokeStyle=col; c.lineWidth=1.4; c.stroke(); }},
+        { id:'custom_brick',    icon: function(c,col){ c.strokeStyle=col; c.lineWidth=1.4; c.setLineDash([3,2]); c.beginPath(); c.roundRect(-12,-8,24,16,2); c.stroke(); c.setLineDash([]); c.fillStyle=col; c.font="bold 8px monospace"; c.textAlign='center'; c.textBaseline='middle'; c.fillText('+',0,0); }},
+      ];
+      var stW = Math.floor((W - 16 - 3*3) / 4);
+      var curType = this._editorBrickType || 'breakable_brick';
+      for (var sti = 0; sti < subTypes.length; sti++) {
+        var st = subTypes[sti];
+        var stx = padding + sti*(stW+3);
+        var stRect = btn('', stx, cY, stW, r5H, '#4488ff', curType===st.id, {icon:st.icon});
+        stRect.type = st.id;
+        this._editorTypeBtns.push(stRect);
+      }
+
+    } else if (edMode === 'rotate') {
+      // Big 3x3 pivot grid — editor rotation pivot
+      var bigPivW = Math.floor((W - 16 - 8) / 3);
+      var bigPivH = Math.floor((r5H - 4) / 3) - 2;
+      var bigPivCols = ['L','C','R'], bigPivRows = ['T','M','B'];
+      var bigPivColors = ['#ffcc44','#44ccff','#ff8844'];
+      var curEdPiv = this._editorSelected ? (this._editorSelected._pivot||'CM') : (this._editorPivot||'CM');
+      this._editorPivotRects = [];
+      for (var bpc = 0; bpc < 3; bpc++) {
+        for (var bpr = 0; bpr < 3; bpr++) {
+          var bpKey = bigPivCols[bpc] + bigPivRows[bpr];
+          var bpx = padding + bpc*(bigPivW+4);
+          var bpy = cY + 2 + bpr*(bigPivH+2);
+          var bpAct = curEdPiv === bpKey;
+          ctx.fillStyle = bpAct ? bigPivColors[bpc]+'33' : 'rgba(0,10,30,0.7)';
+          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,3); ctx.fill();
+          ctx.strokeStyle = bpAct ? bigPivColors[bpc] : '#334455';
+          ctx.lineWidth = bpAct ? 2 : 0.8;
+          if (bpAct) { ctx.shadowColor=bigPivColors[bpc]; ctx.shadowBlur=8; }
+          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,3); ctx.stroke();
+          ctx.shadowBlur = 0;
+          if (bpAct) {
+            ctx.fillStyle = bigPivColors[bpc];
+            ctx.beginPath(); ctx.arc(bpx+bigPivW/2, bpy+bigPivH/2, 5, 0, Math.PI*2); ctx.fill();
+          }
+          this._editorPivotRects.push({x:bpx,y:bpy,w:bigPivW,h:bigPivH,val:bpKey,enabled:true});
+        }
+      }
+      // Keep the small pivot grid in behavior panel in sync — point to same array
     }
+    // SEL and SCL modes: row 5 is empty (cY still advances by r5H)
     // ── SNAP SETTINGS BOX: 2 cols × 3 rows, right of sub-type buttons ──────────
     var snapBoxX = padding + 4*(stW+3) + 6;
     var snapBoxW = W - snapBoxX - padding;
