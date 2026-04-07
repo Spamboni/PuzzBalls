@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1519;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1524;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -52,6 +52,7 @@ class Game {
     this._tubeSelected  = null;
     this._tubeDragging  = null;
     this._editorTubeMode = false;
+    this.splats = [];
     this._viewScrollY     = 0;   // px the whole view is shifted up (unused currently)
     this._editorScrollY   = 0;   // px the editor panel is scrolled up
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
@@ -295,6 +296,32 @@ class Game {
     obj.gravActive = false;
     obj._slungIds  = [];
     // Exploder: assign random tier (1, 2, or 3) and set bounce countdown
+    if (type === BALL_TYPES.CUBE) {
+      var cset = (window.Settings && window.Settings.cube) || {};
+      obj._cubeHP     = cset.hp    !== undefined ? cset.hp    : 4;
+      obj._cubeMaxHP  = obj._cubeHP;
+      obj._cubeSpin   = cset.spin  !== undefined ? cset.spin  : 1.0;
+      obj._cubeChaos  = cset.chaos !== undefined ? cset.chaos : 0.6;
+      // 3D rotation matrix (starts as identity)
+      obj._cubeRot = [1,0,0, 0,1,0, 0,0,1];
+      // Angular velocities on 3 axes
+      var spd = 0.04 + Math.random() * 0.05;
+      obj._cubeRX = (Math.random()-0.5) * spd * 2;
+      obj._cubeRY = (Math.random()-0.5) * spd * 2;
+      obj._cubeRZ = (Math.random()-0.5) * spd * 0.5;
+      obj._cubeShattering = false;
+      obj._cubeShards = null;
+      obj.r = 15;
+    }
+    if (type === BALL_TYPES.SQUIGGLY) {
+      var sqSet = (window.Settings && window.Settings.squiggly) || {};
+      obj._sqAmp   = sqSet.amp   !== undefined ? sqSet.amp   : 18;
+      obj._sqFreq  = sqSet.freq  !== undefined ? sqSet.freq  : 0.08;
+      obj._sqFade  = sqSet.fade  !== undefined ? sqSet.fade  : 0.0;
+      obj._sqDelay = sqSet.delay !== undefined ? sqSet.delay : 0.0;
+      obj._sqWave  = sqSet.wave  !== undefined ? sqSet.wave  : 'sine';
+      obj._sqT     = 0;
+    }
     if (type === BALL_TYPES.EXPLODER) {
       obj._explodeTier = Math.ceil(Math.random() * 3);
       obj.bouncesLeft  = obj._explodeTier;
@@ -1153,6 +1180,25 @@ class Game {
       // ── Ball selection: resting balls + balls within sling zone ────────────
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
       var zoneTop  = self.floorY() - zoneH2;
+
+      // ── Sticky ball flick — tap/drag a wall-stuck sticky to pop it off ──────
+      var FLICK_SPEED = 7;  // always same speed
+      for (var si = 0; si < self.objects.length; si++) {
+        var sobj = self.objects[si];
+        if (!sobj || sobj.dead || sobj.exploded) continue;
+        if (sobj.type !== BALL_TYPES.STICKY) continue;
+        if (sobj.stuckTo !== '_wall_') continue;
+        var sdx = _worldPos.x - sobj.x, sdy = _worldPos.y - sobj.y;
+        if (Math.hypot(sdx, sdy) < sobj.r * 2.8) {
+          // Start a pending sticky flick — wait for finger lift
+          self._pendingStickyFlick = {
+            obj: sobj,
+            touchX: _worldPos.x, touchY: _worldPos.y,
+          };
+          return;
+        }
+      }
+
       var best = null, bestDist = 9999;
       for (var i = 0; i < self.objects.length; i++) {
         var obj = self.objects[i];
@@ -1195,6 +1241,11 @@ class Game {
     function onMove(e) {
       e.preventDefault();
       var pos = getPos(e);
+      // Track sticky flick finger position
+      if (self._pendingStickyFlick) {
+        self._pendingStickyFlick._lastX = pos.x;
+        self._pendingStickyFlick._lastY = pos.y;
+      }
       // Tube slider drag (old path via _tubeDragSlider)
       if (self._tubeDragSlider) {
         var tsl2 = self._tubeDragSlider.sl;
@@ -1233,31 +1284,37 @@ class Game {
         self._tubeHandleTouch(e.touches);
         return;
       }
-      if (self._tubeRotateState) {
-        var trs = self._tubeRotateState;
-        var curAngleT = Math.atan2(pos.y - trs.tube.y, pos.x - trs.tube.x);
-        trs.tube.rotation = trs.origRot + (curAngleT - trs.startAngle);
-        trs.tube.rebuild();
-        return;
-      }
-      if (self._tubeLengthState) {
-        var tls = self._tubeLengthState;
-        var delta = Math.hypot(pos.x - tls.startX, pos.y - tls.startY);
-        var sign = ((pos.x - tls.startX) * Math.cos(tls.tube.rotation) +
-                    (pos.y - tls.startY) * Math.sin(tls.tube.rotation)) > 0 ? 1 : -1;
-        tls.tube.length = Math.max(20, Math.min(600, tls.origLen + sign * delta));
-        tls.tube.rebuild();
-        return;
+      if (self._tubeRotateState || self._tubeLengthState) {
+        var _tSY3 = self._editorScrollY || 0;
+        var _twy3 = pos.y - _tSY3;
+        if (self._tubeRotateState) {
+          var trs = self._tubeRotateState;
+          var curAngleT = Math.atan2(_twy3 - trs.tube.y, pos.x - trs.tube.x);
+          trs.tube.rotation = trs.origRot + (curAngleT - trs.startAngle);
+          trs.tube.rebuild();
+          return;
+        }
+        if (self._tubeLengthState) {
+          var tls = self._tubeLengthState;
+          var delta = Math.hypot(pos.x - tls.startX, _twy3 - tls.startY);
+          var sign = ((pos.x - tls.startX) * Math.cos(tls.tube.rotation) +
+                      (_twy3 - tls.startY) * Math.sin(tls.tube.rotation)) > 0 ? 1 : -1;
+          tls.tube.length = Math.max(20, Math.min(600, tls.origLen + sign * delta));
+          tls.tube.rebuild();
+          return;
+        }
       }
       if (self._tubeDragging) {
         var td = self._tubeDragging;
         var conn = td.connectedA || td.connectedB;
+        var _tSY = self._editorScrollY || 0;
+        var _tWorldY = pos.y - _tSY;
         if (conn && self._tubePivotState) {
-          var _connPos = { x: pos.x, y: pos.y };
+          var _connPos = { x: pos.x, y: _tWorldY };
           self.tubes.dragConnected(td, _connPos, self._tubePivotState);
         } else {
           td.x = pos.x - (self._tubeDragOffX || 0);
-          td.y = pos.y - (self._tubeDragOffY || 0);
+          td.y = _tWorldY - (self._tubeDragOffY || 0);
           td.rebuild();
           self.tubes.checkSnap(td);
         }
@@ -1391,6 +1448,34 @@ class Game {
       self._tubeDragSlider = null;
 
       // Quick tap on floor ball → pop it up (no drag happened)
+      if (self._pendingStickyFlick) {
+        var psf = self._pendingStickyFlick;
+        self._pendingStickyFlick = null;
+        var sball = psf.obj;
+        var FLICK_SPD = 7;
+        var endX = psf._lastX !== undefined ? psf._lastX : psf.touchX;
+        var endY = psf._lastY !== undefined ? psf._lastY : psf.touchY;
+        var fdx = endX - psf.touchX;
+        var fdy = endY - psf.touchY;
+        var fdist = Math.hypot(fdx, fdy);
+        sball.stuckTo = null;
+        sball.pinned  = false;
+        sball.inFlight = true;
+        if (fdist > 6) {
+          // Directional flick
+          sball.vx = (fdx / fdist) * FLICK_SPD;
+          sball.vy = (fdy / fdist) * FLICK_SPD;
+        } else {
+          // Pure tap — random direction, slightly upward bias
+          var randAngle = Math.random() * Math.PI * 2;
+          sball.vx = Math.cos(randAngle) * FLICK_SPD;
+          sball.vy = Math.sin(randAngle) * FLICK_SPD - 2;
+        }
+        if (window.Sound && Sound.uiTap) Sound.uiTap(0.25);
+        return;
+      }
+
+      // Quick tap on floor ball → pop it up (no drag happened)
       if (self._pendingFloorBall) {
         var pfb2 = self._pendingFloorBall;
         self._pendingFloorBall = null;
@@ -1405,6 +1490,10 @@ class Game {
         bPop.vy      = Math.min(popVY2, -2);
         bPop.vx      = 0;
         bPop.inFlight= true;
+        if (bPop.type === BALL_TYPES.SQUIGGLY) {
+          bPop._sqStartX = bPop.x; bPop._sqStartY = bPop.y;
+          bPop._sqTotalDist = 600;
+        }
         return;
       }
       if (self._editorMode) {
@@ -1434,6 +1523,7 @@ class Game {
           obj.inFlight = true;
           obj._fromChute = false;   // now active — bounces count, splits trigger
           if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
+          if (obj.type === BALL_TYPES.SQUIGGLY) { obj._sqStartX=obj.x; obj._sqStartY=obj.y; obj._sqTotalDist=Math.hypot(obj.vx,obj.vy)*80+400; }
           if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
         }
       } else {
@@ -1449,6 +1539,7 @@ class Game {
           obj.inFlight = true;
           obj._fromChute = false;   // now active
           if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
+          if (obj.type === BALL_TYPES.SQUIGGLY) { obj._sqStartX=obj.x; obj._sqStartY=obj.y; obj._sqTotalDist=Math.hypot(obj.vx,obj.vy)*80+400; }
           if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
         }
       }
@@ -1623,6 +1714,7 @@ class Game {
 
     // Chute feed
     this._updateChute(dt);
+    this._updateSplats(dt);
 
     // Physics step
     var sm = this.speedMult;
@@ -1734,7 +1826,173 @@ class Game {
         if (hit) {
           this.collisions++;
           this.ui.setCollisions(this.collisions);
-          // Sticky knock — check if a fast ball hits a wall-stuck sticky
+          // ── Cube ball: update 3D rotation matrix ────────────────────────────
+        if (obj.type === BALL_TYPES.CUBE && !obj._fromChute) {
+          var rx = obj._cubeRX || 0, ry = obj._cubeRY || 0, rz = obj._cubeRZ || 0;
+          var spMult = obj._cubeSpin || 1.0;
+          rx *= spMult; ry *= spMult; rz *= spMult;
+          // Multiply current rotation matrix by small rotation increments
+          var m = obj._cubeRot;
+          // Rotate around X
+          if (Math.abs(rx) > 0.0001) {
+            var cx=Math.cos(rx),sx=Math.sin(rx);
+            var nm=[m[0],m[1],m[2],
+                    m[3]*cx-m[6]*sx, m[4]*cx-m[7]*sx, m[5]*cx-m[8]*sx,
+                    m[3]*sx+m[6]*cx, m[4]*sx+m[7]*cx, m[5]*sx+m[8]*cx];
+            m=nm;
+          }
+          // Rotate around Y
+          if (Math.abs(ry) > 0.0001) {
+            var cy=Math.cos(ry),sy=Math.sin(ry);
+            var nm=[m[0]*cy+m[6]*sy, m[1]*cy+m[7]*sy, m[2]*cy+m[8]*sy,
+                    m[3],m[4],m[5],
+                    -m[0]*sy+m[6]*cy,-m[1]*sy+m[7]*cy,-m[2]*sy+m[8]*cy];
+            m=nm;
+          }
+          // Rotate around Z
+          if (Math.abs(rz) > 0.0001) {
+            var cz=Math.cos(rz),sz=Math.sin(rz);
+            var nm=[m[0]*cz-m[3]*sz,m[1]*cz-m[4]*sz,m[2]*cz-m[5]*sz,
+                    m[0]*sz+m[3]*cz,m[1]*sz+m[4]*cz,m[2]*sz+m[5]*cz,
+                    m[6],m[7],m[8]];
+            m=nm;
+          }
+          obj._cubeRot = m;
+          // Update shards if shattering
+          if (obj._cubeShards) {
+            for (var shi=0; shi<obj._cubeShards.length; shi++) {
+              var sh = obj._cubeShards[shi];
+              sh.x += sh.vx; sh.y += sh.vy; sh.vy += 0.3;
+              sh.rot += sh.rotV; sh.age++;
+              sh.alpha = Math.max(0, 1 - sh.age/sh.maxAge);
+            }
+            if (obj._cubeShards[0] && obj._cubeShards[0].age >= obj._cubeShards[0].maxAge) {
+              obj._cubeShards = null;
+              obj.dead = true;
+            }
+          }
+        }
+        // ── Squiggly ball: apply sine-wave perpendicular velocity ───────────
+        if (obj.type === BALL_TYPES.SQUIGGLY && obj.inFlight && !obj.stuckTo && !obj._fromChute) {
+          var sqT = (obj._sqT || 0) + 1;
+          obj._sqT = sqT;
+          var sqAmp  = obj._sqAmp  || 18;
+          var sqFreq = obj._sqFreq || 0.08;
+          var sqFade = obj._sqFade || 0;
+          var sqDelay= obj._sqDelay|| 0;
+          var sqWave = obj._sqWave || 'sine';
+          // Travel distance so far
+          var tDist = Math.hypot(obj.x - (obj._sqStartX||obj.x), obj.y - (obj._sqStartY||obj.y));
+          var totalDist = obj._sqTotalDist || 400;
+          var progress = Math.min(1, tDist / totalDist);
+          // Delay
+          if (progress < sqDelay) { /* not yet */ }
+          else {
+            var localT = (progress - sqDelay) / Math.max(0.01, 1 - sqDelay);
+            var fadeScale = 1 - sqFade * localT;
+            // Perpendicular direction (rotate velocity 90°)
+            var spd = Math.hypot(obj.vx, obj.vy);
+            if (spd > 0.1) {
+              var perpX = -obj.vy / spd;
+              var perpY =  obj.vx / spd;
+              // Wave shape
+              var phase = sqT * sqFreq * Math.PI * 2;
+              var waveVal = 0;
+              if (sqWave === 'sine')   waveVal = Math.sin(phase);
+              else if (sqWave === 'zigzag') waveVal = (phase % (Math.PI*2) < Math.PI) ? 1 : -1;
+              else if (sqWave === 'square') {
+                var sq = Math.sin(phase);
+                waveVal = sq > 0.3 ? 1 : (sq < -0.3 ? -1 : 0);
+              } else if (sqWave === 'chaos') {
+                waveVal = Math.sin(phase) + 0.5 * Math.sin(phase * 2.7 + 1.3) + 0.25 * (Math.random()-0.5);
+              }
+              var force = waveVal * sqAmp * fadeScale * 0.12;
+              obj.vx += perpX * force;
+              obj.vy += perpY * force;
+            }
+          }
+          // Wobble sound — very quiet oscillating tone
+          if (sqT % 8 === 0 && window.Sound && Sound.getCtx) {
+            var sc2 = Sound.getCtx();
+            if (sc2) {
+              var g2s = sc2.createGain(); g2s.connect(sc2.destination);
+              g2s.gain.setValueAtTime(0.018, sc2.currentTime);
+              g2s.gain.exponentialRampToValueAtTime(0.001, sc2.currentTime + 0.12);
+              var o2s = sc2.createOscillator();
+              o2s.connect(g2s);
+              o2s.type = 'sine';
+              var wbFreq = 180 + Math.sin(sqT * sqFreq * Math.PI * 2) * 80;
+              o2s.frequency.setValueAtTime(wbFreq, sc2.currentTime);
+              o2s.start(sc2.currentTime); o2s.stop(sc2.currentTime + 0.12);
+            }
+          }
+        }
+        // ── Splatter ball: hits walls/floor/ceiling ──────────────────────────
+        if (obj.type === BALL_TYPES.SPLATTER && obj.inFlight && !obj._splattered && !obj._fromChute) {
+          var g3 = this._chuteGeom();
+          var hitWall = false, splatX = obj.x, splatY = obj.y, splatNX = 0, splatNY = -1;
+          // Floor
+          if (obj.y + obj.r >= this.floorY() - 2) {
+            hitWall=true; splatX=obj.x; splatY=this.floorY(); splatNX=0; splatNY=-1;
+          }
+          // Left wall
+          else if (obj.x - obj.r <= 1) {
+            hitWall=true; splatX=0; splatY=obj.y; splatNX=1; splatNY=0;
+          }
+          // Right wall (chute left edge)
+          else if (obj.x + obj.r >= g3.LEFT_X - 1) {
+            hitWall=true; splatX=g3.LEFT_X; splatY=obj.y; splatNX=-1; splatNY=0;
+          }
+          // Ceiling
+          else if (obj.y - obj.r <= 1) {
+            hitWall=true; splatX=obj.x; splatY=0; splatNX=0; splatNY=1;
+          }
+          if (hitWall) {
+            this._createSplat(splatX, splatY, splatNX, splatNY, null);
+            obj._splattered = true; obj.dead = true;
+          }
+        }
+        // ── Cube ball: on wall hit, randomize spin (with cooldown) ────────────
+        if (obj.type === BALL_TYPES.CUBE && !obj._fromChute && !obj._cubeWallCool) {
+          var hitAny = false;
+          var floorYC = this.floorY(), gC2 = this._chuteGeom();
+          if (obj.y + obj.r >= floorYC-2) { hitAny=true; if(obj.vy>0)obj.vy*=-0.72; }
+          if (obj.y - obj.r <= 2)          { hitAny=true; if(obj.vy<0)obj.vy*=-0.72; }
+          if (obj.x - obj.r <= 2)          { hitAny=true; if(obj.vx<0)obj.vx*=-0.72; }
+          if (obj.x + obj.r >= gC2.LEFT_X-2){ hitAny=true; if(obj.vx>0)obj.vx*=-0.72; }
+          if (hitAny) {
+            var impMag = Math.hypot(obj.vx, obj.vy);
+            this._cubeOnHit(obj, impMag * 0.12);
+            obj._cubeHP = (obj._cubeHP||1) - Math.max(0.2, impMag*0.04);
+            if (obj._cubeHP <= 0) this._cubeShatter(obj);
+            obj._cubeWallCool = 12;
+          }
+        }
+        if (obj._cubeWallCool && obj._cubeWallCool > 0) obj._cubeWallCool--;
+        // Sticky knock — check if a fast ball hits a wall-stuck sticky
+          // Apply splat effects at this collision point
+          if (this.splats && this.splats.length > 0) {
+            var cHX = (a.x + b.x) / 2, cHY = (a.y + b.y) / 2;
+            for (var spi2 = 0; spi2 < this.splats.length; spi2++) {
+              var sp2 = this.splats[spi2];
+              if (!sp2 || sp2.dead) continue;
+              // Splat attached to brick — use brick's current position
+              var spWX = sp2.brick ? (sp2.brick.x + sp2.offX) : sp2.wx;
+              var spWY = sp2.brick ? (sp2.brick.y + sp2.offY) : sp2.wy;
+              var spDist = Math.hypot(cHX - spWX, cHY - spWY);
+              if (spDist > sp2.coreR) continue;
+              // Apply effect to whichever ball is not the splatter
+              var affBall = (a.type !== BALL_TYPES.SPLATTER) ? a : b;
+              if (sp2.type === 'dead') {
+                affBall.vx *= 0.08; affBall.vy *= 0.08;
+              } else if (sp2.type === 'boost') {
+                affBall.vx *= 2.0; affBall.vy *= 2.0;
+              } else if (sp2.type === 'goo') {
+                affBall.stuckTo = '_wall_';
+                affBall.vx = 0; affBall.vy = 0; affBall.inFlight = false;
+              }
+            }
+          }
           if (a.type === BALL_TYPES.STICKY && a.stuckTo === '_wall_') {
             this._tryKnockSticky(a, Math.hypot(b.vx, b.vy));
           }
@@ -1742,6 +2000,32 @@ class Game {
             this._tryKnockSticky(b, Math.hypot(a.vx, a.vy));
           }
           // Exploder countdown — only after manually slung
+          if (a.type === BALL_TYPES.CUBE && !a._fromChute && !a._cubeShattering) {
+            var impactSpd = Math.hypot(a.vx, a.vy);
+            this._cubeOnHit(a, impactSpd * 0.15);
+            // Take damage
+            a._cubeHP = (a._cubeHP || 1) - Math.max(0.5, impactSpd * 0.08);
+            if (a._cubeHP <= 0) this._cubeShatter(a);
+          }
+          if (b.type === BALL_TYPES.CUBE && !b._fromChute && !b._cubeShattering) {
+            var impactSpdB = Math.hypot(b.vx, b.vy);
+            this._cubeOnHit(b, impactSpdB * 0.15);
+            b._cubeHP = (b._cubeHP || 1) - Math.max(0.5, impactSpdB * 0.08);
+            if (b._cubeHP <= 0) this._cubeShatter(b);
+          }
+          if (a.type === BALL_TYPES.SPLATTER && !a._splattered && !a._fromChute) {
+            var sNX2 = (a.x - b.x), sNY2 = (a.y - b.y);
+            var sND = Math.hypot(sNX2, sNY2) || 1;
+            this._createSplat(b.x, b.y, sNX2/sND, sNY2/sND, b);
+            a._splattered = true; a.dead = true;
+          }
+          if (b.type === BALL_TYPES.SPLATTER && !b._splattered && !b._fromChute) {
+            var sNX3 = (b.x - a.x), sNY3 = (b.y - a.y);
+            var sND3 = Math.hypot(sNX3, sNY3) || 1;
+            // Note: b hit a ball, not a surface — splat at contact point
+            this._createSplat(a.x, a.y, sNX3/sND3, sNY3/sND3, null);
+            b._splattered = true; b.dead = true;
+          }
           if (a.type === BALL_TYPES.EXPLODER && !a.exploded && !a._fromChute) {
             a.bouncesLeft = (a.bouncesLeft || 1) - 1;
             if (a.bouncesLeft <= 0) triggerExplosion(a, this.objects, this.sparks);
@@ -1816,6 +2100,17 @@ class Game {
       for (j = 0; j < this.objects.length; j++) {
         var ball = this.objects[j];
         if (ball.dead || ball.stuckTo === '_wall_') continue;  // stuck ball = no more damage
+
+        // Splatter ball hits brick — create splat and die
+        if (ball.type === BALL_TYPES.SPLATTER && !ball._splattered && !ball._fromChute) {
+          if (brick.overlaps(ball)) {
+            var bkdx2 = ball.x - brick.x, bkdy2 = ball.y - brick.y;
+            var bkD2 = Math.hypot(bkdx2, bkdy2) || 1;
+            this._createSplat(brick.x, brick.y, bkdx2/bkD2, bkdy2/bkD2, brick);
+            ball._splattered = true; ball.dead = true;
+            continue;
+          }
+        }
 
         // Per-ball-per-brick contact cooldown — suppresses damage re-trigger
         var coolKey = '_brickCool_' + brick.id;
@@ -2258,6 +2553,419 @@ class Game {
   //   From (leftX, floorY - turnR) curving to (leftX - turnR, floorY) 
   //   Control point: (leftX, floorY)  ← corner of the J
 
+  // ── Cube ball: 3D rendering + hit/shatter ────────────────────────────────
+
+  _cubeOnHit(obj, impactMag) {
+    var chaos = obj._cubeChaos || 0.6;
+    var r = Math.random;
+    var mag = 0.02 + impactMag * chaos;
+    // Randomly redistribute spin across axes
+    var roll = r();
+    if (roll < 0.35) {
+      // Dominant single axis spin
+      var axis = Math.floor(r()*3);
+      obj._cubeRX = axis===0 ? (r()-0.5)*mag*4 : obj._cubeRX*(1-chaos*0.7);
+      obj._cubeRY = axis===1 ? (r()-0.5)*mag*4 : obj._cubeRY*(1-chaos*0.7);
+      obj._cubeRZ = axis===2 ? (r()-0.5)*mag*2 : obj._cubeRZ*(1-chaos*0.7);
+    } else if (roll < 0.6) {
+      // Nearly stop — slow thud
+      obj._cubeRX *= 0.15; obj._cubeRY *= 0.15; obj._cubeRZ *= 0.15;
+      setTimeout(function() {
+        obj._cubeRX = (Math.random()-0.5)*mag*5;
+        obj._cubeRY = (Math.random()-0.5)*mag*5;
+      }, 200 + Math.random()*300);
+    } else {
+      // Chaotic multi-axis
+      obj._cubeRX += (r()-0.5)*mag*3;
+      obj._cubeRY += (r()-0.5)*mag*3;
+      obj._cubeRZ += (r()-0.5)*mag*1.5;
+    }
+    // Tink sound
+    if (window.Sound && Sound.getCtx) {
+      var sc = Sound.getCtx();
+      if (sc) {
+        var vel = Math.min(1, impactMag * 3 + 0.2);
+        var freq = 1200 + Math.random() * 800;
+        var g = sc.createGain(); g.connect(sc.destination);
+        g.gain.setValueAtTime(vel * 0.25, sc.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, sc.currentTime + 0.18);
+        var o = sc.createOscillator(); o.connect(g);
+        o.type = 'sine';
+        o.frequency.setValueAtTime(freq, sc.currentTime);
+        o.frequency.exponentialRampToValueAtTime(freq*0.7, sc.currentTime+0.15);
+        o.start(sc.currentTime); o.stop(sc.currentTime+0.18);
+        // Second harmonic
+        var g2 = sc.createGain(); g2.connect(sc.destination);
+        g2.gain.setValueAtTime(vel*0.1, sc.currentTime);
+        g2.gain.exponentialRampToValueAtTime(0.001, sc.currentTime+0.08);
+        var o2 = sc.createOscillator(); o2.connect(g2);
+        o2.type = 'sine';
+        o2.frequency.setValueAtTime(freq*2.1, sc.currentTime);
+        o2.start(sc.currentTime); o2.stop(sc.currentTime+0.08);
+      }
+    }
+  }
+
+  _cubeShatter(obj) {
+    obj._cubeShattering = true;
+    obj.dead = false; // stay alive for shards animation
+    var shards = [];
+    var numShards = 5 + Math.floor(Math.random()*4);
+    for (var i=0; i<numShards; i++) {
+      var ang = (i/numShards)*Math.PI*2 + (Math.random()-0.5)*0.8;
+      var spd = 3 + Math.random()*5;
+      shards.push({
+        x: obj.x, y: obj.y,
+        vx: obj.vx*0.4 + Math.cos(ang)*spd,
+        vy: obj.vy*0.4 + Math.sin(ang)*spd,
+        rot: Math.random()*Math.PI*2,
+        rotV: (Math.random()-0.5)*0.4,
+        size: 4 + Math.random()*6,
+        alpha: 1,
+        age: 0, maxAge: 35 + Math.random()*25,
+      });
+    }
+    obj._cubeShards = shards;
+    obj._cubeHP = 0;
+    // Shatter sound — glass crash
+    if (window.Sound && Sound.getCtx) {
+      var sc = Sound.getCtx();
+      if (sc) {
+        for (var ti=0; ti<6; ti++) {
+          var g = sc.createGain(); g.connect(sc.destination);
+          var delay = ti*0.02;
+          g.gain.setValueAtTime(0, sc.currentTime+delay);
+          g.gain.linearRampToValueAtTime(0.2, sc.currentTime+delay+0.005);
+          g.gain.exponentialRampToValueAtTime(0.001, sc.currentTime+delay+0.3);
+          var o = sc.createOscillator(); o.connect(g);
+          o.type = 'sine';
+          o.frequency.setValueAtTime(1500+Math.random()*2000, sc.currentTime+delay);
+          o.start(sc.currentTime+delay); o.stop(sc.currentTime+delay+0.3);
+        }
+        // White noise burst
+        var bufSize = sc.sampleRate * 0.15;
+        var buf = sc.createBuffer(1, bufSize, sc.sampleRate);
+        var data = buf.getChannelData(0);
+        for (var ni=0; ni<bufSize; ni++) data[ni]=(Math.random()*2-1)*0.4;
+        var src = sc.createBufferSource(); src.buffer=buf;
+        var gn = sc.createGain(); gn.connect(sc.destination);
+        gn.gain.setValueAtTime(0.3, sc.currentTime);
+        gn.gain.exponentialRampToValueAtTime(0.001, sc.currentTime+0.15);
+        src.connect(gn); src.start(sc.currentTime); src.stop(sc.currentTime+0.15);
+      }
+    }
+    Physics.spawnSparks(this.sparks, obj.x, obj.y, '#00ffff', 20);
+    Physics.spawnSparks(this.sparks, obj.x, obj.y, '#ffffff', 12);
+  }
+
+  _drawCube(obj) {
+    var ctx = this.ctx;
+    var cx = obj.x, cy = obj.y;
+    var s = obj.r * 1.1;  // half-size
+    var m = obj._cubeRot || [1,0,0,0,1,0,0,0,1];
+    var DIST = 180;  // perspective distance
+
+    // Draw shards if shattering
+    if (obj._cubeShards) {
+      for (var si=0; si<obj._cubeShards.length; si++) {
+        var sh = obj._cubeShards[si];
+        if (sh.alpha <= 0) continue;
+        ctx.save();
+        ctx.translate(sh.x, sh.y);
+        ctx.rotate(sh.rot);
+        ctx.globalAlpha = sh.alpha;
+        ctx.strokeStyle = '#00ffff';
+        ctx.fillStyle = 'rgba(0,220,255,0.15)';
+        ctx.lineWidth = 1.2;
+        ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.moveTo(-sh.size, -sh.size*0.5);
+        ctx.lineTo(sh.size*0.8, -sh.size*0.3);
+        ctx.lineTo(sh.size*0.2, sh.size);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    // Project 3D point to 2D with perspective
+    function proj(x3, y3, z3) {
+      // Apply rotation matrix
+      var rx = m[0]*x3 + m[1]*y3 + m[2]*z3;
+      var ry = m[3]*x3 + m[4]*y3 + m[5]*z3;
+      var rz = m[6]*x3 + m[7]*y3 + m[8]*z3;
+      var scale = DIST / (DIST + rz + s);
+      return { x: cx + rx*scale, y: cy + ry*scale, z: rz };
+    }
+
+    // 8 corners of cube
+    var corners = [
+      proj(-s,-s,-s), proj( s,-s,-s), proj( s, s,-s), proj(-s, s,-s),
+      proj(-s,-s, s), proj( s,-s, s), proj( s, s, s), proj(-s, s, s),
+    ];
+
+    // 6 faces: [corner indices, normal direction]
+    var faces = [
+      { idx:[0,1,2,3], nz:-1 },  // back
+      { idx:[4,5,6,7], nz: 1 },  // front
+      { idx:[0,1,5,4], ny:-1 },  // top
+      { idx:[2,3,7,6], ny: 1 },  // bottom
+      { idx:[0,3,7,4], nx:-1 },  // left
+      { idx:[1,2,6,5], nx: 1 },  // right
+    ];
+
+    // Sort faces back to front by average Z
+    faces.forEach(function(f) {
+      f.avgZ = f.idx.reduce(function(s2,i) { return s2+corners[i].z; },0)/4;
+    });
+    faces.sort(function(a,b) { return b.avgZ - a.avgZ; });
+
+    // HP-based color tint — cracks appear as cube takes damage
+    var hpFrac = Math.max(0, Math.min(1, (obj._cubeHP||0) / (obj._cubeMaxHP||4)));
+    var crackAlpha = (1 - hpFrac) * 0.6;
+
+    faces.forEach(function(f, fi) {
+      var pts = f.idx.map(function(i){ return corners[i]; });
+      // Visibility: check if face normal points toward viewer
+      var v0=pts[0], v1=pts[1], v2=pts[2];
+      var ex=v1.x-v0.x, ey=v1.y-v0.y;
+      var fx2=v2.x-v0.x, fy2=v2.y-v0.y;
+      var cross = ex*fy2 - ey*fx2;
+      if (cross > 0) return;  // back face, skip
+
+      // Shading based on face orientation
+      var shade = 0.5;
+      if (f.nz) shade = f.nz > 0 ? 0.9 : 0.3;
+      if (f.ny) shade = f.ny > 0 ? 0.45 : 0.75;
+      if (f.nx) shade = 0.6;
+
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (var pi=1; pi<pts.length; pi++) ctx.lineTo(pts[pi].x, pts[pi].y);
+      ctx.closePath();
+
+      // Glass fill — very transparent
+      ctx.fillStyle = 'rgba(0,200,240,' + (shade * 0.08) + ')';
+      ctx.fill();
+
+      // Glowing edges
+      ctx.strokeStyle = 'rgba(0,220,255,' + (shade * 0.85) + ')';
+      ctx.lineWidth = 1.4;
+      ctx.shadowColor = '#00ffff';
+      ctx.shadowBlur = shade * 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Crack overlay when damaged
+      if (crackAlpha > 0.1) {
+        ctx.strokeStyle = 'rgba(255,80,80,' + crackAlpha * shade + ')';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([2,3]);
+        ctx.beginPath();
+        var cx2 = (pts[0].x+pts[2].x)/2, cy2 = (pts[0].y+pts[2].y)/2;
+        ctx.moveTo(pts[0].x, pts[0].y);
+        ctx.lineTo(cx2 + (Math.random()-0.5)*4, cy2);
+        ctx.lineTo(pts[2].x, pts[2].y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+
+    // Inner glowing red orb
+    var orbR = 3 + Math.sin(obj._cubeRX * 20) * 1;
+    ctx.save();
+    ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 12;
+    var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, orbR*2);
+    grad.addColorStop(0, 'rgba(255,100,50,0.95)');
+    grad.addColorStop(0.5, 'rgba(220,40,0,0.6)');
+    grad.addColorStop(1, 'rgba(180,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, orbR*2, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // HP bar — tiny, above cube when damaged
+    if (hpFrac < 1 && hpFrac > 0) {
+      var barW = s*1.5, barH = 3;
+      var barX = cx - barW/2, barY = cy - s - 10;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 1); ctx.fill();
+      ctx.fillStyle = hpFrac > 0.5 ? '#00ff88' : (hpFrac > 0.25 ? '#ffaa00' : '#ff3300');
+      ctx.beginPath(); ctx.roundRect(barX, barY, barW*hpFrac, barH, 1); ctx.fill();
+    }
+  }
+
+  _createSplat(wx, wy, nx, ny, brick) {
+    var sqSet = (window.Settings && window.Settings.splatter) || {};
+    var type    = sqSet.type     || 'dead';
+    var coreR   = sqSet.size     || 28;
+    var drips   = sqSet.drips    || 3;
+    var duration= (sqSet.duration|| 8) * 60;  // frames
+    this.splats = this.splats || [];
+    // Cap at 10 splats — remove oldest if over
+    if (this.splats.length >= 10) this.splats.shift();
+    // If attached to brick, store offset from brick center
+    var offX = brick ? (wx - brick.x) : 0;
+    var offY = brick ? (wy - brick.y) : 0;
+    // If no brick, wx/wy are world coords directly
+    // Build drip objects
+    var dripArr = [];
+    for (var di = 0; di < drips; di++) {
+      var dAngle = Math.PI/2 + (Math.random()-0.5) * 1.2;  // mostly downward
+      dripArr.push({
+        ox: nx * coreR * 0.3 + (Math.random()-0.5) * coreR * 0.6,
+        oy: ny * coreR * 0.3 + (Math.random()-0.5) * coreR * 0.4,
+        vy: 0.4 + Math.random() * 0.6,
+        len: 4 + Math.random() * 8,
+        age: 0, maxAge: 60 + Math.random() * 60,
+        r: 2 + Math.random() * 2,
+      });
+    }
+    this.splats.push({
+      wx: wx, wy: wy,        // world position (wall splats)
+      offX: offX, offY: offY, // offset from brick
+      nx: nx, ny: ny,         // normal direction (for splat shape)
+      brick: brick || null,
+      type: type,
+      coreR: coreR,
+      outerR: coreR * 1.8,
+      timer: duration,
+      maxTimer: duration,
+      drips: dripArr,
+    });
+    if (window.Sound && Sound.getCtx) {
+      var sc3 = Sound.getCtx();
+      if (sc3) {
+        var g3s = sc3.createGain(); g3s.connect(sc3.destination);
+        g3s.gain.setValueAtTime(0.3, sc3.currentTime);
+        g3s.gain.exponentialRampToValueAtTime(0.001, sc3.currentTime + 0.4);
+        var o3 = sc3.createOscillator(); o3.connect(g3s);
+        o3.type = 'sawtooth';
+        o3.frequency.setValueAtTime(80, sc3.currentTime);
+        o3.frequency.exponentialRampToValueAtTime(30, sc3.currentTime + 0.4);
+        o3.start(sc3.currentTime); o3.stop(sc3.currentTime + 0.4);
+      }
+    }
+  }
+
+  _updateSplats(dt) {
+    if (!this.splats) return;
+    for (var i = this.splats.length - 1; i >= 0; i--) {
+      var sp = this.splats[i];
+      sp.timer--;
+      if (sp.timer <= 0) { this.splats.splice(i, 1); continue; }
+      // Update drips
+      if (sp.drips) {
+        for (var di = 0; di < sp.drips.length; di++) {
+          var d = sp.drips[di];
+          d.age++;
+          d.oy += d.vy;
+          d.vy += 0.04;  // gravity on drip
+          d.len = Math.max(0, d.len - 0.03);
+        }
+      }
+    }
+  }
+
+  _drawSplats() {
+    if (!this.splats || this.splats.length === 0) return;
+    var ctx = this.ctx;
+    var splatCols = { dead:'#553300', boost:'#886600', goo:'#224400' };
+    var splatGlows = { dead:'#aa6600', boost:'#ffdd00', goo:'#44ff44' };
+    for (var si = 0; si < this.splats.length; si++) {
+      var sp = this.splats[si];
+      // World position (brick-attached or world)
+      var wx = sp.brick ? sp.brick.x + (function(sp2) {
+        // Rotate offset with brick rotation
+        var rot = sp2.brick._rotation || 0;
+        return sp2.offX * Math.cos(rot) - sp2.offY * Math.sin(rot);
+      })(sp) : sp.wx;
+      var wy = sp.brick ? sp.brick.y + (function(sp2) {
+        var rot = sp2.brick._rotation || 0;
+        return sp2.offX * Math.sin(rot) + sp2.offY * Math.cos(rot);
+      })(sp) : sp.wy;
+      var alpha = Math.min(1, sp.timer / Math.min(sp.maxTimer, 60)) * 0.92;
+      var col   = splatCols[sp.type]  || '#553300';
+      var glow  = splatGlows[sp.type] || '#aa6600';
+
+      ctx.save();
+
+      // Outer feathered ring — visual only, no effect
+      var outerGrad = ctx.createRadialGradient(wx, wy, sp.coreR * 0.7, wx, wy, sp.outerR);
+      outerGrad.addColorStop(0, col.replace('#', 'rgba(') + ',' + (alpha * 0.55) + ')');
+      // Parse hex color for rgba
+      var r16 = parseInt(col.slice(1,3),16), g16 = parseInt(col.slice(3,5),16), b16 = parseInt(col.slice(5,7),16);
+      outerGrad.addColorStop(0, 'rgba('+r16+','+g16+','+b16+','+(alpha*0.55)+')');
+      outerGrad.addColorStop(1, 'rgba('+r16+','+g16+','+b16+',0)');
+      // Irregular blob shape using multiple arcs
+      ctx.save();
+      ctx.translate(wx, wy);
+      // Rotate with brick
+      if (sp.brick && sp.brick._rotation) ctx.rotate(sp.brick._rotation);
+      // Outer blob
+      ctx.beginPath();
+      for (var ai = 0; ai < 12; ai++) {
+        var angle = (ai / 12) * Math.PI * 2;
+        var wobble = sp.outerR * (0.7 + 0.3 * Math.sin(ai * 2.3 + si));
+        var px2 = Math.cos(angle) * wobble;
+        var py2 = Math.sin(angle) * wobble;
+        ai === 0 ? ctx.moveTo(px2, py2) : ctx.lineTo(px2, py2);
+      }
+      ctx.closePath();
+      ctx.fillStyle = outerGrad;
+      ctx.fill();
+
+      // Core blob — solid colored
+      ctx.shadowColor = glow; ctx.shadowBlur = 10;
+      ctx.beginPath();
+      for (var ai2 = 0; ai2 < 10; ai2++) {
+        var angle2 = (ai2 / 10) * Math.PI * 2;
+        var wobble2 = sp.coreR * (0.75 + 0.25 * Math.sin(ai2 * 3.1 + si * 1.7));
+        var px3 = Math.cos(angle2) * wobble2;
+        var py3 = Math.sin(angle2) * wobble2;
+        ai2 === 0 ? ctx.moveTo(px3, py3) : ctx.lineTo(px3, py3);
+      }
+      ctx.closePath();
+      var gr16 = parseInt(glow.slice(1,3),16), gg16 = parseInt(glow.slice(3,5),16), gb16 = parseInt(glow.slice(5,7),16);
+      ctx.fillStyle = 'rgba('+gr16+','+gg16+','+gb16+','+(alpha*0.85)+')';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+
+      // Drips
+      if (sp.drips) {
+        for (var di2 = 0; di2 < sp.drips.length; di2++) {
+          var d2 = sp.drips[di2];
+          var dAlpha = alpha * Math.max(0, 1 - d2.age / d2.maxAge);
+          if (dAlpha <= 0) continue;
+          // Drip is relative to splat world pos
+          var dBrX = sp.brick ? wx : sp.wx;
+          var dBrY = sp.brick ? wy : sp.wy;
+          var dpx = dBrX + d2.ox;
+          var dpy = dBrY + d2.oy;
+          // Drip teardrop
+          ctx.beginPath();
+          ctx.arc(dpx, dpy, d2.r * dAlpha, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba('+gr16+','+gg16+','+gb16+','+dAlpha+')';
+          ctx.fill();
+          // Drip tail
+          if (d2.len > 1) {
+            ctx.beginPath();
+            ctx.moveTo(dpx, dpy);
+            ctx.lineTo(dpx, dpy - d2.len * dAlpha);
+            ctx.strokeStyle = 'rgba('+gr16+','+gg16+','+gb16+','+(dAlpha*0.5)+')';
+            ctx.lineWidth = d2.r * 0.8;
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+    }
+  }
+
   _chuteGeom() {
     var W        = this.W;
     var floorY   = this.floorY();
@@ -2265,7 +2973,7 @@ class Game {
     var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 200;
+    var TOP_Y    = 268;  // just below BRICKS/BALLS/TUBES HTML tabs
     var DIAG_Y   = TOP_Y;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, DIAG_Y };
   }
@@ -2771,8 +3479,8 @@ class Game {
 
 
     // ── Buttons inside the shaft ──────────────────────────────────────────────
-    var btnTypes  = ['bouncer','exploder','sticky','splitter','gravity'];
-    var btnColors = ['#4488ff','#ff4400','#44ff44','#ff44ff','#00ffee'];
+    var btnTypes  = ['cube','splatter','squiggly','bouncer','exploder','sticky','splitter','gravity'];
+    var btnColors = ['#00ddff','#cc6600','#ffcc00','#4488ff','#ff4400','#44ff44','#ff44ff','#00ffee'];
     var btnH   = 30;
     var btnW   = CW - 6;
     var btnX   = leftX + 3;
@@ -2785,7 +3493,7 @@ class Game {
     var pivotRef  = this._tdPivotY || (floorY - 60);
     // 5 buttons of height btnH + 4px gap, starting at btnStartY, ending at btnStartY + 5*(btnH+4)
     // We want btnStartY + 5*(btnH+4) = pivotRef, so:
-    var btnStartY = pivotRef - 5 * (btnH + 4);
+    var btnStartY = pivotRef - 8 * (btnH + 4);
     // Clamp: DEL button must come before ball buttons
     if (btnStartY < delBtnY + btnH + btnGap) btnStartY = delBtnY + btnH + btnGap;
 
@@ -2895,7 +3603,7 @@ class Game {
       }
 
       // ── Label ──────────────────────────────────────────────────────────────
-      var labels = {bouncer:'BNC',exploder:'EXP',sticky:'STK',splitter:'SPL',gravity:'GRV'};
+      var labels = {cube:'CUB',splatter:'SPA',squiggly:'SQG',bouncer:'BNC',exploder:'EXP',sticky:'STK',splitter:'SPL',gravity:'GRV'};
       var lblText = labels[btype] || btype.slice(0,3).toUpperCase();
 
       // Label shadow for depth
@@ -2991,6 +3699,7 @@ class Game {
     }
 
     this._drawFloor(floorY);
+    this._drawSplats();
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
@@ -4989,6 +5698,8 @@ class Game {
   _drawBall(obj) {
     if (obj.dead || obj.exploded) return;
     if (obj._inTube) return;  // drawn by tube's own draw method, not here
+    // Cube ball has its own full 3D draw routine
+    if (obj.type === BALL_TYPES.CUBE) { this._drawCube(obj); return; }
     var ctx = this.ctx, bs = BallSettings[obj.type] || BallSettings.bouncer;
     var pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.06 + obj.r);
 
@@ -5018,23 +5729,26 @@ class Game {
     // Exploder: draw concentric dark-red rings based on tier
     if (obj.type === BALL_TYPES.EXPLODER) {
       var tier = obj._explodeTier || 1;
-      // Ring darkness by tier: tier3 = darkest outer rings
+      // Visual radius scales by tier: tier1 = smaller, tier2 = normal, tier3 = slightly bigger
+      var tierScale = [0.82, 1.0, 1.12][tier - 1] || 1.0;
+      var vr = obj.r * tierScale;  // visual radius for this tier
+      // Rings are tight — all within ~1.3x the visual radius
       var ringDefs = [
-        // tier1: 1 medium ring
-        [[1.0, 'rgba(180,30,0,0.55)', 2.5]],
-        // tier2: 2 rings — inner lighter, outer darker
-        [[1.0, 'rgba(140,20,0,0.50)', 2], [1.55, 'rgba(200,40,0,0.70)', 2.5]],
-        // tier3: 3 rings — graduated dark
-        [[1.0, 'rgba(120,15,0,0.45)', 1.8], [1.5, 'rgba(170,25,0,0.60)', 2.2], [2.1, 'rgba(220,40,0,0.75)', 2.8]],
+        // tier1: 1 small tight ring
+        [[1.0, 'rgba(180,30,0,0.60)', 2]],
+        // tier2: 2 rings — close together
+        [[1.0, 'rgba(150,25,0,0.55)', 1.8], [1.25, 'rgba(200,40,0,0.70)', 2.2]],
+        // tier3: 3 rings — all still close in
+        [[1.0, 'rgba(130,20,0,0.50)', 1.6], [1.2, 'rgba(180,30,0,0.65)', 2.0], [1.38, 'rgba(230,50,0,0.80)', 2.5]],
       ];
       var rings = ringDefs[tier - 1] || ringDefs[0];
       for (var ri = 0; ri < rings.length; ri++) {
         var rDef = rings[ri];
         ctx.beginPath();
-        ctx.arc(obj.x, obj.y, obj.r * rDef[0] + 3 + pulse * 1.5, 0, Math.PI * 2);
+        ctx.arc(obj.x, obj.y, vr * rDef[0] + 1 + pulse * 0.8, 0, Math.PI * 2);
         ctx.strokeStyle = rDef[1];
         ctx.lineWidth   = rDef[2];
-        ctx.shadowColor = '#ff3300'; ctx.shadowBlur = 4 + ri * 2;
+        ctx.shadowColor = '#ff3300'; ctx.shadowBlur = 3 + ri * 2;
         ctx.stroke();
         ctx.shadowBlur = 0;
       }
