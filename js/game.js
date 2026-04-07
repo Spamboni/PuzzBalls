@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1510;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1511;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -758,9 +758,17 @@ class Game {
             }
           }
         }
-        // Scroll — chute strip OR anywhere in panel that didn't hit a button
+        // Scroll — only from chute strip (right 50px above floor)
+        // Do NOT trigger from panel taps — that swallows button taps
         var chuteX = self.W - 50;
-        if (inPanel || (pos.x >= chuteX && pos.y < self.floorY())) {
+        if (pos.x >= chuteX && pos.y < self.floorY()) {
+          self._editorScrollPending=true; self._editorScrollDragging=false;
+          self._editorScrollStart=self._editorScrollY||0;
+          self._editorScrollDragY=pos.y; return;
+        }
+        // Also allow scroll from empty panel space (below last button)
+        // Use a dedicated scroll handle area at very bottom of panel
+        if (inPanel && pos.y > self.H - 60) {
           self._editorScrollPending=true; self._editorScrollDragging=false;
           self._editorScrollStart=self._editorScrollY||0;
           self._editorScrollDragY=pos.y; return;
