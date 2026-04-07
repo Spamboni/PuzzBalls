@@ -3488,14 +3488,14 @@ class Game {
     // DEL button goes right below the cap
     var delBtnY   = topY + 4;
     var btnGap    = 12;
-    // Ball buttons: bottom of GRV (last ball button) should align with trapdoor pivot
-    // pivotY = this._tdPivotY (set each frame during trapdoor draw)
+    // Fit all 8 ball buttons between DEL and trapdoor pivot
     var pivotRef  = this._tdPivotY || (floorY - 60);
-    // 5 buttons of height btnH + 4px gap, starting at btnStartY, ending at btnStartY + 5*(btnH+4)
-    // We want btnStartY + 5*(btnH+4) = pivotRef, so:
-    var btnStartY = pivotRef - 8 * (btnH + 4);
-    // Clamp: DEL button must come before ball buttons
-    if (btnStartY < delBtnY + btnH + btnGap) btnStartY = delBtnY + btnH + btnGap;
+    var availH    = pivotRef - (delBtnY + btnH + btnGap) - 4;
+    var numBtns   = btnTypes.length;
+    // Shrink button height to fit if needed, min 22px
+    var btnHFit   = Math.max(22, Math.floor((availH - (numBtns-1)*3) / numBtns));
+    var totalH    = numBtns * btnHFit + (numBtns-1) * 3;
+    var btnStartY = delBtnY + btnH + btnGap;
 
     this._chuteButtonRects = [];
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
@@ -3506,7 +3506,7 @@ class Game {
     this._chuteAimRect = null;  // aim button moved to corner
 
     for (var bi = 0; bi < btnTypes.length; bi++) {
-      var by    = btnStartY + bi * (btnH + 4);
+      var by    = btnStartY + bi * (btnHFit + 3);
       var btype = btnTypes[bi];
       var bcol  = btnColors[bi];
       var alpha = atMax ? 0.28 : 1.0;
@@ -3514,7 +3514,7 @@ class Game {
       var pressFlash = this._btnPressFlash && this._btnPressFlash.type === btype
         ? Math.max(0, 1 - (this.frame - this._btnPressFlash.frame) / 20) : 0;
 
-      this._chuteButtonRects.push({ x: btnX, y: by, w: btnW, h: btnH, type: btype });
+      this._chuteButtonRects.push({ x: btnX, y: by, w: btnW, h: btnHFit, type: btype });
 
       // Parse hex color to rgb for gradients
       var r = parseInt(bcol.slice(1,3),16);
@@ -3523,7 +3523,7 @@ class Game {
 
       // ── Background: 25% opacity with tube-wrap horizontal gradient ──────────
       // Tube-wrap: dark edges, brighter centre (simulates cylindrical depth)
-      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 8);
+      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnHFit, 8);
       var bgGrad = ctx.createLinearGradient(btnX, by, btnX + btnW, by);
       bgGrad.addColorStop(0,    'rgba(0,4,14,' + (alpha * 0.25) + ')');
       bgGrad.addColorStop(0.15, 'rgba(' + Math.round(r*0.08)+','+Math.round(g*0.06)+','+Math.round(b*0.10)+',' + (alpha * 0.22) + ')');
@@ -3539,8 +3539,8 @@ class Game {
       }
 
       // ── Neon border ────────────────────────────────────────────────────────
-      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 8);
-      var borderGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnH);
+      ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnHFit, 8);
+      var borderGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnHFit);
       borderGrad.addColorStop(0,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.9) + ')');
       borderGrad.addColorStop(0.5, 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.55) + ')');
       borderGrad.addColorStop(1,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.9) + ')');
@@ -3550,22 +3550,22 @@ class Game {
       ctx.shadowBlur  = 0;
 
       // ── Top highlight bevel (makes it look raised) ─────────────────────────
-      ctx.beginPath(); ctx.roundRect(btnX + 1.5, by + 1.5, btnW - 3, btnH * 0.45, [7,7,0,0]);
-      var hiliteGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnH * 0.45);
+      ctx.beginPath(); ctx.roundRect(btnX + 1.5, by + 1.5, btnW - 3, btnHFit * 0.45, [7,7,0,0]);
+      var hiliteGrad = ctx.createLinearGradient(btnX, by, btnX, by + btnHFit * 0.45);
       hiliteGrad.addColorStop(0,   'rgba(255,255,255,' + (alpha * 0.12) + ')');
       hiliteGrad.addColorStop(1,   'rgba(255,255,255,0)');
       ctx.fillStyle = hiliteGrad; ctx.fill();
 
       // ── Inner colour fill (gives body of the button colour depth) ──────────
-      ctx.beginPath(); ctx.roundRect(btnX + 2, by + 2, btnW - 4, btnH - 4, 6);
-      var fillGrad = ctx.createLinearGradient(btnX, by, btnX + btnW, by + btnH);
+      ctx.beginPath(); ctx.roundRect(btnX + 2, by + 2, btnW - 4, btnHFit - 4, 6);
+      var fillGrad = ctx.createLinearGradient(btnX, by, btnX + btnW, by + btnHFit);
       fillGrad.addColorStop(0,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.08) + ')');
       fillGrad.addColorStop(0.5, 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.14) + ')');
       fillGrad.addColorStop(1,   'rgba(' + r + ',' + g + ',' + b + ',' + (alpha * 0.05) + ')');
       ctx.fillStyle = fillGrad; ctx.fill();
 
       // ── Ball orb ──────────────────────────────────────────────────────────
-      var dotR = 8, dotX = btnX + dotR + 5, dotY = by + btnH / 2;
+      var dotR = 8, dotX = btnX + dotR + 5, dotY = by + btnHFit / 2;
 
       // Orb glow
       if (!atMax) {
@@ -3593,7 +3593,7 @@ class Game {
       // ── Press flash overlay — bright white + colour glow ─────────────────
       if (pressFlash > 0) {
         ctx.save();
-        ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnH, 8);
+        ctx.beginPath(); ctx.roundRect(btnX, by, btnW, btnHFit, 8);
         ctx.fillStyle = 'rgba(255,255,255,' + (pressFlash * 0.55) + ')';
         ctx.shadowColor = 'rgba(' + r + ',' + g + ',' + b + ',1)';
         ctx.shadowBlur  = 20 * pressFlash;
@@ -3613,7 +3613,7 @@ class Game {
       ctx.fillText(lblText, dotX + dotR + 5 + 1, dotY + 1);
 
       // Label main
-      var lblGrad = ctx.createLinearGradient(0, by, 0, by + btnH);
+      var lblGrad = ctx.createLinearGradient(0, by, 0, by + btnHFit);
       lblGrad.addColorStop(0, 'rgba(220,240,255,' + alpha + ')');
       lblGrad.addColorStop(1, 'rgba(' + Math.round(r*0.8+100) + ',' + Math.round(g*0.8+100) + ',' + Math.round(b*0.8+100) + ',' + alpha + ')');
       ctx.fillStyle = lblGrad;
