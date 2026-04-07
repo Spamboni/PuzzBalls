@@ -1,0 +1,33 @@
+{
+  "id": "level_2_buttons",
+  "name": "Button Challenge",
+  "description": "Hit the glowing button to open the gate, then land your bouncer",
+  "difficulty": "Easy",
+  "physicsPreset": "default",
+  "balls": [
+    { "type": "bouncer", "count": 3 }
+  ],
+  "obstacles": [
+    { "rx": 0.35, "ry": 0.45, "shape": "triangle", "size": 24 },
+    { "rx": 0.65, "ry": 0.45, "shape": "triangle", "size": 24 }
+  ],
+  "objects": [
+    {
+      "id": "btn_main",
+      "type": "button",
+      "rx": 0.25, "ry": 0.70,
+      "r": 20,
+      "triggers": [
+        { "actionType": "open_door", "targetId": "barrier_main", "duration": 4000 }
+      ]
+    }
+  ],
+  "target": {
+    "rx": 0.50, "ry": 0.10, "r": 30,
+    "barrierR": 70, "barrierThickness": 13,
+    "barrierGap": 0.15, "barrierGapAngle": -1.5707963268
+  },
+  "objectives": [
+    { "id": "goal_1", "type": "ballInZone", "ballType": "bouncer", "description": "Hit the BUTTON to open the gate, then land a BOUNCER" }
+  ]
+}
