@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1502;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1504;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -14,7 +14,6 @@ class UI {
     this._msgTitle   = document.getElementById('message-title');
     this._msgSub     = document.getElementById('message-sub');
     this._objPanel   = document.getElementById('objectives-panel');
-    this._btnReset    = document.getElementById('btn-reset');
     this._btnBack     = document.getElementById('btn-back');
     this._btnSettings = document.getElementById('btn-settings');
     this._btnEditor   = null;  // moved to canvas corner button
@@ -33,8 +32,6 @@ class UI {
       self._settingsPanel.classList.toggle('open');
     }
 
-    this._btnReset.addEventListener('click',    doReset);
-    this._btnReset.addEventListener('touchend', doReset);
     this._btnBack.addEventListener('click',    doBack);
     this._btnBack.addEventListener('touchend', doBack);
     this._btnSettings.addEventListener('click',    doSettings);
@@ -202,7 +199,7 @@ class UI {
           'ui.js','sound.js','events.js','presets.js','menu.js'
         ];
         var vRow = _el('div', 'version-header');
-        vRow.innerHTML = '<b>PuzzBalls v15.00</b>';
+        vRow.innerHTML = '<b>PuzzBalls v15.02</b>';
         vRow.style.cssText = 'color:#00ffee;font-size:13px;padding:6px 0 10px;text-align:center;';
         pane.appendChild(vRow);
 
@@ -225,10 +222,10 @@ class UI {
           nameEl.style.cssText = 'color:#cde;';
           var verEl = _el('span','');
           if (loaded === undefined) {
-            verEl.textContent = f === 'index.html' ? 'v15.00 (this page)' : 'not stamped';
+            verEl.textContent = f === 'index.html' ? 'v15.02 (this page)' : 'not stamped';
             verEl.style.color = '#888';
-          } else if (loaded === 1502) {
-            verEl.textContent = 'v15.00 ✓';
+          } else if (loaded === 1504) {
+            verEl.textContent = 'v15.02 ✓';
             verEl.style.color = '#44ff88';
           } else {
             verEl.textContent = 'v' + loaded + ' ⚠ old!';
@@ -244,7 +241,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1502</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1504</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
