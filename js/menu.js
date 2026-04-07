@@ -69,7 +69,7 @@ var Menu = (function() {
 
     // ── Header ──────────────────────────────────────────────────────────────
     var header = _el('div', 'menu-header');
-    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">v15.05</div>';
+    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">v15.07</div>';
     _container.appendChild(header);
 
     // ── Preset selector ──────────────────────────────────────────────────────
