@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1519;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1524;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -85,7 +85,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0 };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'dead', size:28, drips:3, duration:8 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4 } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
@@ -166,6 +166,9 @@ class UI {
       { id:'exploder', label:'💥 EXPLODE' },
       { id:'sticky',   label:'🟢 STICKY'  },
       { id:'splitter', label:'🟣 SPLIT'   },
+      { id:'squiggly', label:'〰️ SQUIGGLY' },
+      { id:'cube',     label:'🔲 CUBE'     },
+      { id:'splatter', label:'💦 SPLATTER' },
       { id:'gravity',  label:'🔵 GRAVITY' },
       { id:'bricks',   label:'🧱 BRICKS'  },
       { id:'audio',    label:'🔊 AUDIO'   },
@@ -243,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1519</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1524</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -523,7 +526,84 @@ class UI {
         if (t.id==='exploder') { _addSlider(pane,'Blast Radius',null,null,40,250,5,function(v){return v+'px';},t.id,'blastRadius'); _addSlider(pane,'Blast Force',null,null,4,40,1,function(v){return v;},t.id,'blastForce'); _addSlider(pane,'Explode Damage',null,null,0,100,5,function(v){return v+' hp';},t.id,'explosionDamage'); }
         if (t.id==='sticky')   { _addSlider(pane,'Stick Threshold',null,null,2,25,0.5,function(v){return v+' px/f';},t.id,'stickThreshold'); _addSlider(pane,'Bounce Height Y',null,null,10,200,5,function(v){return v+'px';},t.id,'bounceHeightY'); _addSlider(pane,'Bounce Dist X',null,null,0,150,5,function(v){return v+'px';},t.id,'bounceDistanceX'); _addSlider(pane,'Dead Zone %',null,null,0,100,5,function(v){return v+'%';},t.id,'deadZonePercent'); }
         if (t.id==='splitter') { _addSlider(pane,'Split Count',null,null,1,5,1,function(v){return v+' balls';},t.id,'splitCount'); }
+        if (t.id==='cube') {
+          _addSlider(pane,'HP (hits to shatter)',null,null,1,12,1,function(v){return v+' hits';},t.id,'hp');
+          _addSlider(pane,'Spin Speed',null,null,0.1,3.0,0.1,function(v){return v.toFixed(1)+'x';},t.id,'spin');
+          _addSlider(pane,'Chaos (spin randomness)',null,null,0,1,0.05,function(v){return Math.round(v*100)+'%';},t.id,'chaos');
+          _addSlider(pane,'Mass',null,null,0.5,3.0,0.1,function(v){return v.toFixed(1)+'x';},t.id,'mass');
+        }
+        if (t.id==='splatter') {
+          // Type picker
+          var splatRow = document.createElement('div');
+          splatRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
+          var splatTypes = [{id:'dead',label:'💀 DEAD',col:'#aa6600'},{id:'boost',label:'⚡ BOOST',col:'#ddcc00'},{id:'goo',label:'🟢 GOO',col:'#44aa00'}];
+          splatTypes.forEach(function(st) {
+            var sb2 = document.createElement('button');
+            sb2.textContent = st.label;
+            sb2.style.cssText = 'flex:1;padding:6px 2px;font-family:Share Tech Mono,monospace;font-size:9px;border-radius:4px;cursor:pointer;border:1px solid '+st.col+'55;background:rgba(0,0,0,0.2);color:'+st.col+'99;';
+            var updateSplatBtn = function() {
+              var cur = (window.Settings && window.Settings.splatter && window.Settings.splatter.type) || 'dead';
+              sb2.style.borderColor = cur===st.id ? st.col : st.col+'33';
+              sb2.style.background  = cur===st.id ? 'rgba(100,60,0,0.3)' : 'rgba(0,0,0,0.2)';
+              sb2.style.color       = cur===st.id ? st.col : st.col+'66';
+            };
+            updateSplatBtn();
+            function setSplatType(e) {
+              e.preventDefault();
+              window.Settings = window.Settings || {};
+              window.Settings.splatter = window.Settings.splatter || {};
+              window.Settings.splatter.type = st.id;
+              document.querySelectorAll('.splat-type-btn').forEach(function(b){ b.style.borderColor=''; b.style.background='rgba(0,0,0,0.2)'; });
+              sb2.style.borderColor=st.col; sb2.style.background='rgba(100,60,0,0.3)'; sb2.style.color=st.col;
+            }
+            sb2.classList.add('splat-type-btn');
+            sb2.addEventListener('click', setSplatType);
+            sb2.addEventListener('touchend', setSplatType);
+            splatRow.appendChild(sb2);
+          });
+          pane.appendChild(splatRow);
+          _addSlider(pane,'Size (core radius)',null,null,10,80,2,function(v){return v+'px';},t.id,'size');
+          _addSlider(pane,'Drips',null,null,0,8,1,function(v){return v;},t.id,'drips');
+          _addSlider(pane,'Duration (sec)',null,null,1,30,1,function(v){return v+'s';},t.id,'duration');
+        }
         if (t.id==='gravity')  { _addSlider(pane,'Pull Range',null,null,50,280,5,function(v){return v+'px';},t.id,'gravRange'); _addSlider(pane,'Pull Strength',null,null,0.05,5.0,0.05,function(v){return v.toFixed(2);},t.id,'gravPull'); }
+        if (t.id==='squiggly') {
+          _addSlider(pane,'Amplitude (AMP)',null,null,2,80,1,function(v){return v+'px';},t.id,'amp');
+          _addSlider(pane,'Frequency (FREQ)',null,null,0.01,0.3,0.005,function(v){return v.toFixed(3);},t.id,'freq');
+          _addSlider(pane,'Fade (end dampens)',null,null,0,1,0.05,function(v){return Math.round(v*100)+'%';},t.id,'fade');
+          _addSlider(pane,'Delay (start late)',null,null,0,0.9,0.05,function(v){return Math.round(v*100)+'%';},t.id,'delay');
+          // Wave shape picker
+          var waveRow = document.createElement('div');
+          waveRow.style.cssText = 'display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;';
+          var waves = ['sine','zigzag','square','chaos'];
+          var waveLabels = ['SINE','ZIGZAG','SQUARE','CHAOS'];
+          waves.forEach(function(w, wi) {
+            var wb = document.createElement('button');
+            wb.textContent = waveLabels[wi];
+            wb.style.cssText = 'flex:1;min-width:50px;padding:5px;font-family:Share Tech Mono,monospace;font-size:9px;border-radius:4px;cursor:pointer;border:1px solid #ffcc0055;background:rgba(255,200,0,0.05);color:#ffcc0099;';
+            var updateWaveBtn = function() {
+              var cur = (window.Settings && window.Settings.squiggly && window.Settings.squiggly.wave) || 'sine';
+              wb.style.borderColor = cur===w ? '#ffcc00' : '#ffcc0033';
+              wb.style.background  = cur===w ? 'rgba(255,200,0,0.2)' : 'rgba(255,200,0,0.05)';
+              wb.style.color       = cur===w ? '#ffdd44' : '#ffcc0077';
+            };
+            updateWaveBtn();
+            function setWave(e) {
+              e.preventDefault();
+              window.Settings = window.Settings || {};
+              window.Settings.squiggly = window.Settings.squiggly || {};
+              window.Settings.squiggly.wave = w;
+              waves.forEach(function(_, i) { }); // trigger re-render
+              document.querySelectorAll('.wave-btn').forEach(function(b){ b.style.borderColor='#ffcc0033'; b.style.background='rgba(255,200,0,0.05)'; b.style.color='#ffcc0077'; });
+              wb.style.borderColor='#ffcc00'; wb.style.background='rgba(255,200,0,0.2)'; wb.style.color='#ffdd44';
+            }
+            wb.classList.add('wave-btn');
+            wb.addEventListener('click', setWave);
+            wb.addEventListener('touchend', setWave);
+            waveRow.appendChild(wb);
+          });
+          pane.appendChild(waveRow);
+        }
 
         // Per-ball reset button
         (function(ballId, thePane, self2) {
