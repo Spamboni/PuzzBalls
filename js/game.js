@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1518;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1519;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -580,11 +580,12 @@ class Game {
                 // Short tap = toggle, long press = enter grid spacing
                 _startLongPress('snapgrid', 600, function() {
                   var cur = window._snapGridSize || 20;
-                  var r = window.prompt('Grid snap size (px):', String(cur));
-                  if (r !== null && r.trim() !== '') {
-                    var v = parseInt(r.trim());
-                    if (!isNaN(v) && v > 0) { window._snapGridSize = v; window._snapToGrid = true; }
-                  }
+                  self._neonPrompt('Grid snap size (px):', String(cur), function(r) {
+                    if (r !== null && r.trim() !== '') {
+                      var v = parseInt(r.trim());
+                      if (!isNaN(v) && v > 0) { window._snapGridSize = v; window._snapToGrid = true; }
+                    }
+                  });
                 });
                 window._snapToGrid=!window._snapToGrid;
                 if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._snapToGrid);
@@ -592,15 +593,12 @@ class Game {
               else if (snb.snapKey==='rotSnap') {
                 // Short tap = cycle, long press = pick from list
                 _startLongPress('rotsnap', 600, function() {
-                  var r = window.prompt('Rotation snap:\n1. Free (0°)\n2. 15°\n3. 30°\n4. 45°\n5. 90°\n\nEnter number:', '3');
-                  if (r !== null) {
-                    var opts = [0,15,30,45,90];
-                    var idx = parseInt(r.trim()) - 1;
-                    if (!isNaN(idx) && opts[idx] !== undefined) {
-                      self._editorSnapDeg = opts[idx];
-                      if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
-                    }
-                  }
+                  self._neonPicker('ROTATION SNAP', [
+                    {label:'FREE (0°)', value:0},{label:'15°', value:15},{label:'30°', value:30},
+                    {label:'45°', value:45},{label:'90°', value:90}
+                  ], function(v) {
+                    if (v !== null) { self._editorSnapDeg = v; if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); }
+                  });
                 });
                 var snaps2=[0,15,30,45,90]; var cur2=snaps2.indexOf(self._editorSnapDeg||0);
                 self._editorSnapDeg=snaps2[(cur2+1)%snaps2.length];
@@ -610,11 +608,12 @@ class Game {
                 // Short tap = toggle, long press = enter snap value
                 _startLongPress('lensnap', 600, function() {
                   var cur = window._editorLenSnap || 10;
-                  var r = window.prompt('Length snap (px):', String(cur));
-                  if (r !== null && r.trim() !== '') {
-                    var v = parseFloat(r.trim());
-                    if (!isNaN(v) && v > 0) { window._editorLenSnap = v; }
-                  }
+                  self._neonPrompt('Length snap (px):', String(cur), function(r) {
+                    if (r !== null && r.trim() !== '') {
+                      var v = parseFloat(r.trim());
+                      if (!isNaN(v) && v > 0) { window._editorLenSnap = v; }
+                    }
+                  });
                 });
                 window._editorLenSnap=(window._editorLenSnap||0)>0?0:10;
                 if(window.Sound&&Sound.uiToggle)Sound.uiToggle((window._editorLenSnap||0)>0);
@@ -623,11 +622,12 @@ class Game {
                 // Short tap = toggle, long press = enter snap value
                 _startLongPress('widsnap', 600, function() {
                   var cur = window._editorWidSnap || 5;
-                  var r = window.prompt('Width snap (px):', String(cur));
-                  if (r !== null && r.trim() !== '') {
-                    var v = parseFloat(r.trim());
-                    if (!isNaN(v) && v > 0) { window._editorWidSnap = v; }
-                  }
+                  self._neonPrompt('Width snap (px):', String(cur), function(r) {
+                    if (r !== null && r.trim() !== '') {
+                      var v = parseFloat(r.trim());
+                      if (!isNaN(v) && v > 0) { window._editorWidSnap = v; }
+                    }
+                  });
                 });
                 window._editorWidSnap=(window._editorWidSnap||0)>0?0:5;
                 if(window.Sound&&Sound.uiToggle)Sound.uiToggle((window._editorWidSnap||0)>0);
@@ -641,8 +641,10 @@ class Game {
           var rsb=self._editorSnapBtn;
           if (_px>=rsb.x&&_px<=rsb.x+rsb.w&&_py>=rsb.y&&_py<=rsb.y+rsb.h) {
             _startLongPress('rotsnap2', 600, function() {
-              var r = window.prompt('Rotation snap:\n1. Free\n2. 15°\n3. 30°\n4. 45°\n5. 90°', '3');
-              if (r !== null) { var opts=[0,15,30,45,90]; var i=parseInt(r.trim())-1; if(!isNaN(i)&&opts[i]!==undefined) self._editorSnapDeg=opts[i]; }
+              self._neonPicker('ROTATION SNAP', [
+                {label:'FREE (0°)', value:0},{label:'15°', value:15},{label:'30°', value:30},
+                {label:'45°', value:45},{label:'90°', value:90}
+              ], function(v) { if (v !== null) self._editorSnapDeg = v; });
             });
             var snaps=[0,15,30,45,90];
             var cur=snaps.indexOf(self._editorSnapDeg||0);
@@ -657,19 +659,19 @@ class Game {
             _startLongPress('gridsnap', 600, function() {
               var curSize = window._snapGridSize || 20;
               var curMajor = window._snapGridMajor || 5;
-              var r = window.prompt(
-                'Grid settings:\nLine 1: grid size (px)\nLine 2: major line every N cells\n\nCurrent: '+curSize+'px, major every '+curMajor,
-                curSize+'\n'+curMajor
-              );
-              if (r !== null && r.trim() !== '') {
-                var parts = r.trim().split(/[\n,\s]+/);
-                var sz = parseInt(parts[0]);
-                var mj = parseInt(parts[1]);
-                if (!isNaN(sz) && sz > 0) window._snapGridSize = sz;
-                if (!isNaN(mj) && mj > 0) window._snapGridMajor = mj;
-                window._snapToGrid = true;
-                if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
-              }
+              self._neonPrompt('Grid size (px)\nCurrent: '+curSize+'px', String(curSize), function(r) {
+                if (r !== null && r.trim() !== '') {
+                  var sz = parseInt(r.trim());
+                  if (!isNaN(sz) && sz > 0) { window._snapGridSize = sz; window._snapToGrid = true; }
+                  self._neonPrompt('Major line every N cells\nCurrent: every '+curMajor, String(curMajor), function(r2) {
+                    if (r2 !== null && r2.trim() !== '') {
+                      var mj = parseInt(r2.trim());
+                      if (!isNaN(mj) && mj > 0) window._snapGridMajor = mj;
+                    }
+                    if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+                  });
+                }
+              });
             });
             window._snapToGrid=!window._snapToGrid;
             if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._snapToGrid); return;
@@ -773,15 +775,13 @@ class Game {
             try { savedPresets = JSON.parse(localStorage.getItem('_pb_brick_presets')||'{}'); } catch(e){}
             var names = Object.keys(savedPresets);
             if (names.length === 0) {
-              window.alert('No saved presets yet.\nUse SAVE to save the current settings as a preset.');
+              self._neonAlert('No saved presets yet.\nUse SAVE to save current settings as a preset.');
             } else {
               var list = names.map(function(n,i){return (i+1)+'. '+n;}).join('\n');
-              var choice = window.prompt('Select preset:\n'+list+'\n\nEnter number or name:', '1');
-              if (choice !== null && choice.trim() !== '') {
-                var picked = null;
-                var idx = parseInt(choice.trim()) - 1;
-                if (!isNaN(idx) && names[idx]) picked = names[idx];
-                else picked = choice.trim();
+              var _presetOpts = names.map(function(n,i){return {label:(i+1)+'. '+n, value:n};});
+              self._neonPicker('LOAD PRESET', _presetOpts, function(choice) {
+              if (choice !== null) {
+                var picked = choice;
                 if (savedPresets[picked]) {
                   var p = savedPresets[picked];
                   window.BrickDefaults = window.BrickDefaults || {};
@@ -799,9 +799,10 @@ class Game {
                   self._editorCurrentPreset = picked;
                   if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
                 } else {
-                  window.alert('Preset "'+picked+'" not found.');
+                  self._neonAlert('Preset "'+picked+'" not found.');
                 }
               }
+              });
             }
             return;
           }
@@ -810,7 +811,7 @@ class Game {
           var sp2=self._editorSavePresetBtn;
           if (_px>=sp2.x&&_px<=sp2.x+sp2.w&&_py>=sp2.y&&_py<=sp2.y+sp2.h) {
             var defName = self._editorCurrentPreset && self._editorCurrentPreset !== '— none —' ? self._editorCurrentPreset : '';
-            var pname = window.prompt('Save preset as:', defName);
+            self._neonPrompt('Save preset as:', defName, function(pname) {
             if (pname !== null && pname.trim() !== '') {
               var bd2 = window.BrickDefaults || {};
               var savedPresets2 = {};
@@ -831,6 +832,7 @@ class Game {
               self._editorCurrentPreset = pname.trim();
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
             }
+            });
             return;
           }
         }
@@ -983,30 +985,33 @@ class Game {
               spinDist:sb_v?(sb_v._spinDist||0.5):(bd_v.spinDist||0.5),
             };
             var curVal = curVals[vd.key];
-            var result = window.prompt(vd.label + '\nRange: ' + vd.min + ' – ' + vd.max, vd.fmt(curVal));
-            if (result !== null && result.trim() !== '') {
-              var parsed = vd.parse(result.trim());
-              if (!isNaN(parsed)) {
-                parsed = Math.max(vd.min, Math.min(vd.max, parsed));
-                // Apply via the same slider apply functions
-                var applyFns = {
-                  blen:   function(v){if(self._editorSelected){self._editorSelected.w=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectW=v;},
-                  bwid:   function(v){if(self._editorSelected){self._editorSelected.h=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;},
-                  rot:    function(v){if(self._editorSelected)self._editorSelected._rotation=v*Math.PI/180;},
-                  hp:     function(v){if(self._editorSelected){self._editorSelected.maxHealth=v;self._editorSelected.health=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectHP=v;},
-                  regen:  function(v){if(self._editorSelected)self._editorSelected.regenAfter=v;},
-                  dens:   function(v){if(self._editorSelected)self._editorSelected._density=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.density=v;},
-                  dist:   function(v){if(self._editorSelected)self._editorSelected._maxTravel=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.maxTravel=v;},
-                  decel:  function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._decel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.decel=dv;},
-                  rotspd: function(v){if(self._editorSelected)self._editorSelected._rotSpeed=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotSpeed=v;},
-                  rotdec: function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._rotDecel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotDecel=dv;},
-                  wbounce:function(v){if(self._editorSelected)self._editorSelected._wallBounce=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.wallBounce=v;},
-                  spinDist:function(v){if(self._editorSelected)self._editorSelected._spinDist=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.spinDist=v;},
-                };
-                if (applyFns[vd.key]) applyFns[vd.key](parsed);
-                if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
-              }
-            }
+            var _vd = vd, _curVal = curVal;
+            (function(vd2, curVal2) {
+              self._neonPrompt(vd2.label + '  [' + vd2.min + ' - ' + vd2.max + ']', vd2.fmt(curVal2), function(result) {
+                if (result !== null && result.trim() !== '') {
+                  var parsed = vd2.parse(result.trim());
+                  if (!isNaN(parsed)) {
+                    parsed = Math.max(vd2.min, Math.min(vd2.max, parsed));
+                    var applyFns = {
+                      blen:    function(v){if(self._editorSelected){self._editorSelected.w=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectW=v;},
+                      bwid:    function(v){if(self._editorSelected){self._editorSelected.h=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;},
+                      rot:     function(v){if(self._editorSelected)self._editorSelected._rotation=v*Math.PI/180;},
+                      hp:      function(v){if(self._editorSelected){self._editorSelected.maxHealth=v;self._editorSelected.health=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectHP=v;},
+                      regen:   function(v){if(self._editorSelected)self._editorSelected.regenAfter=v;},
+                      dens:    function(v){if(self._editorSelected)self._editorSelected._density=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.density=v;},
+                      dist:    function(v){if(self._editorSelected)self._editorSelected._maxTravel=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.maxTravel=v;},
+                      decel:   function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._decel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.decel=dv;},
+                      rotspd:  function(v){if(self._editorSelected)self._editorSelected._rotSpeed=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotSpeed=v;},
+                      rotdec:  function(v){var dv=1-v;if(self._editorSelected)self._editorSelected._rotDecel=dv;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rotDecel=dv;},
+                      wbounce: function(v){if(self._editorSelected)self._editorSelected._wallBounce=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.wallBounce=v;},
+                      spinDist:function(v){if(self._editorSelected)self._editorSelected._spinDist=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.spinDist=v;},
+                    };
+                    if (applyFns[vd2.key]) applyFns[vd2.key](parsed);
+                    if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+                  }
+                }
+              });
+            })(_vd, _curVal);
             return;
           }
         }
@@ -1108,13 +1113,14 @@ class Game {
           var slb=self._hudSaveLevelBtn;
           if (pos.x>=slb.x&&pos.x<=slb.x+slb.w&&pos.y>=slb.y&&pos.y<=slb.y+slb.h) {
             // Save current level to localStorage with prompt
-            var lname = window.prompt('Save level as:');
+            self._neonPrompt('Save level as:', '', function(lname) {
             if (lname && lname.trim()) {
               var levels = JSON.parse(localStorage.getItem('_pb_saved_levels')||'{}');
               levels[lname.trim()] = self._serializeLevel ? self._serializeLevel() : {};
               localStorage.setItem('_pb_saved_levels', JSON.stringify(levels));
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
             }
+            });
             return;
           }
         }
@@ -1298,7 +1304,8 @@ class Game {
           if (window.Sound && Sound.uiSlider) Sound.uiSlider();
           return;
         }
-        self._editorOnMove(pos); return;
+        var _vSY2 = self._editorScrollY || 0;
+        self._editorOnMove({x: pos.x, y: pos.y - _vSY2}); return;
       }
       // If dragging from a floor ball, check if it's a real drag (> 8px = sling, not pop)
       if (self._pendingFloorBall) {
@@ -3752,7 +3759,8 @@ class Game {
       var n = parseFloat(val); return isNaN(n) ? String(val) : (Number.isInteger(n) ? String(n) : n.toFixed(2));
     }
 
-    // ── Helper: collapsible panel header ─────────────────────────────────────
+
+  // ── Helper: collapsible panel header ─────────────────────────────────────
     function panelHeader(label, key, x, y, w, col) {
       var collapsed = window['_edCollapse_'+key] || false;
       var hH = 18;
@@ -4466,6 +4474,87 @@ class Game {
     this._tubeDragOffX = 0;
     this._tubeDragOffY = 0;
     if (window.Sound && Sound.uiTap) Sound.uiTap(0.18);
+  }
+
+// ── Neon-styled prompt overlay ────────────────────────────────────────────
+  _neonPrompt(title, defaultVal, callback) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#030e25;border:1.5px solid #00ccff;border-radius:10px;padding:20px 18px 16px;width:82vw;max-width:320px;box-shadow:0 0 30px rgba(0,200,255,0.3);font-family:Share Tech Mono,monospace;';
+    var titleEl = document.createElement('div');
+    titleEl.style.cssText = 'color:#00e5ff;font-size:13px;font-weight:bold;margin-bottom:12px;white-space:pre-line;line-height:1.5;';
+    titleEl.textContent = title;
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.value = defaultVal || '';
+    input.style.cssText = 'width:100%;box-sizing:border-box;background:#000e24;border:1px solid #00ccff55;border-bottom:2px solid #00ccff;color:#00e5ff;font-family:Share Tech Mono,monospace;font-size:15px;padding:8px 6px;outline:none;border-radius:4px;';
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;margin-top:14px;';
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'CANCEL';
+    cancelBtn.style.cssText = 'flex:1;background:rgba(255,50,50,0.15);border:1px solid #ff3060;color:#ff6080;font-family:Share Tech Mono,monospace;font-size:12px;padding:9px;border-radius:5px;cursor:pointer;';
+    var okBtn = document.createElement('button');
+    okBtn.textContent = 'OK';
+    okBtn.style.cssText = 'flex:1;background:rgba(0,255,136,0.15);border:1px solid #00ff88;color:#00ff88;font-family:Share Tech Mono,monospace;font-size:12px;padding:9px;border-radius:5px;cursor:pointer;';
+    btnRow.appendChild(cancelBtn); btnRow.appendChild(okBtn);
+    box.appendChild(titleEl); box.appendChild(input); box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    setTimeout(function(){ input.focus(); input.select(); }, 50);
+    function close(val) { document.body.removeChild(overlay); callback(val); }
+    cancelBtn.addEventListener('click', function(){ close(null); });
+    okBtn.addEventListener('click', function(){ close(input.value); });
+    input.addEventListener('keydown', function(e){ if(e.key==='Enter') close(input.value); if(e.key==='Escape') close(null); });
+    overlay.addEventListener('click', function(e){ if(e.target===overlay) close(null); });
+  }
+
+  _neonAlert(title, callback) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#030e25;border:1.5px solid #ffaa00;border-radius:10px;padding:20px 18px 16px;width:82vw;max-width:320px;box-shadow:0 0 30px rgba(255,170,0,0.25);font-family:Share Tech Mono,monospace;';
+    var titleEl = document.createElement('div');
+    titleEl.style.cssText = 'color:#ffcc44;font-size:13px;margin-bottom:14px;white-space:pre-line;line-height:1.5;';
+    titleEl.textContent = title;
+    var okBtn = document.createElement('button');
+    okBtn.textContent = 'OK';
+    okBtn.style.cssText = 'width:100%;background:rgba(255,170,0,0.15);border:1px solid #ffaa00;color:#ffcc44;font-family:Share Tech Mono,monospace;font-size:12px;padding:10px;border-radius:5px;cursor:pointer;';
+    box.appendChild(titleEl); box.appendChild(okBtn);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    function close() { document.body.removeChild(overlay); if(callback)callback(); }
+    okBtn.addEventListener('click', close);
+    overlay.addEventListener('click', function(e){ if(e.target===overlay) close(); });
+  }
+
+  _neonPicker(title, options, callback) {
+    // options: array of {label, value}
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#030e25;border:1.5px solid #cc44ff;border-radius:10px;padding:16px 14px;width:82vw;max-width:300px;box-shadow:0 0 30px rgba(200,68,255,0.25);font-family:Share Tech Mono,monospace;';
+    var titleEl = document.createElement('div');
+    titleEl.style.cssText = 'color:#dd88ff;font-size:12px;font-weight:bold;margin-bottom:10px;';
+    titleEl.textContent = title;
+    box.appendChild(titleEl);
+    function close(val) { document.body.removeChild(overlay); callback(val); }
+    options.forEach(function(opt) {
+      var btn = document.createElement('button');
+      btn.textContent = opt.label;
+      btn.style.cssText = 'display:block;width:100%;background:rgba(200,68,255,0.1);border:1px solid #cc44ff55;color:#dd88ff;font-family:Share Tech Mono,monospace;font-size:13px;padding:10px;margin-bottom:6px;border-radius:5px;cursor:pointer;text-align:left;';
+      btn.addEventListener('click', function(){ close(opt.value); });
+      btn.addEventListener('touchstart', function(){ btn.style.background='rgba(200,68,255,0.3)'; });
+      box.appendChild(btn);
+    });
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'CANCEL';
+    cancelBtn.style.cssText = 'display:block;width:100%;background:transparent;border:1px solid #334455;color:#446677;font-family:Share Tech Mono,monospace;font-size:11px;padding:8px;border-radius:5px;cursor:pointer;margin-top:4px;';
+    cancelBtn.addEventListener('click', function(){ close(null); });
+    box.appendChild(cancelBtn);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function(e){ if(e.target===overlay) close(null); });
   }
 
   _drawTubeEditor(ctx, panelY) {
