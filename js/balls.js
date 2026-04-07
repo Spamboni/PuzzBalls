@@ -7,6 +7,9 @@ var BALL_TYPES = {
   STICKY:   'sticky',
   SPLITTER: 'splitter',
   GRAVITY:  'gravity',
+  SQUIGGLY: 'squiggly',
+  SPLATTER: 'splatter',
+  CUBE:     'cube',
 };
 
 // Base sizes scaled to 75% of original
