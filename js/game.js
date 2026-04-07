@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1526;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1527;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -3172,18 +3172,9 @@ class Game {
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
 
-    // ── TRAPDOOR — pivot at bottom of DEL button, door swings CCW when ball exits
-    // Compute pivot Y: DEL button is the 6th button (index 5) after btnStartY
-    var _tdBtnH      = 30;
-    var _tdBtnGap    = 4;
-    var _tdCurveTop  = floorY - turnR;
-    var _tdBtnBlockH = 5 * (_tdBtnH + _tdBtnGap) + _tdBtnH + 8;
-    var _tdBtnStartY = _tdCurveTop - _tdBtnBlockH - 10;
-    if (_tdBtnStartY < topY + 4) _tdBtnStartY = topY + 4;
-    // DEL button bottom
-    var _tdDelY  = _tdBtnStartY + 5 * (_tdBtnH + _tdBtnGap) + _tdBtnGap + _tdBtnH;
-    var pivotY   = _tdDelY + 4;  // 4px gap below DEL button
-    this._tdPivotY = pivotY;     // store for physics loop
+    // ── TRAPDOOR — pivot above the curve, door swings open when ball exits
+    var pivotY   = floorY - turnR - 4;  // pivot just above the curved bottom
+    this._tdPivotY = pivotY;     // store for button layout — buttons end here
 
     // Trapdoor angular physics
     if (this._trapdoorAngle === undefined) this._trapdoorAngle = 0;
