@@ -753,7 +753,7 @@ async function pollPagesDeployment(token, repo) {
 
   card.style.display = 'block';
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  link.href = siteUrl;
+  link.href = siteUrl + '?v=' + Date.now();
 
   var startTime = Date.now();
   var maxWait   = 45000;  // 45 seconds max
