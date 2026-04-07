@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1508;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1509;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -816,6 +816,29 @@ class Game {
           }
         }
       }
+      // ── Chute ball buttons — drop balls ────────────────────────────────────
+      if (self._chuteButtonRects) {
+        for (var cbi2 = 0; cbi2 < self._chuteButtonRects.length; cbi2++) {
+          var cbr2 = self._chuteButtonRects[cbi2];
+          if (pos.x >= cbr2.x && pos.x <= cbr2.x + cbr2.w &&
+              pos.y >= cbr2.y && pos.y <= cbr2.y + cbr2.h) {
+            self._btnPressFlash = { type: cbr2.type, frame: self.frame };
+            if (window.Sound && Sound.uiTap) Sound.uiTap(0.28);
+            self._chuteDropBall(cbr2.type);
+            return;
+          }
+        }
+      }
+      // ── Chute delete toggle ────────────────────────────────────────────────
+      if (self._chuteDeleteRect) {
+        var dr = self._chuteDeleteRect;
+        if (pos.x >= dr.x && pos.x <= dr.x + dr.w &&
+            pos.y >= dr.y && pos.y <= dr.y + dr.h) {
+          self._toggleDeleteMode();
+          if (window.Sound && Sound.uiToggle) Sound.uiToggle(self._deleteMode);
+          return;
+        }
+      }
       // ── Ball selection: resting balls + balls within sling zone ────────────
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
       var zoneTop  = self.floorY() - zoneH2;
@@ -941,7 +964,7 @@ class Game {
             self._editorScrollPending  = false;
           }
           if (self._editorScrollDragging) {
-            var rawScroll = self._editorScrollStart - dragDelta;
+            var rawScroll = self._editorScrollStart + dragDelta;  // drag up (neg delta) = more negative scrollY = reveals more
             var maxScroll = -340;  // negative = panel slides up revealing more
             self._editorScrollY = Math.max(maxScroll, Math.min(0, rawScroll));
             return;
