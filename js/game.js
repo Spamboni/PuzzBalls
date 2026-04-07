@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1511;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1512;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -688,11 +688,80 @@ class Game {
         if (self._editorTubeMode && self._tubeModeBtns) {
           for (var tmbI2=0; tmbI2<self._tubeModeBtns.length; tmbI2++) {
             var tmb2=self._tubeModeBtns[tmbI2];
-            if (_px>=tmb2.x-4&&_px<=tmb2.x+tmb2.w+4&&pos.y>=tmb2.y-6&&pos.y<=tmb2.y+tmb2.h+6) {
+            if (_px>=tmb2.x-4&&_px<=tmb2.x+tmb2.w+4&&_py>=tmb2.y-6&&_py<=tmb2.y+tmb2.h+6) {
               self._tubeToolMode=tmb2.id;
               self._tubeSelectMode=(tmb2.id!=='build');
               self._tubeSelected=null; self._tubeRotateState=null; self._tubeLengthState=null;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            }
+          }
+        }
+        // Tube type buttons (STR/90°/45° etc)
+        if (self._editorTubeMode && self._tubeBtns) {
+          for (var ti5=0; ti5<self._tubeBtns.length; ti5++) {
+            var tb5=self._tubeBtns[ti5];
+            if (_px>=tb5.x-2&&_px<=tb5.x+tb5.w+2&&_py>=tb5.y-6&&_py<=tb5.y+tb5.h+6) {
+              self._tubeType=tb5.val;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            }
+          }
+        }
+        // Tube style buttons
+        if (self._editorTubeMode && self._tubeStyleBtns) {
+          for (var si5=0; si5<self._tubeStyleBtns.length; si5++) {
+            var sb5=self._tubeStyleBtns[si5];
+            if (_px>=sb5.x&&_px<=sb5.x+sb5.w&&_py>=sb5.y-4&&_py<=sb5.y+sb5.h+4) {
+              self._tubeStyle=sb5.val;
+              if(self._tubeSelected)self._tubeSelected.style=sb5.val;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            }
+          }
+        }
+        // Tube layer buttons
+        if (self._editorTubeMode && self._tubeLayerBtns) {
+          for (var li5=0; li5<self._tubeLayerBtns.length; li5++) {
+            var lb5=self._tubeLayerBtns[li5];
+            if (_px>=lb5.x&&_px<=lb5.x+lb5.w&&_py>=lb5.y-4&&_py<=lb5.y+lb5.h+4) {
+              self._tubeLayer=lb5.val;
+              if(self._tubeSelected)self._tubeSelected.layer=lb5.val;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
+            }
+          }
+        }
+        // Tube anchor buttons
+        if (self._editorTubeMode && self._tubeAnchorBtns) {
+          for (var ai5=0; ai5<self._tubeAnchorBtns.length; ai5++) {
+            var ab5=self._tubeAnchorBtns[ai5];
+            if (_px>=ab5.x&&_px<=ab5.x+ab5.w&&_py>=ab5.y-4&&_py<=ab5.y+ab5.h+4) {
+              self._tubeAnchor=ab5.val;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
+            }
+          }
+        }
+        // Tube DEL button
+        if (self._editorTubeMode && self._tubeDelBtn) {
+          var tdb2=self._tubeDelBtn;
+          if (_px>=tdb2.x&&_px<=tdb2.x+tdb2.w&&_py>=tdb2.y-4&&_py<=tdb2.y+tdb2.h+4) {
+            self._tubeDeleteMode=!self._tubeDeleteMode;
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._tubeDeleteMode); return;
+          }
+        }
+        // Tube sliders
+        if (self._editorTubeMode) {
+          var tubeSliders2 = [
+            { sl:self._tubeSliderLen, cb:function(v){self._tubeLength=v;if(self._tubeSelected){self._tubeSelected.length=v;self._tubeSelected.rebuild();}} },
+            { sl:self._tubeSliderSpd, cb:function(v){self._tubeSpeedMod=v;if(self._tubeSelected)self._tubeSelected.speedMod=v;} },
+            { sl:self._tubeSliderRot, cb:function(v){if(self._tubeSelected){self._tubeSelected.rotation=v*Math.PI/180;self._tubeSelected.rebuild();}} },
+          ];
+          for (var tsi3=0; tsi3<tubeSliders2.length; tsi3++) {
+            var tsl3=tubeSliders2[tsi3];
+            if (!tsl3.sl) continue;
+            if (_px>=tsl3.sl.trackX-16&&_px<=tsl3.sl.trackX+tsl3.sl.trackW+16&&
+                _py>=tsl3.sl.y-8&&_py<=tsl3.sl.y+tsl3.sl.h+8) {
+              var tt5=Math.max(0,Math.min(1,(_px-tsl3.sl.trackX)/tsl3.sl.trackW));
+              tsl3.cb(tsl3.sl.min+tt5*(tsl3.sl.max-tsl3.sl.min));
+              self._draggingTubeSlider=true; self._dragTubeSliderCb=tsl3.cb; self._dragTubeSliderDef=tsl3.sl;
+              if(window.Sound&&Sound.uiSlider)Sound.uiSlider(); return;
             }
           }
         }
@@ -892,12 +961,20 @@ class Game {
     function onMove(e) {
       e.preventDefault();
       var pos = getPos(e);
-      // Tube slider drag
+      // Tube slider drag (old path via _tubeDragSlider)
       if (self._tubeDragSlider) {
         var tsl2 = self._tubeDragSlider.sl;
-        var t3 = Math.max(0, Math.min(1, (pos.x - tsl2.trackX) / tsl2.trackW));  // X doesn't need scroll offset
+        var t3 = Math.max(0, Math.min(1, (pos.x - tsl2.trackX) / tsl2.trackW));
         var v3 = tsl2.min + t3 * (tsl2.max - tsl2.min);
         self._tubeDragSlider.cb(v3);
+        return;
+      }
+      // Tube slider drag (new path via _draggingTubeSlider)
+      if (self._draggingTubeSlider && self._dragTubeSliderDef && self._dragTubeSliderCb) {
+        var tsl4 = self._dragTubeSliderDef;
+        var t4 = Math.max(0, Math.min(1, (pos.x - tsl4.trackX) / tsl4.trackW));
+        self._dragTubeSliderCb(tsl4.min + t4 * (tsl4.max - tsl4.min));
+        if(window.Sound&&Sound.uiSlider)Sound.uiSlider();
         return;
       }
       // Tube piece drag
