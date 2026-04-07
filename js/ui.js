@@ -519,7 +519,7 @@ class UI {
         _addSlider(pane,'Size',       null, null, 6, 30,  1,    function(v){return v+'px';},       t.id, 'size');
         _addSlider(pane,'Velocity',   null, null, 0.3,3.0,0.05, function(v){return Math.round(v*100)+'%';},t.id,'velocity');
         _addSlider(pane,'Bounce',     null, null, 0.0,2.0,0.05, function(v){return Math.round(v*100)+'%';},t.id,'bounciness');
-        _addSlider(pane,'Bounce Decay',null,null, 0.0,1.0,0.02, function(v){return v.toFixed(2);},   t.id,'bounceDecay');
+        _addSlider(pane,'Bounce Decay',null,null, 0.05,0.95,0.02, function(v){return v.toFixed(2);},   t.id,'bounceDecay');
         _addSlider(pane,'Density',    null, null, 0.2,4.0,0.1,  function(v){return v.toFixed(1)+'x';}, t.id,'density');
         _addSlider(pane,'Ground Roll',null, null, 0.50,0.99,0.01,function(v){return Math.round(v*100)+'%';},t.id,'groundFriction');
         _addSlider(pane,'Brick Dmg',  null, null, 5, 60, 1,    function(v){return v+' hp';},        t.id,'baseDamage');
