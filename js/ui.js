@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1525;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1526;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1525</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1526</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -527,10 +527,11 @@ class UI {
         if (t.id==='sticky')   { _addSlider(pane,'Stick Threshold',null,null,2,25,0.5,function(v){return v+' px/f';},t.id,'stickThreshold'); _addSlider(pane,'Bounce Height Y',null,null,10,200,5,function(v){return v+'px';},t.id,'bounceHeightY'); _addSlider(pane,'Bounce Dist X',null,null,0,150,5,function(v){return v+'px';},t.id,'bounceDistanceX'); _addSlider(pane,'Dead Zone %',null,null,0,100,5,function(v){return v+'%';},t.id,'deadZonePercent'); }
         if (t.id==='splitter') { _addSlider(pane,'Split Count',null,null,1,5,1,function(v){return v+' balls';},t.id,'splitCount'); }
         if (t.id==='cube') {
-          _addSlider(pane,'HP (hits to shatter)',null,null,1,12,1,function(v){return v+' hits';},t.id,'hp');
-          _addSlider(pane,'Spin Speed',null,null,0.1,3.0,0.1,function(v){return v.toFixed(1)+'x';},t.id,'spin');
-          _addSlider(pane,'Chaos (spin randomness)',null,null,0,1,0.05,function(v){return Math.round(v*100)+'%';},t.id,'chaos');
-          _addSlider(pane,'Mass',null,null,0.5,3.0,0.1,function(v){return v.toFixed(1)+'x';},t.id,'mass');
+          window.Settings.cube = window.Settings.cube || {hp:4,spin:1.0,chaos:0.6,mass:1.4};
+          _addSlider(pane,'HP (hits to shatter)','Settings','cube.hp',1,12,1,function(v){return v+' hits';});
+          _addSlider(pane,'Spin Speed','Settings','cube.spin',0.1,3.0,0.1,function(v){return v.toFixed(1)+'x';});
+          _addSlider(pane,'Chaos (spin randomness)','Settings','cube.chaos',0,1,0.05,function(v){return Math.round(v*100)+'%';});
+          _addSlider(pane,'Mass','Settings','cube.mass',0.5,3.0,0.1,function(v){return v.toFixed(1)+'x';});
         }
         if (t.id==='splatter') {
           // Type picker
@@ -562,16 +563,18 @@ class UI {
             splatRow.appendChild(sb2);
           });
           pane.appendChild(splatRow);
-          _addSlider(pane,'Size (core radius)',null,null,10,80,2,function(v){return v+'px';},t.id,'size');
-          _addSlider(pane,'Drips',null,null,0,8,1,function(v){return v;},t.id,'drips');
-          _addSlider(pane,'Duration (sec)',null,null,1,30,1,function(v){return v+'s';},t.id,'duration');
+          window.Settings.splatter = window.Settings.splatter || {type:'dead',size:28,drips:3,duration:8};
+          _addSlider(pane,'Size (core radius)','Settings','splatter.size',10,80,2,function(v){return v+'px';});
+          _addSlider(pane,'Drips','Settings','splatter.drips',0,8,1,function(v){return v;});
+          _addSlider(pane,'Duration (sec)','Settings','splatter.duration',1,30,1,function(v){return v+'s';});
         }
         if (t.id==='gravity')  { _addSlider(pane,'Pull Range',null,null,50,280,5,function(v){return v+'px';},t.id,'gravRange'); _addSlider(pane,'Pull Strength',null,null,0.05,5.0,0.05,function(v){return v.toFixed(2);},t.id,'gravPull'); }
         if (t.id==='squiggly') {
-          _addSlider(pane,'Amplitude (AMP)',null,null,2,80,1,function(v){return v+'px';},t.id,'amp');
-          _addSlider(pane,'Frequency (FREQ)',null,null,0.01,0.3,0.005,function(v){return v.toFixed(3);},t.id,'freq');
-          _addSlider(pane,'Fade (end dampens)',null,null,0,1,0.05,function(v){return Math.round(v*100)+'%';},t.id,'fade');
-          _addSlider(pane,'Delay (start late)',null,null,0,0.9,0.05,function(v){return Math.round(v*100)+'%';},t.id,'delay');
+          window.Settings.squiggly = window.Settings.squiggly || {amp:18,freq:0.08,fade:0,delay:0,wave:'sine'};
+          _addSlider(pane,'Amplitude (AMP)','Settings','squiggly.amp',2,80,1,function(v){return v+'px';});
+          _addSlider(pane,'Frequency (FREQ)','Settings','squiggly.freq',0.01,0.3,0.005,function(v){return v.toFixed(3);});
+          _addSlider(pane,'Fade (end dampens)','Settings','squiggly.fade',0,1,0.05,function(v){return Math.round(v*100)+'%';});
+          _addSlider(pane,'Delay (start late)','Settings','squiggly.delay',0,0.9,0.05,function(v){return Math.round(v*100)+'%';});
           // Wave shape picker
           var waveRow = document.createElement('div');
           waveRow.style.cssText = 'display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;';
@@ -662,9 +665,20 @@ function _addSlider(container, label, objKey, propKey, min, max, step, fmt, ball
   var nameSpan = _el('span'); nameSpan.textContent = label.toUpperCase();
   var valSpan  = _el('span', 'setting-val');
 
-  var target  = ballType ? BallSettings[ballType] : (objKey === 'Settings' ? Settings : window[objKey]);
-  var key     = ballType ? ballProp : propKey;
-  var current = target ? target[key] : 0;
+  // Support dot-notation for nested Settings keys e.g. 'squiggly.amp'
+  var target, key;
+  if (ballType) {
+    target = BallSettings[ballType]; key = ballProp;
+  } else if (objKey === 'Settings' && propKey.indexOf('.') > -1) {
+    var parts = propKey.split('.');
+    target = Settings[parts[0]] = Settings[parts[0]] || {};
+    key = parts[1];
+  } else {
+    target = objKey === 'Settings' ? Settings : window[objKey];
+    key = propKey;
+  }
+
+  var current = target ? (target[key] !== undefined ? target[key] : 0) : 0;
   valSpan.textContent = fmt(current);
 
   lbl.appendChild(nameSpan); lbl.appendChild(valSpan);
@@ -675,7 +689,7 @@ function _addSlider(container, label, objKey, propKey, min, max, step, fmt, ball
   slider.addEventListener('input', function() {
     var v = parseFloat(slider.value);
     if (ballType) BallSettings[ballType][ballProp] = v;
-    else if (objKey === 'Settings') Settings[key] = v;
+    else if (target) target[key] = v;
     valSpan.textContent = fmt(v);
   });
 
