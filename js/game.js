@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1529;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1530;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1823,6 +1823,61 @@ class Game {
     if (this.target) this.target.update();
     Physics.stepSparks(this.sparks);
 
+    // ── Per-ball special physics (squiggly, cube rotation) ───────────────────
+    for (i = 0; i < this.objects.length; i++) {
+      var obj2 = this.objects[i];
+      if (obj2.dead) continue;
+
+      // Cube: update rotation matrix
+      if (obj2.type === BALL_TYPES.CUBE && !obj2._fromChute) {
+        var rx = obj2._cubeRX || 0, ry = obj2._cubeRY || 0, rz = obj2._cubeRZ || 0;
+        var spMult = (window.Settings && window.Settings.cube && window.Settings.cube.spin) || 1.0;
+        rx *= spMult; ry *= spMult; rz *= spMult;
+        var m = obj2._cubeRot || [1,0,0,0,1,0,0,0,1];
+        var cx2=Math.cos(rx),sx2=Math.sin(rx);
+        var m1=[m[0],m[1],m[2], m[3]*cx2+m[6]*sx2,m[4]*cx2+m[7]*sx2,m[5]*cx2+m[8]*sx2, -m[3]*sx2+m[6]*cx2,-m[4]*sx2+m[7]*cx2,-m[5]*sx2+m[8]*cx2];
+        var cy2=Math.cos(ry),sy2=Math.sin(ry);
+        var m2=[m1[0]*cy2-m1[6]*sy2,m1[1]*cy2-m1[7]*sy2,m1[2]*cy2-m1[8]*sy2, m1[3],m1[4],m1[5], m1[0]*sy2+m1[6]*cy2,m1[1]*sy2+m1[7]*cy2,m1[2]*sy2+m1[8]*cy2];
+        var cz2=Math.cos(rz),sz2=Math.sin(rz);
+        var m3=[m2[0]*cz2+m2[3]*sz2,m2[1]*cz2+m2[4]*sz2,m2[2]*cz2+m2[5]*sz2, -m2[0]*sz2+m2[3]*cz2,-m2[1]*sz2+m2[4]*cz2,-m2[2]*sz2+m2[5]*cz2, m2[6],m2[7],m2[8]];
+        obj2._cubeRot = m3;
+        // Spin decays very slowly — cube keeps spinning
+        obj2._cubeRX = (obj2._cubeRX||0) * 0.999;
+        obj2._cubeRY = (obj2._cubeRY||0) * 0.999;
+        obj2._cubeRZ = (obj2._cubeRZ||0) * 0.999;
+      }
+
+      // Squiggly: perpendicular sine-wave force
+      if (obj2.type === BALL_TYPES.SQUIGGLY && obj2.inFlight && !obj2.stuckTo && !obj2._fromChute) {
+        var sqT2 = (obj2._sqT || 0) + 1;
+        obj2._sqT = sqT2;
+        var _sqSet3 = (window.Settings && window.Settings.squiggly) || {};
+        var sqAmp2  = _sqSet3.amp   !== undefined ? _sqSet3.amp   : 18;
+        var sqFreq2 = _sqSet3.freq  !== undefined ? _sqSet3.freq  : 0.08;
+        var sqFade2 = _sqSet3.fade  !== undefined ? _sqSet3.fade  : 0;
+        var sqDelay2= _sqSet3.delay !== undefined ? _sqSet3.delay : 0;
+        var sqWave2 = _sqSet3.wave  !== undefined ? _sqSet3.wave  : 'sine';
+        var tDist2 = Math.hypot(obj2.x-(obj2._sqStartX||obj2.x), obj2.y-(obj2._sqStartY||obj2.y));
+        var progress2 = Math.min(1, tDist2/(obj2._sqTotalDist||400));
+        if (progress2 >= sqDelay2) {
+          var localT2 = (progress2-sqDelay2)/Math.max(0.01,1-sqDelay2);
+          var fadeScale2 = 1 - sqFade2*localT2;
+          var spd2 = Math.hypot(obj2.vx, obj2.vy);
+          if (spd2 > 0.1) {
+            var perpX2=-obj2.vy/spd2, perpY2=obj2.vx/spd2;
+            var phase2 = sqT2*sqFreq2*Math.PI*2;
+            var waveVal2=0;
+            if (sqWave2==='sine') waveVal2=Math.sin(phase2);
+            else if (sqWave2==='zigzag') waveVal2=(phase2%(Math.PI*2)<Math.PI)?1:-1;
+            else if (sqWave2==='square') { var sq2=Math.sin(phase2); waveVal2=sq2>0.3?1:(sq2<-0.3?-1:0); }
+            else if (sqWave2==='chaos') waveVal2=Math.sin(phase2)+0.5*Math.sin(phase2*2.7+1.3)+0.25*(Math.random()-0.5);
+            obj2.vx += perpX2 * waveVal2 * sqAmp2 * fadeScale2 * 0.55;
+            obj2.vy += perpY2 * waveVal2 * sqAmp2 * fadeScale2 * 0.55;
+          }
+        }
+      }
+    }
+
     // Collisions
     var toAdd = [];
     for (i = 0; i < this.objects.length; i++) {
@@ -1833,89 +1888,7 @@ class Game {
         if (hit) {
           this.collisions++;
           this.ui.setCollisions(this.collisions);
-          // ── Cube ball: update 3D rotation matrix ────────────────────────────
-        if (obj.type === BALL_TYPES.CUBE && !obj._fromChute) {
-          var rx = obj._cubeRX || 0, ry = obj._cubeRY || 0, rz = obj._cubeRZ || 0;
-          var spMult = obj._cubeSpin || 1.0;
-          rx *= spMult; ry *= spMult; rz *= spMult;
-          // Apply incremental rotations to matrix
-          var m = obj._cubeRot;
-          // Rotate X axis
-          var cx=Math.cos(rx),sx=Math.sin(rx);
-          var m1=[m[0],m[1],m[2],
-                  m[3]*cx+m[6]*sx, m[4]*cx+m[7]*sx, m[5]*cx+m[8]*sx,
-                  -m[3]*sx+m[6]*cx,-m[4]*sx+m[7]*cx,-m[5]*sx+m[8]*cx];
-          // Rotate Y axis
-          var cy=Math.cos(ry),sy=Math.sin(ry);
-          var m2=[m1[0]*cy-m1[6]*sy, m1[1]*cy-m1[7]*sy, m1[2]*cy-m1[8]*sy,
-                  m1[3],m1[4],m1[5],
-                  m1[0]*sy+m1[6]*cy, m1[1]*sy+m1[7]*cy, m1[2]*sy+m1[8]*cy];
-          // Rotate Z axis
-          var cz=Math.cos(rz),sz=Math.sin(rz);
-          var m3=[m2[0]*cz+m2[3]*sz, m2[1]*cz+m2[4]*sz, m2[2]*cz+m2[5]*sz,
-                  -m2[0]*sz+m2[3]*cz,-m2[1]*sz+m2[4]*cz,-m2[2]*sz+m2[5]*cz,
-                  m2[6],m2[7],m2[8]];
-          obj._cubeRot = m3;
-          // Shards updated in _drawCube since obj.dead may be true
-        }
-        // ── Squiggly ball: apply sine-wave perpendicular velocity ───────────
-        if (obj.type === BALL_TYPES.SQUIGGLY && obj.inFlight && !obj.stuckTo && !obj._fromChute) {
-          var sqT = (obj._sqT || 0) + 1;
-          obj._sqT = sqT;
-          // Re-read ALL settings live from Settings object
-          var _sqSet2 = (window.Settings && window.Settings.squiggly) || {};
-          var sqAmp  = _sqSet2.amp   !== undefined ? _sqSet2.amp   : 18;
-          var sqFreq = _sqSet2.freq  !== undefined ? _sqSet2.freq  : 0.08;
-          var sqFade = _sqSet2.fade  !== undefined ? _sqSet2.fade  : 0;
-          var sqDelay= _sqSet2.delay !== undefined ? _sqSet2.delay : 0;
-          var sqWave = _sqSet2.wave  !== undefined ? _sqSet2.wave  : 'sine';
-          // Travel distance so far
-          var tDist = Math.hypot(obj.x - (obj._sqStartX||obj.x), obj.y - (obj._sqStartY||obj.y));
-          var totalDist = obj._sqTotalDist || 400;
-          var progress = Math.min(1, tDist / totalDist);
-          // Delay
-          if (progress < sqDelay) { /* not yet */ }
-          else {
-            var localT = (progress - sqDelay) / Math.max(0.01, 1 - sqDelay);
-            var fadeScale = 1 - sqFade * localT;
-            // Perpendicular direction (rotate velocity 90°)
-            var spd = Math.hypot(obj.vx, obj.vy);
-            if (spd > 0.1) {
-              var perpX = -obj.vy / spd;
-              var perpY =  obj.vx / spd;
-              // Wave shape
-              var phase = sqT * sqFreq * Math.PI * 2;
-              var waveVal = 0;
-              if (sqWave === 'sine')   waveVal = Math.sin(phase);
-              else if (sqWave === 'zigzag') waveVal = (phase % (Math.PI*2) < Math.PI) ? 1 : -1;
-              else if (sqWave === 'square') {
-                var sq = Math.sin(phase);
-                waveVal = sq > 0.3 ? 1 : (sq < -0.3 ? -1 : 0);
-              } else if (sqWave === 'chaos') {
-                waveVal = Math.sin(phase) + 0.5 * Math.sin(phase * 2.7 + 1.3) + 0.25 * (Math.random()-0.5);
-              }
-              var force = waveVal * sqAmp * fadeScale * 0.55;  // stronger zigzag
-              obj.vx += perpX * force;
-              obj.vy += perpY * force;
-            }
-          }
-          // Wobble sound — very quiet oscillating tone
-          if (sqT % 8 === 0 && window.Sound && Sound.getCtx) {
-            var sc2 = Sound.getCtx();
-            if (sc2) {
-              var g2s = sc2.createGain(); g2s.connect(sc2.destination);
-              g2s.gain.setValueAtTime(0.018, sc2.currentTime);
-              g2s.gain.exponentialRampToValueAtTime(0.001, sc2.currentTime + 0.12);
-              var o2s = sc2.createOscillator();
-              o2s.connect(g2s);
-              o2s.type = 'sine';
-              var wbFreq = 180 + Math.sin(sqT * sqFreq * Math.PI * 2) * 80;
-              o2s.frequency.setValueAtTime(wbFreq, sc2.currentTime);
-              o2s.start(sc2.currentTime); o2s.stop(sc2.currentTime + 0.12);
-            }
-          }
-        }
-        // ── Splatter ball: hits walls/floor/ceiling ──────────────────────────
+          // ── Splatter ball: hits walls/floor/ceiling ──────────────────────────
         if (obj.type === BALL_TYPES.SPLATTER && obj.inFlight && !obj._splattered && !obj._fromChute) {
           var g3 = this._chuteGeom();
           var hitWall = false, splatX = obj.x, splatY = obj.y, splatNX = 0, splatNY = -1;
@@ -1941,22 +1914,21 @@ class Game {
           }
         }
         // ── Cube ball: on wall hit, randomize spin (with cooldown) ────────────
-        if (obj.type === BALL_TYPES.CUBE && !obj._fromChute && !obj._cubeWallCool) {
-          var hitAny = false;
-          var floorYC = this.floorY(), gC2 = this._chuteGeom();
-          if (obj.y + obj.r >= floorYC-2) { hitAny=true; if(obj.vy>0)obj.vy*=-0.72; }
-          if (obj.y - obj.r <= 2)          { hitAny=true; if(obj.vy<0)obj.vy*=-0.72; }
-          if (obj.x - obj.r <= 2)          { hitAny=true; if(obj.vx<0)obj.vx*=-0.72; }
-          if (obj.x + obj.r >= gC2.LEFT_X-2){ hitAny=true; if(obj.vx>0)obj.vx*=-0.72; }
-          if (hitAny) {
-            var impMag = Math.hypot(obj.vx, obj.vy);
-            this._cubeOnHit(obj, impMag * 0.12);
-            obj._cubeHP = (obj._cubeHP||1) - Math.max(0.2, impMag*0.04);
+        // Cube wall bounce — track previous velocity to detect bounce
+        if (obj.type === BALL_TYPES.CUBE && !obj._fromChute) {
+          var _pvx = obj._prevVx || 0, _pvy = obj._prevVy || 0;
+          var velFlipX = (obj.vx * _pvx < -0.1);
+          var velFlipY = (obj.vy * _pvy < -0.1);
+          if ((velFlipX || velFlipY) && !obj._cubeWallCool) {
+            var impMag2 = Math.hypot(_pvx, _pvy);
+            this._cubeOnHit(obj, impMag2 * 0.15);
+            obj._cubeHP = (obj._cubeHP||1) - Math.max(0.15, impMag2*0.03);
             if (obj._cubeHP <= 0) this._cubeShatter(obj);
-            obj._cubeWallCool = 12;
+            obj._cubeWallCool = 8;
           }
+          obj._prevVx = obj.vx; obj._prevVy = obj.vy;
+          if (obj._cubeWallCool > 0) obj._cubeWallCool--;
         }
-        if (obj._cubeWallCool && obj._cubeWallCool > 0) obj._cubeWallCool--;
         // Sticky knock — check if a fast ball hits a wall-stuck sticky
           // Apply splat effects at this collision point
           if (this.splats && this.splats.length > 0) {
