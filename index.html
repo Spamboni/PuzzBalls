@@ -13,6 +13,11 @@
   <title>PuzzBalls</title>
   <link rel="stylesheet" href="css/styles.css?v=1512">
   <link rel="manifest" href="manifest.json?v=1512">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/PuzzBalls/sw.js').catch(function(){});
+    }
+  </script>
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#030A18">
 </head>
