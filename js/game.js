@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1502;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1504;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -921,8 +921,8 @@ class Game {
             self._editorScrollPending  = false;
           }
           if (self._editorScrollDragging) {
-            var rawScroll = self._editorScrollStart + dragDelta;
-            var maxScroll = -340;  // enough to see full editor
+            var rawScroll = self._editorScrollStart - dragDelta;  // inverted: drag up reveals more
+            var maxScroll = 340;   // max scroll distance to reveal full editor
             self._editorScrollY = Math.max(maxScroll, Math.min(0, rawScroll));
             return;
           }
@@ -3226,7 +3226,7 @@ class Game {
     ctx.beginPath(); ctx.moveTo(0, floorY+1); ctx.lineTo(W, floorY+1); ctx.stroke();
 
     var vSY   = this._editorScrollY || 0;  // editor panel scroll offset
-    var cY    = panelY - vSY;             // current Y cursor (advances downward)
+    var cY    = panelY - vSY;             // vSY positive = panel slides up = more revealed
     var mono  = "Share Tech Mono,monospace";
     var self  = this;
 
@@ -4512,15 +4512,14 @@ class Game {
   }
 
   _drawHudClearButtons() {
-    // Three compact clear buttons in top-right area of HUD (below title bar)
     var ctx = this.ctx, W = this.W;
+    // ── CLR BRICKS / CLR BALLS / CLR TUBES — top right ───────────────────────
     var btnW = 56, btnH = 20, gap = 4;
     var totalW = 3 * btnW + 2 * gap;
     var startX = W - totalW - 8;
-    var btnY2 = 44;  // below the title/back button row
-    var labels = ['CLR ⧬','CLR ◎','CLR 空'];
+    var btnY2 = 44;
     var labels2 = ['BRICKS','BALLS','TUBES'];
-    var colors = ['#ff6600','#ff4466','#00ffaa'];
+    var colors  = ['#ff6600','#ff4466','#00ffaa'];
     this._hudClearBtns = [];
     for (var ci = 0; ci < 3; ci++) {
       var bx2 = startX + ci * (btnW + gap);
@@ -4533,30 +4532,27 @@ class Game {
       ctx.fillText(labels2[ci], bx2 + btnW/2, btnY2 + btnH/2);
       this._hudClearBtns.push({ x:bx2, y:btnY2, w:btnW, h:btnH, type:ci });
     }
-    // SAVE/LOAD level buttons — left of center in top bar, avoids ⟳ and ⚙ HTML buttons
-    if (!this._editorMode) {
-      var slBtnW = 44, slBtnH = 20, slY = 10, slGap = 4;
-      // Place centered-left: after the back arrow (~60px) with some gap
-      var saveLX = 70;
-      var loadLX = saveLX + slBtnW + slGap;
-      ctx.fillStyle = 'rgba(0,8,22,0.85)';
-      ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.fill();
-      ctx.strokeStyle = '#00ff8899'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
-      ctx.fillStyle = '#00ff88'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('💾 SAVE', saveLX + slBtnW/2, slY + slBtnH/2);
-      this._hudSaveLevelBtn = { x:saveLX, y:slY, w:slBtnW, h:slBtnH };
-
-      ctx.fillStyle = 'rgba(0,8,22,0.85)';
-      ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.fill();
-      ctx.strokeStyle = '#4488ff99'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
-      ctx.fillStyle = '#88bbff'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('📂 LOAD', loadLX + slBtnW/2, slY + slBtnH/2);
-      this._hudLoadLevelBtn = { x:loadLX, y:slY, w:slBtnW, h:slBtnH };
-    }
+    // ── SAVE/LOAD level buttons — top right, left of ⚙ ──────────────────────
+    // ⚙ settings button is at ~W-36. Place SAVE/LOAD just left of it.
+    var slBtnW = 44, slBtnH = 20, slY = 10, slGap = 4;
+    var loadLX  = W - 40 - slBtnW;
+    var saveLX  = loadLX - slBtnW - slGap;
+    ctx.fillStyle = 'rgba(0,8,22,0.85)';
+    ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.fill();
+    ctx.strokeStyle = '#00ff8899'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
+    ctx.fillStyle = '#00ff88'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\u{1F4BE} SAVE', saveLX + slBtnW/2, slY + slBtnH/2);
+    this._hudSaveLevelBtn = { x:saveLX, y:slY, w:slBtnW, h:slBtnH };
+    ctx.fillStyle = 'rgba(0,8,22,0.85)';
+    ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.fill();
+    ctx.strokeStyle = '#4488ff99'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
+    ctx.fillStyle = '#88bbff'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\u{1F4C2} LOAD', loadLX + slBtnW/2, slY + slBtnH/2);
+    this._hudLoadLevelBtn = { x:loadLX, y:slY, w:slBtnW, h:slBtnH };
   }
 
   _drawSpeedSlider() {
