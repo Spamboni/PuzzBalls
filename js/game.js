@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1530;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1531;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -318,7 +318,8 @@ class Game {
       obj._cubeRZ = (Math.random()-0.5) * spd * 0.8;
       obj._cubeShattering = false;
       obj._cubeShards = null;
-      obj.r = 15;
+      var cubeSize = (window.Settings && window.Settings.cube && window.Settings.cube.size) || 1.0;
+      obj.r = Math.round(9 * cubeSize);
     }
     if (type === BALL_TYPES.SQUIGGLY) {
       var sqSet = (window.Settings && window.Settings.squiggly) || {};
@@ -328,6 +329,8 @@ class Game {
       obj._sqDelay = sqSet.delay !== undefined ? sqSet.delay : 0.0;
       obj._sqWave  = sqSet.wave  !== undefined ? sqSet.wave  : 'sine';
       obj._sqT     = 0;
+      obj._ghostVx = 0; obj._ghostVy = 0;
+      obj._ghostX  = 0; obj._ghostY  = 0;
     }
     if (type === BALL_TYPES.EXPLODER) {
       obj._explodeTier = Math.ceil(Math.random() * 3);
@@ -1530,7 +1533,7 @@ class Game {
           obj.inFlight = true;
           obj._fromChute = false;   // now active — bounces count, splits trigger
           if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
-          if (obj.type === BALL_TYPES.SQUIGGLY) { obj._sqStartX=obj.x; obj._sqStartY=obj.y; obj._sqTotalDist=Math.hypot(obj.vx,obj.vy)*80+400; }
+          if (obj.type === BALL_TYPES.SQUIGGLY) { obj._sqStartX=obj.x; obj._sqStartY=obj.y; obj._sqTotalDist=Math.hypot(obj.vx,obj.vy)*80+400; obj._ghostX=obj.x; obj._ghostY=obj.y; obj._ghostVx=obj.vx; obj._ghostVy=obj.vy; }
           if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
         }
       } else {
@@ -1546,7 +1549,7 @@ class Game {
           obj.inFlight = true;
           obj._fromChute = false;   // now active
           if (obj.type === BALL_TYPES.GRAVITY) { obj.gravActive = true; obj._slungIds = []; }
-          if (obj.type === BALL_TYPES.SQUIGGLY) { obj._sqStartX=obj.x; obj._sqStartY=obj.y; obj._sqTotalDist=Math.hypot(obj.vx,obj.vy)*80+400; }
+          if (obj.type === BALL_TYPES.SQUIGGLY) { obj._sqStartX=obj.x; obj._sqStartY=obj.y; obj._sqTotalDist=Math.hypot(obj.vx,obj.vy)*80+400; obj._ghostX=obj.x; obj._ghostY=obj.y; obj._ghostVx=obj.vx; obj._ghostVy=obj.vy; }
           if (window.Sound) Sound.snap(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
         }
       }
@@ -1847,7 +1850,8 @@ class Game {
         obj2._cubeRZ = (obj2._cubeRZ||0) * 0.999;
       }
 
-      // Squiggly: perpendicular sine-wave force
+      // Squiggly: ghost-trajectory approach
+      // Ghost follows a normal-ball arc. Ball is placed offset from ghost perpendicularly.
       if (obj2.type === BALL_TYPES.SQUIGGLY && obj2.inFlight && !obj2.stuckTo && !obj2._fromChute) {
         var sqT2 = (obj2._sqT || 0) + 1;
         obj2._sqT = sqT2;
@@ -1857,23 +1861,56 @@ class Game {
         var sqFade2 = _sqSet3.fade  !== undefined ? _sqSet3.fade  : 0;
         var sqDelay2= _sqSet3.delay !== undefined ? _sqSet3.delay : 0;
         var sqWave2 = _sqSet3.wave  !== undefined ? _sqSet3.wave  : 'sine';
-        var tDist2 = Math.hypot(obj2.x-(obj2._sqStartX||obj2.x), obj2.y-(obj2._sqStartY||obj2.y));
+
+        // Step ghost ball (pure physics, no wiggle)
+        var grav2 = 0.4 * (window.Settings ? Settings.gravityMult : 1.0);
+        var bs2 = BallSettings.squiggly || BallSettings.bouncer;
+        var floorY2 = this.floorY();
+        var W2 = this.W;
+        obj2._ghostVy = (obj2._ghostVy||0) + grav2;
+        obj2._ghostVx = (obj2._ghostVx||0);
+        obj2._ghostX  = (obj2._ghostX||obj2.x) + obj2._ghostVx;
+        obj2._ghostY  = (obj2._ghostY||obj2.y) + obj2._ghostVy;
+        var bd2 = bs2.bounceDecay !== undefined ? bs2.bounceDecay : 0.52;
+        var gf2 = bs2.groundFriction !== undefined ? bs2.groundFriction : 0.82;
+        // Ghost wall bounces
+        if (obj2._ghostX - obj2.r < 0)   { obj2._ghostX = obj2.r;      obj2._ghostVx = Math.abs(obj2._ghostVx) * 0.75; }
+        if (obj2._ghostX + obj2.r > W2)   { obj2._ghostX = W2-obj2.r;  obj2._ghostVx = -Math.abs(obj2._ghostVx) * 0.75; }
+        if (obj2._ghostY - obj2.r < 0)    { obj2._ghostY = obj2.r;     obj2._ghostVy = Math.abs(obj2._ghostVy) * bd2; }
+        if (obj2._ghostY + obj2.r >= floorY2) {
+          obj2._ghostY = floorY2 - obj2.r;
+          obj2._ghostVy = -Math.abs(obj2._ghostVy) * bd2;
+          obj2._ghostVx *= gf2;
+          if (Math.abs(obj2._ghostVy) < 1.5) { obj2._ghostVy = 0; }
+        }
+
+        // Compute wiggle offset perpendicular to ghost velocity
+        var gspd = Math.hypot(obj2._ghostVx, obj2._ghostVy);
+        var tDist2 = Math.hypot(obj2._ghostX-(obj2._sqStartX||obj2._ghostX), obj2._ghostY-(obj2._sqStartY||obj2._ghostY));
         var progress2 = Math.min(1, tDist2/(obj2._sqTotalDist||400));
-        if (progress2 >= sqDelay2) {
+        var offset = 0;
+        if (progress2 >= sqDelay2 && gspd > 0.1) {
           var localT2 = (progress2-sqDelay2)/Math.max(0.01,1-sqDelay2);
           var fadeScale2 = 1 - sqFade2*localT2;
-          var spd2 = Math.hypot(obj2.vx, obj2.vy);
-          if (spd2 > 0.1) {
-            var perpX2=-obj2.vy/spd2, perpY2=obj2.vx/spd2;
-            var phase2 = sqT2*sqFreq2*Math.PI*2;
-            var waveVal2=0;
-            if (sqWave2==='sine') waveVal2=Math.sin(phase2);
-            else if (sqWave2==='zigzag') waveVal2=(phase2%(Math.PI*2)<Math.PI)?1:-1;
-            else if (sqWave2==='square') { var sq2=Math.sin(phase2); waveVal2=sq2>0.3?1:(sq2<-0.3?-1:0); }
-            else if (sqWave2==='chaos') waveVal2=Math.sin(phase2)+0.5*Math.sin(phase2*2.7+1.3)+0.25*(Math.random()-0.5);
-            obj2.vx += perpX2 * waveVal2 * sqAmp2 * fadeScale2 * 0.55;
-            obj2.vy += perpY2 * waveVal2 * sqAmp2 * fadeScale2 * 0.55;
-          }
+          var phase2 = sqT2*sqFreq2*Math.PI*2;
+          var waveVal2=0;
+          if (sqWave2==='sine') waveVal2=Math.sin(phase2);
+          else if (sqWave2==='zigzag') waveVal2=(phase2%(Math.PI*2)<Math.PI)?1:-1;
+          else if (sqWave2==='square') { var sq2b=Math.sin(phase2); waveVal2=sq2b>0.3?1:(sq2b<-0.3?-1:0); }
+          else if (sqWave2==='chaos') waveVal2=Math.sin(phase2)+0.5*Math.sin(phase2*2.7+1.3)+0.25*(Math.random()-0.5);
+          offset = waveVal2 * sqAmp2 * fadeScale2;
+        }
+        // Perpendicular direction to ghost velocity
+        if (gspd > 0.1) {
+          var perpX2 = -obj2._ghostVy/gspd, perpY2 = obj2._ghostVx/gspd;
+          obj2.x = obj2._ghostX + perpX2 * offset;
+          obj2.y = obj2._ghostY + perpY2 * offset;
+          // Ball velocity = ghost velocity (for proper collision response)
+          obj2.vx = obj2._ghostVx;
+          obj2.vy = obj2._ghostVy;
+        } else {
+          obj2.x = obj2._ghostX; obj2.y = obj2._ghostY;
+          obj2.vx = obj2._ghostVx; obj2.vy = obj2._ghostVy;
         }
       }
     }
@@ -2060,6 +2097,11 @@ class Game {
       for (j = 0; j < this.objects.length; j++) {
         var ball = this.objects[j];
         if (ball.dead || ball.stuckTo === '_wall_') continue;  // stuck ball = no more damage
+        // Squiggly: sync ghost to actual velocity after brick collision
+        if (ball.type === BALL_TYPES.SQUIGGLY && ball._ghostX !== undefined) {
+          ball._ghostX = ball.x; ball._ghostY = ball.y;
+          ball._ghostVx = ball.vx; ball._ghostVy = ball.vy;
+        }
 
         // Splatter ball hits brick — create splat and die
         if (ball.type === BALL_TYPES.SPLATTER && !ball._splattered && !ball._fromChute) {
