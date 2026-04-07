@@ -756,17 +756,26 @@ async function pollPagesDeployment(token, repo) {
   link.href = siteUrl + '?v=' + Date.now();
 
   var startTime = Date.now();
-  var maxWait   = 45000;  // 45 seconds max
+  var maxWait   = 40000;  // 40 seconds max
   var pollInterval = 4000; // check every 4 seconds
   var lastDeployId = null;
+  var playShown = false;
 
   function tick() {
     var ms = Date.now() - startTime;
     var sec = Math.floor(ms / 1000);
     elapsed.textContent = sec + 's';
-    // Animate bar 0→90% over 60s, then slow down
-    var pct = Math.min(90, (ms / 60000) * 90);
+    // Animate bar 0→100% over 40s
+    var pct = Math.min(99, (ms / 40000) * 100);
     bar.style.width = pct + '%';
+    // Show play button after 40 seconds regardless
+    if (ms >= 40000 && !playShown) {
+      playShown = true;
+      link.style.display = 'inline-block';
+      badge.className = 'status-badge visible success';
+      badge.innerHTML = '✅ Ready! (~' + sec + 's)';
+      log('🌐 Site live at: ' + siteUrl, 'ok');
+    }
   }
 
   var tickInterval = setInterval(tick, 500);
@@ -832,7 +841,6 @@ async function pollPagesDeployment(token, repo) {
     if (Date.now() - startTime < maxWait) {
       setTimeout(checkStatus, pollInterval);
     } else {
-      // Timed out — site is probably live, GitHub just didn't report it
       done(true, true);
     }
   }
@@ -852,6 +860,7 @@ async function pollPagesDeployment(token, repo) {
         ? '✅ Live! (~' + sec + 's)'
         : '✅ Live in ' + sec + 's!';
       link.style.display = 'inline-block';
+      playShown = true;
       log('🌐 Site live at: ' + siteUrl, 'ok');
     } else {
       badge.className = 'status-badge visible error';
