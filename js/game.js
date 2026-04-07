@@ -439,10 +439,10 @@ class Game {
       }
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
-        var _vSY = self._editorScrollY || 0;  // negative when scrolled
-        var _py  = pos.y - _vSY;  // convert screen tap to panel coord space
+        var _vSY = self._editorScrollY || 0;
+        var _py  = pos.y - _vSY;  // offset screen tap to match translated canvas
         var _px  = pos.x;
-        var inPanel = pos.y >= self.floorY() - 5;  // -5px buffer so tabs at floorY register
+        var inPanel = _py >= self.floorY() - 5;
 
         // ── Top-bar buttons (screen coords, no scroll offset) ─────────────────
         // DONE
@@ -827,8 +827,9 @@ class Game {
             }
           }
         }
-        // Scroll — drag anywhere in panel that didn't hit a button
-        if (inPanel) {
+        // Scroll handle — chute strip (right side, full height when editor open)
+        var chuteX2 = self.W - 55;
+        if (pos.x >= chuteX2) {
           self._editorScrollPending=true; self._editorScrollDragging=false;
           self._editorScrollStart=self._editorScrollY||0;
           self._editorScrollDragY=pos.y; return;
@@ -1040,8 +1041,8 @@ class Game {
             self._editorScrollPending  = false;
           }
           if (self._editorScrollDragging) {
-            var rawScroll = self._editorScrollStart + dragDelta;  // drag up (neg delta) = more negative scrollY = reveals more
-            var maxScroll = -340;  // negative = panel slides up revealing more
+            var rawScroll = self._editorScrollStart + dragDelta;
+            var maxScroll = -(self.H * 0.7);  // scroll up enough to see full editor
             self._editorScrollY = Math.max(maxScroll, Math.min(0, rawScroll));
             return;
           }
@@ -2736,7 +2737,9 @@ class Game {
 
   _draw() {
     var ctx = this.ctx, W = this.W, H = this.H, floorY = this.floorY();
+    var vSY = this._editorMode ? (this._editorScrollY || 0) : 0;
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
+    if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
 
@@ -2763,6 +2766,7 @@ class Game {
     if (this.sling) this._drawSling();
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
+    if (vSY !== 0) ctx.restore();
     this._drawHudClearButtons();
     if (!this._editorMode) {
       this._drawSpeedSlider();
@@ -3345,8 +3349,8 @@ class Game {
     ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(0, floorY+1); ctx.lineTo(W, floorY+1); ctx.stroke();
 
-    var vSY   = this._editorScrollY || 0;  // editor panel scroll offset
-    var cY    = panelY - vSY;             // vSY positive = panel slides up = more revealed
+    var vSY   = 0;  // scroll handled by canvas translate in _draw
+    var cY    = panelY;
     var mono  = "Share Tech Mono,monospace";
     var self  = this;
 
