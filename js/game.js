@@ -778,11 +778,8 @@ class Game {
               self._neonAlert('No saved presets yet.\nUse SAVE to save current settings as a preset.');
             } else {
               var list = names.map(function(n,i){return (i+1)+'. '+n;}).join('\n');
-              var _presetOpts = names.map(function(n,i){return {label:(i+1)+'. '+n, value:n};});
-              self._neonPicker('LOAD PRESET', _presetOpts, function(choice) {
-              if (choice !== null) {
-                var picked = choice;
-                if (savedPresets[picked]) {
+              self._neonPresetLoad(savedPresets, names, function(picked) {
+                if (picked && savedPresets[picked]) {
                   var p = savedPresets[picked];
                   window.BrickDefaults = window.BrickDefaults || {};
                   var bd = window.BrickDefaults;
@@ -798,10 +795,7 @@ class Game {
                   if (p.spinDist !== undefined) bd.spinDist = p.spinDist;
                   self._editorCurrentPreset = picked;
                   if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
-                } else {
-                  self._neonAlert('Preset "'+picked+'" not found.');
                 }
-              }
               });
             }
             return;
@@ -4476,10 +4470,92 @@ class Game {
     if (window.Sound && Sound.uiTap) Sound.uiTap(0.18);
   }
 
+  _neonPresetLoad(presets, names, callback) {
+    var self = this;
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.50);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:60px;box-sizing:border-box;';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:rgba(3,14,37,0.95);border:1.5px solid #00ccff;border-radius:10px;padding:14px;width:90vw;max-width:340px;box-shadow:0 0 30px rgba(0,200,255,0.25);font-family:Share Tech Mono,monospace;max-height:75vh;display:flex;flex-direction:column;';
+    var title = document.createElement('div');
+    title.style.cssText = 'color:#00e5ff;font-size:12px;font-weight:bold;letter-spacing:2px;margin-bottom:10px;';
+    title.textContent = 'LOAD PRESET';
+    panel.appendChild(title);
+    var cols = document.createElement('div');
+    cols.style.cssText = 'display:flex;gap:10px;flex:1;min-height:0;overflow:hidden;';
+    var listCol = document.createElement('div');
+    listCol.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;';
+    var previewCol = document.createElement('div');
+    previewCol.style.cssText = 'width:110px;display:flex;flex-direction:column;gap:6px;flex-shrink:0;';
+    var previewCanvas = document.createElement('canvas');
+    previewCanvas.width = 110; previewCanvas.height = 80;
+    previewCanvas.style.cssText = 'background:rgba(0,8,22,0.9);border:1px solid #00ccff33;border-radius:4px;display:block;';
+    previewCol.appendChild(previewCanvas);
+    var statEl = document.createElement('div');
+    statEl.style.cssText = 'color:#00ccff88;font-size:9px;line-height:1.7;white-space:pre;';
+    statEl.textContent = 'tap to preview';
+    previewCol.appendChild(statEl);
+    cols.appendChild(listCol); cols.appendChild(previewCol);
+    panel.appendChild(cols);
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;margin-top:10px;';
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'CANCEL';
+    cancelBtn.style.cssText = 'flex:1;background:rgba(255,50,50,0.1);border:1px solid #ff306055;color:#ff6080;font-family:Share Tech Mono,monospace;font-size:11px;padding:8px;border-radius:5px;cursor:pointer;';
+    var loadBtn = document.createElement('button');
+    loadBtn.textContent = 'LOAD';
+    loadBtn.disabled = true;
+    loadBtn.style.cssText = 'flex:1;background:rgba(0,255,136,0.15);border:1px solid #00ff88;color:#00ff88;font-family:Share Tech Mono,monospace;font-size:11px;padding:8px;border-radius:5px;cursor:pointer;opacity:0.35;';
+    btnRow.appendChild(cancelBtn); btnRow.appendChild(loadBtn);
+    panel.appendChild(btnRow);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    var selectedName = null, btnEls = [];
+    function drawPreview(p) {
+      var ctx2 = previewCanvas.getContext('2d');
+      ctx2.clearRect(0,0,110,80);
+      ctx2.fillStyle = 'rgba(0,8,22,0.95)'; ctx2.fillRect(0,0,110,80);
+      var w = p.rectW||70, h = p.rectH||22;
+      var scale = Math.min(90/w, 60/h, 1.5);
+      var bw = w*scale, bh = h*scale;
+      var bx = 55-bw/2, by = 38-bh/2;
+      ctx2.shadowColor='#00ccff'; ctx2.shadowBlur=8;
+      ctx2.fillStyle='rgba(0,180,255,0.2)';
+      ctx2.beginPath(); ctx2.roundRect(bx,by,bw,bh,2); ctx2.fill();
+      ctx2.strokeStyle='#00ccff'; ctx2.lineWidth=1.5;
+      ctx2.beginPath(); ctx2.roundRect(bx,by,bw,bh,2); ctx2.stroke();
+      ctx2.shadowBlur=0;
+      ctx2.fillStyle='#00ccff66'; ctx2.font="8px 'Share Tech Mono',monospace";
+      ctx2.textAlign='center';
+      ctx2.fillText(Math.round(w)+'×'+Math.round(h)+'px', 55, 72);
+    }
+    function showPreview(name, p) {
+      drawPreview(p);
+      statEl.textContent = 'HP: '+(p.rectHP||100)+'\nDENS: '+((p.density||1).toFixed(1))+'\nBNCE: '+((p.wallBounce||0.45).toFixed(2))+'\nDIST: '+(p.maxTravel||60)+'px';
+    }
+    names.forEach(function(name) {
+      var btn = document.createElement('button');
+      btn.textContent = name;
+      btn.style.cssText = 'background:rgba(0,200,255,0.05);border:1px solid #00ccff22;color:#00ccff77;font-family:Share Tech Mono,monospace;font-size:11px;padding:8px 10px;border-radius:4px;cursor:pointer;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      btn.addEventListener('click', function() {
+        selectedName = name;
+        btnEls.forEach(function(b){ b.style.background='rgba(0,200,255,0.05)'; b.style.borderColor='#00ccff22'; b.style.color='#00ccff77'; });
+        btn.style.background='rgba(0,200,255,0.2)'; btn.style.borderColor='#00ccff'; btn.style.color='#00e5ff';
+        loadBtn.disabled=false; loadBtn.style.opacity='1';
+        showPreview(name, presets[name]);
+        if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15);
+      });
+      btnEls.push(btn); listCol.appendChild(btn);
+    });
+    function close(picked) { document.body.removeChild(overlay); callback(picked); }
+    cancelBtn.addEventListener('click', function(){ close(null); });
+    loadBtn.addEventListener('click', function(){ if(selectedName) close(selectedName); });
+    overlay.addEventListener('click', function(e){ if(e.target===overlay) close(null); });
+  }
+
 // ── Neon-styled prompt overlay ────────────────────────────────────────────
   _neonPrompt(title, defaultVal, callback) {
     var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.50);z-index:9999;display:flex;align-items:center;justify-content:center;';
     var box = document.createElement('div');
     box.style.cssText = 'background:#030e25;border:1.5px solid #00ccff;border-radius:10px;padding:20px 18px 16px;width:82vw;max-width:320px;box-shadow:0 0 30px rgba(0,200,255,0.3);font-family:Share Tech Mono,monospace;';
     var titleEl = document.createElement('div');
@@ -4511,7 +4587,7 @@ class Game {
 
   _neonAlert(title, callback) {
     var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.50);z-index:9999;display:flex;align-items:center;justify-content:center;';
     var box = document.createElement('div');
     box.style.cssText = 'background:#030e25;border:1.5px solid #ffaa00;border-radius:10px;padding:20px 18px 16px;width:82vw;max-width:320px;box-shadow:0 0 30px rgba(255,170,0,0.25);font-family:Share Tech Mono,monospace;';
     var titleEl = document.createElement('div');
@@ -4531,7 +4607,7 @@ class Game {
   _neonPicker(title, options, callback) {
     // options: array of {label, value}
     var overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.88);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.50);z-index:9999;display:flex;align-items:center;justify-content:center;';
     var box = document.createElement('div');
     box.style.cssText = 'background:#030e25;border:1.5px solid #cc44ff;border-radius:10px;padding:16px 14px;width:82vw;max-width:300px;box-shadow:0 0 30px rgba(200,68,255,0.25);font-family:Share Tech Mono,monospace;';
     var titleEl = document.createElement('div');
