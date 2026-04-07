@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1505;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1506;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -439,9 +439,10 @@ class Game {
       }
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
-        var _py  = pos.y + Math.abs(self._editorScrollY || 0);
+        var _vSY = self._editorScrollY || 0;  // negative when scrolled
+        var _py  = pos.y - _vSY;  // convert screen tap to panel coord space
         var _px  = pos.x;
-        var inPanel = _py >= self.floorY();
+        var inPanel = pos.y >= self.floorY();  // use raw screen Y for in/out panel
 
         // ── Top-bar buttons (screen coords, no scroll offset) ─────────────────
         // DONE
@@ -962,7 +963,7 @@ class Game {
         self.brickSpeedMult = Math.max(0, Math.min(1, (pos.x - br2.x) / br2.w));
         return;
       }
-      if (self._draggingSlider && self._sliderRect) {
+      if (!self._editorBlockSliders && self._draggingSlider && self._sliderRect) {
         var sr = self._sliderRect;
         var t  = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
         self.speedMult = 0.125 + t * 0.875;
@@ -2695,9 +2696,8 @@ class Game {
   toggleEditor() {
     this._editorMode = !this._editorMode;
     if (this._editorMode) {
-      // Clear speed slider rects so they can't be hit-tested while editor is open
-      this._sliderRect = null; this._brickSliderRect = null;
-      this._zoneSliderRect = null; this._tubeSliderRect = null;
+      // Block slider hit-testing while editor is open (rects restored on close)
+      this._editorBlockSliders = true;
       this._editorBrickType   = 'breakable_brick';
       this._editorDragging    = null;
       this._editorSelected    = null;
@@ -2709,7 +2709,9 @@ class Game {
       if (window.Sound && Sound.editorOpen) Sound.editorOpen();  // default ⊕ROT
     } else {
       this._editorNotePopup = false;
+      this._editorScrollY = 0;
       this._viewScrollY = 0;
+      this._editorBlockSliders = false;
       this._tubeSelected = null;
       this._tubeDragging = null;
       this._editorBrickDeleteMode = false;
@@ -3476,18 +3478,18 @@ class Game {
 
 
     // ── ROW 5: Contextual — BLD=subtypes, SEL/SCL=empty, ROT=big pivot grid ────
-    var r5H = 50;  // taller row for bigger targets
+    var r5H = 26;  // compact sub-type row; pivot grid uses its own sizing
     this._editorTypeBtns = [];
 
     if (edMode === 'build') {
-      // RECT / ROUND / TRI / CUSTOM
+      // RECT / ROUND / TRI / CUSTOM — original compact size
       var subTypes = [
-        { id:'breakable_brick', icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.roundRect(-14,-6,28,12,2); c.fill(); c.strokeStyle=col; c.lineWidth=1.4; c.beginPath(); c.roundRect(-14,-6,28,12,2); c.stroke(); c.fillStyle=col; [[-7,-3],[7,-3],[-7,3],[7,3]].forEach(function(d){c.beginPath();c.arc(d[0],d[1],1.5,0,Math.PI*2);c.fill();}); }},
-        { id:'circular_brick',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.arc(0,0,10,0,Math.PI*2); c.fill(); c.strokeStyle=col; c.lineWidth=1.4; c.beginPath(); c.arc(0,0,10,0,Math.PI*2); c.stroke(); c.fillStyle=col; c.beginPath(); c.arc(-3,-3,2.5,0,Math.PI*2); c.fill(); }},
-        { id:'triangle_brick',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.moveTo(0,-11);c.lineTo(12,8);c.lineTo(-12,8);c.closePath(); c.fill(); c.strokeStyle=col; c.lineWidth=1.4; c.stroke(); }},
-        { id:'custom_brick',    icon: function(c,col){ c.strokeStyle=col; c.lineWidth=1.4; c.setLineDash([3,2]); c.beginPath(); c.roundRect(-12,-8,24,16,2); c.stroke(); c.setLineDash([]); c.fillStyle=col; c.font="bold 8px monospace"; c.textAlign='center'; c.textBaseline='middle'; c.fillText('+',0,0); }},
+        { id:'breakable_brick', icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.roundRect(-9,-4,18,8,1); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.beginPath(); c.roundRect(-9,-4,18,8,1); c.stroke(); c.fillStyle=col; [[-4,-2],[4,-2],[-4,2],[4,2]].forEach(function(d){c.beginPath();c.arc(d[0],d[1],1,0,Math.PI*2);c.fill();}); }},
+        { id:'circular_brick',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.arc(0,0,7,0,Math.PI*2); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.beginPath(); c.arc(0,0,7,0,Math.PI*2); c.stroke(); }},
+        { id:'triangle_brick',  icon: function(c,col){ c.fillStyle=col+'44'; c.beginPath(); c.moveTo(0,-7);c.lineTo(8,5);c.lineTo(-8,5);c.closePath(); c.fill(); c.strokeStyle=col; c.lineWidth=1.2; c.stroke(); }},
+        { id:'custom_brick',    icon: function(c,col){ c.strokeStyle=col; c.lineWidth=1.2; c.setLineDash([2,2]); c.beginPath(); c.roundRect(-8,-5,16,10,1); c.stroke(); c.setLineDash([]); c.fillStyle=col; c.font="bold 6px monospace"; c.textAlign='center'; c.textBaseline='middle'; c.fillText('+',0,0); }},
       ];
-      var stW = Math.floor((W - 16 - 3*3) / 4);
+      var stW = Math.floor((W/2 - 16 - 3*3) / 4);
       var curType = this._editorBrickType || 'breakable_brick';
       for (var sti = 0; sti < subTypes.length; sti++) {
         var st = subTypes[sti];
