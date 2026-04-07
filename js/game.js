@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1507;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1508;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -439,9 +439,8 @@ class Game {
       }
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
-        // Button rects are stored in screen space (scroll already baked into cY during draw),
-        // so hit-test against raw screen coords — no scroll adjustment needed.
-        var _py  = pos.y;
+        var _vSY = self._editorScrollY || 0;  // negative when scrolled
+        var _py  = pos.y - _vSY;  // convert screen tap to panel coord space
         var _px  = pos.x;
         var inPanel = pos.y >= self.floorY();  // use raw screen Y for in/out panel
 
@@ -759,18 +758,38 @@ class Game {
             }
           }
         }
-        // Scroll — any drag in the panel area that didn't hit a button above
-        // Also allow starting a scroll from the chute strip above the floor line
-        if (inPanel || (pos.x >= self.W - 50 && pos.y < self.floorY())) {
+        // Scroll — chute strip OR anywhere in panel that didn't hit a button
+        var chuteX = self.W - 50;
+        if (inPanel || (pos.x >= chuteX && pos.y < self.floorY())) {
           self._editorScrollPending=true; self._editorScrollDragging=false;
           self._editorScrollStart=self._editorScrollY||0;
           self._editorScrollDragY=pos.y; return;
         }
         // World taps (not in panel) — build/select/etc
-        if (!inPanel) self._editorOnDown({x:pos.x,y:pos.y});
+        var _screenFloorY=self.floorY();
+        if (!inPanel) self._editorOnDown({x:_px,y:_py});
         return;
       }
 
+
+      // ── HUD canvas sliders — grab on touch down ────────────────────────────
+      if (!self._editorMode) {
+        var _hudSliders = [
+          { rect: self._sliderRect,      flag: '_draggingSlider' },
+          { rect: self._brickSliderRect,  flag: '_draggingBrickSlider' },
+          { rect: self._zoneSliderRect,   flag: '_draggingZoneSlider' },
+          { rect: self._tubeSliderRect,   flag: '_draggingTubeSlider' },
+        ];
+        for (var hsi = 0; hsi < _hudSliders.length; hsi++) {
+          var hs = _hudSliders[hsi];
+          if (!hs.rect) continue;
+          if (pos.x >= hs.rect.x - 8 && pos.x <= hs.rect.x + hs.rect.w + 8 &&
+              pos.y >= hs.rect.y - 4 && pos.y <= hs.rect.y + hs.rect.h + 4) {
+            self[hs.flag] = true;
+            return;
+          }
+        }
+      }
 
       // SAVE/LOAD level taps (outside editor)
       if (!self._editorMode) {
@@ -793,24 +812,6 @@ class Game {
           if (pos.x>=llb.x&&pos.x<=llb.x+llb.w&&pos.y>=llb.y&&pos.y<=llb.y+llb.h) {
             // TODO phase 2: show level list overlay
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
-            return;
-          }
-        }
-      }
-      // ── HUD canvas sliders (speed, brick speed, zone, tube) ────────────
-      if (!self._editorMode) {
-        var _hudSliders = [
-          { rect: self._sliderRect,      flag: '_draggingSlider' },
-          { rect: self._brickSliderRect,  flag: '_draggingBrickSlider' },
-          { rect: self._zoneSliderRect,   flag: '_draggingZoneSlider' },
-          { rect: self._tubeSliderRect,   flag: '_draggingTubeSlider' },
-        ];
-        for (var hsi = 0; hsi < _hudSliders.length; hsi++) {
-          var hs = _hudSliders[hsi];
-          if (!hs.rect) continue;
-          if (pos.x >= hs.rect.x - 8 && pos.x <= hs.rect.x + hs.rect.w + 8 &&
-              pos.y >= hs.rect.y - 4 && pos.y <= hs.rect.y + hs.rect.h + 4) {
-            self[hs.flag] = true;
             return;
           }
         }
@@ -3245,8 +3246,8 @@ class Game {
     ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(0, floorY+1); ctx.lineTo(W, floorY+1); ctx.stroke();
 
-    var vSY   = this._editorScrollY || 0;  // editor panel scroll offset (negative = scrolled)
-    var cY    = panelY + vSY;             // vSY negative = panel shifts up = more content revealed
+    var vSY   = this._editorScrollY || 0;  // editor panel scroll offset
+    var cY    = panelY - vSY;             // vSY positive = panel slides up = more revealed
     var mono  = "Share Tech Mono,monospace";
     var self  = this;
 
