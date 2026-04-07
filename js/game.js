@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1513;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1514;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -442,7 +442,7 @@ class Game {
         var _vSY = self._editorScrollY || 0;  // negative when scrolled
         var _py  = pos.y - _vSY;  // convert screen tap to panel coord space
         var _px  = pos.x;
-        var inPanel = pos.y >= self.floorY();  // use raw screen Y for in/out panel
+        var inPanel = pos.y >= self.floorY() - 5;  // -5px buffer so tabs at floorY register
 
         // ── Top-bar buttons (screen coords, no scroll offset) ─────────────────
         // DONE
@@ -827,17 +827,8 @@ class Game {
             }
           }
         }
-        // Scroll — only from chute strip (right 50px above floor)
-        // Do NOT trigger from panel taps — that swallows button taps
-        var chuteX = self.W - 50;
-        if (pos.x >= chuteX && pos.y < self.floorY()) {
-          self._editorScrollPending=true; self._editorScrollDragging=false;
-          self._editorScrollStart=self._editorScrollY||0;
-          self._editorScrollDragY=pos.y; return;
-        }
-        // Also allow scroll from empty panel space (below last button)
-        // Use a dedicated scroll handle area at very bottom of panel
-        if (inPanel && pos.y > self.H - 60) {
+        // Scroll — drag anywhere in panel that didn't hit a button
+        if (inPanel) {
           self._editorScrollPending=true; self._editorScrollDragging=false;
           self._editorScrollStart=self._editorScrollY||0;
           self._editorScrollDragY=pos.y; return;
