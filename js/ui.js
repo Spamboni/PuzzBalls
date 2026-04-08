@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1541;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1544;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1541</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1544</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -611,6 +611,12 @@ class UI {
           var splatRow = document.createElement('div');
           splatRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
           var splatTypes = [{id:'dead',label:'💀 DEAD',col:'#aa6600'},{id:'boost',label:'⚡ BOOST',col:'#ddcc00'},{id:'goo',label:'🟢 GOO',col:'#44aa00'}];
+          // Init splatter sub-settings
+          window.Settings.splatter.deadGravMult = window.Settings.splatter.deadGravMult || 8;
+          window.Settings.splatter.deadGravDur  = window.Settings.splatter.deadGravDur  || 90;
+          window.Settings.splatter.boostMult    = window.Settings.splatter.boostMult    || 2.2;
+          window.Settings.splatter.gooStickiness= window.Settings.splatter.gooStickiness|| 50;
+          window.Settings.splatter.gooPermanent = window.Settings.splatter.gooPermanent || false;
           splatTypes.forEach(function(st) {
             var sb2 = document.createElement('button');
             sb2.textContent = st.label;
@@ -641,6 +647,44 @@ class UI {
           _addSlider(pane,'Drips','Settings','splatter.drips',0,8,1,function(v){return v;});
           _addSlider(pane,'Duration (sec)','Settings','splatter.duration',1,60,1,function(v){return v+'s';});
           _addSlider(pane,'Max Splats','Settings','splatter.maxSplats',1,20,1,function(v){return v;});
+
+          // Divider
+          var _sd = document.createElement('div');
+          _sd.style.cssText='color:#88aacc66;font-size:8px;font-family:Share Tech Mono,monospace;margin:6px 0 2px;text-align:center;';
+          _sd.textContent='── DEAD SETTINGS ──'; pane.appendChild(_sd);
+          _addSlider(pane,'Gravity Mult (on hit)','Settings','splatter.deadGravMult',1,20,0.5,function(v){return v.toFixed(1)+'x';});
+          _addSlider(pane,'Gravity Duration (0=perm)','Settings','splatter.deadGravDur',0,300,10,function(v){return v===0?'PERM':v+'f';});
+
+          var _sd2 = document.createElement('div');
+          _sd2.style.cssText='color:#88aacc66;font-size:8px;font-family:Share Tech Mono,monospace;margin:6px 0 2px;text-align:center;';
+          _sd2.textContent='── BOOST SETTINGS ──'; pane.appendChild(_sd2);
+          _addSlider(pane,'Boost Multiplier','Settings','splatter.boostMult',1,10,0.5,function(v){return v.toFixed(1)+'x';});
+
+          var _sd3 = document.createElement('div');
+          _sd3.style.cssText='color:#88aacc66;font-size:8px;font-family:Share Tech Mono,monospace;margin:6px 0 2px;text-align:center;';
+          _sd3.textContent='── GOO SETTINGS ──'; pane.appendChild(_sd3);
+          _addSlider(pane,'Goo Stickiness','Settings','splatter.gooStickiness',10,100,5,function(v){return v;});
+          // Permanent toggle
+          var _permRow = document.createElement('div');
+          _permRow.style.cssText='display:flex;align-items:center;gap:8px;margin:4px 0;';
+          var _permLbl = document.createElement('span');
+          _permLbl.textContent='PERMANENT (no escape)';
+          _permLbl.style.cssText='color:#aaa;font-size:9px;font-family:Share Tech Mono,monospace;flex:1;';
+          var _permBtn = document.createElement('button');
+          var updatePermBtn = function() {
+            var on = !!(window.Settings&&window.Settings.splatter&&window.Settings.splatter.gooPermanent);
+            _permBtn.textContent = on ? 'ON' : 'OFF';
+            _permBtn.style.cssText='padding:4px 10px;font-size:9px;font-family:Share Tech Mono,monospace;border-radius:4px;cursor:pointer;border:1px solid '+(on?'#44ff44':'#446644')+';background:'+(on?'rgba(0,60,0,0.7)':'rgba(0,20,0,0.4)')+';color:'+(on?'#44ff44':'#668866')+';';
+          };
+          updatePermBtn();
+          function togglePerm(e) {
+            e.preventDefault();
+            window.Settings=window.Settings||{}; window.Settings.splatter=window.Settings.splatter||{};
+            window.Settings.splatter.gooPermanent = !window.Settings.splatter.gooPermanent;
+            updatePermBtn();
+          }
+          _permBtn.addEventListener('click',togglePerm); _permBtn.addEventListener('touchend',togglePerm);
+          _permRow.appendChild(_permLbl); _permRow.appendChild(_permBtn); pane.appendChild(_permRow);
         }
         if (t.id==='gravity')  { _addSlider(pane,'Pull Range',null,null,50,280,5,function(v){return v+'px';},t.id,'gravRange'); _addSlider(pane,'Pull Strength',null,null,0.05,5.0,0.05,function(v){return v.toFixed(2);},t.id,'gravPull'); }
         if (t.id==='squiggly') {
