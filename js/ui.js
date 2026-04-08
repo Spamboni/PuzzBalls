@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1531;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1532;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -85,7 +85,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'dead', size:28, drips:3, duration:8 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0 } };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'dead', size:20, drips:3, duration:8 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0 } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1531</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1532</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
