@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1532;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1534;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -46,6 +46,7 @@ var BallSettings = {
     bounceHeightY: 80,     // max Y distance on tap-bounce (§1.2)
     bounceDistanceX: 60,   // max X distance on tap-bounce
     deadZonePercent: 30,   // % center blocked from straight-up (§1.3)
+    stickiness: 50,
   },
   splitter: {
     label: 'SPLITTER', color: '#6b006b', glow: '#ff44ff',
@@ -138,7 +139,10 @@ function applyGravityWell(well, objects) {
   for (var i = 0; i < objects.length; i++) {
     var obj = objects[i];
     if (obj === well)                   continue;
-    if (obj.pinned || obj.stuckTo)      continue;
+    // Stuck sticky balls can be pulled off by gravity well
+    if (obj.pinned) continue;
+    if (obj.stuckTo && !(obj.type === BALL_TYPES.STICKY && obj.stuckTo === '_wall_')) continue;
+    var isStuck = (obj.type === BALL_TYPES.STICKY && obj.stuckTo === '_wall_');
     if (obj.dead)                       continue;
     if (_arrayHas(well._slungIds, obj)) continue;
 
@@ -167,9 +171,55 @@ function applyGravityWell(well, objects) {
     } else {
       var pull = basePull * (range / dist) * (range / dist) * 0.04 * densityFactor;
       pull = Math.min(pull, 2.8);
-      obj.vx      += nx * pull;
-      obj.vy      += ny * pull;
-      obj.inFlight = true;
+      if (isStuck) {
+        // For stuck stickies: accumulate pull force, pop off if strong enough
+        var stickiness2 = (window.BallSettings && BallSettings.sticky && BallSettings.sticky.stickiness !== undefined)
+          ? BallSettings.sticky.stickiness : 50;
+        var gravThreshold = 0.3 + (stickiness2 / 100) * 2.5;
+        if (pull > gravThreshold) {
+          obj.stuckTo  = null;
+          obj.inFlight = true;
+          obj.vx = nx * pull * 3;
+          obj.vy = ny * pull * 3;
+          // Mouth-pop sound
+          if (window.Sound && Sound.getCtx) {
+            var _sc = Sound.getCtx();
+            if (_sc) {
+              var _gp = _sc.createGain(); _gp.connect(_sc.destination);
+              _gp.gain.setValueAtTime(0.0, _sc.currentTime);
+              _gp.gain.linearRampToValueAtTime(0.45, _sc.currentTime + 0.006);
+              _gp.gain.exponentialRampToValueAtTime(0.001, _sc.currentTime + 0.18);
+              var _op = _sc.createOscillator(); _op.connect(_gp);
+              _op.type = 'sine';
+              _op.frequency.setValueAtTime(800, _sc.currentTime);
+              _op.frequency.exponentialRampToValueAtTime(120, _sc.currentTime + 0.12);
+              _op.start(_sc.currentTime); _op.stop(_sc.currentTime + 0.18);
+              // Second pop click
+              var _gp2 = _sc.createGain(); _gp2.connect(_sc.destination);
+              _gp2.gain.setValueAtTime(0.0, _sc.currentTime + 0.01);
+              _gp2.gain.linearRampToValueAtTime(0.3, _sc.currentTime + 0.016);
+              _gp2.gain.exponentialRampToValueAtTime(0.001, _sc.currentTime + 0.09);
+              var _op2 = _sc.createOscillator(); _op2.connect(_gp2);
+              _op2.type = 'sine';
+              _op2.frequency.setValueAtTime(500, _sc.currentTime + 0.01);
+              _op2.frequency.exponentialRampToValueAtTime(80, _sc.currentTime + 0.08);
+              _op2.start(_sc.currentTime + 0.01); _op2.stop(_sc.currentTime + 0.09);
+            }
+          }
+        }
+        // else: just wiggle — don't move
+      } else {
+        obj.vx      += nx * pull;
+        obj.vy      += ny * pull;
+        obj.inFlight = true;
+        // Cube: spin faster as it approaches gravity well
+        if (obj.type === BALL_TYPES.CUBE && obj._cubeRot) {
+          var spinBoost = pull * (range / Math.max(dist, 10)) * 0.08;
+          var maxSpin = 0.15;
+          obj._cubeRX = Math.max(-maxSpin, Math.min(maxSpin, (obj._cubeRX||0) + (Math.random()-0.5)*spinBoost));
+          obj._cubeRY = Math.max(-maxSpin, Math.min(maxSpin, (obj._cubeRY||0) + (Math.random()-0.5)*spinBoost));
+        }
+      }
     }
   }
 }
