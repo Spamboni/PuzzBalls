@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1544;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1545;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1544</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1545</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -611,12 +611,13 @@ class UI {
           var splatRow = document.createElement('div');
           splatRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
           var splatTypes = [{id:'dead',label:'💀 DEAD',col:'#aa6600'},{id:'boost',label:'⚡ BOOST',col:'#ddcc00'},{id:'goo',label:'🟢 GOO',col:'#44aa00'}];
-          // Init splatter sub-settings
-          window.Settings.splatter.deadGravMult = window.Settings.splatter.deadGravMult || 8;
-          window.Settings.splatter.deadGravDur  = window.Settings.splatter.deadGravDur  || 90;
-          window.Settings.splatter.boostMult    = window.Settings.splatter.boostMult    || 2.2;
-          window.Settings.splatter.gooStickiness= window.Settings.splatter.gooStickiness|| 50;
-          window.Settings.splatter.gooPermanent = window.Settings.splatter.gooPermanent || false;
+          // Init splatter sub-settings — must be before any property access
+          window.Settings.splatter = window.Settings.splatter || {type:'goo',size:11,drips:3,duration:30,maxSplats:6};
+          window.Settings.splatter.deadGravMult = window.Settings.splatter.deadGravMult !== undefined ? window.Settings.splatter.deadGravMult : 8;
+          window.Settings.splatter.deadGravDur  = window.Settings.splatter.deadGravDur  !== undefined ? window.Settings.splatter.deadGravDur  : 90;
+          window.Settings.splatter.boostMult    = window.Settings.splatter.boostMult    !== undefined ? window.Settings.splatter.boostMult    : 2.2;
+          window.Settings.splatter.gooStickiness= window.Settings.splatter.gooStickiness!== undefined ? window.Settings.splatter.gooStickiness: 50;
+          window.Settings.splatter.gooPermanent = window.Settings.splatter.gooPermanent  !== undefined ? window.Settings.splatter.gooPermanent : false;
           splatTypes.forEach(function(st) {
             var sb2 = document.createElement('button');
             sb2.textContent = st.label;
@@ -642,7 +643,6 @@ class UI {
             splatRow.appendChild(sb2);
           });
           pane.appendChild(splatRow);
-          window.Settings.splatter = window.Settings.splatter || {type:'goo',size:11,drips:3,duration:30,maxSplats:6};
           _addSlider(pane,'Size (core radius)','Settings','splatter.size',4,60,1,function(v){return v+'px';});
           _addSlider(pane,'Drips','Settings','splatter.drips',0,8,1,function(v){return v;});
           _addSlider(pane,'Duration (sec)','Settings','splatter.duration',1,60,1,function(v){return v+'s';});
