@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1541;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1544;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1193,6 +1193,11 @@ class Game {
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
       var zoneTop  = self.floorY() - zoneH2;
 
+      // ── Delete mode: tap a ball to remove it ─────────────────────────────
+      if (self._deleteMode) {
+        if (self._tryDeleteBall(_worldPos.x, _worldPos.y)) return;
+      }
+
       // ── Sticky ball flick — tap/drag a wall-stuck sticky to pop it off ──────
       var FLICK_SPEED = 7;  // always same speed
       for (var si = 0; si < self.objects.length; si++) {
@@ -1898,6 +1903,15 @@ class Game {
       // Ghost follows a normal-ball arc. Ball is placed offset from ghost perpendicularly.
       // Tick down splat cooldown
       if (obj2._splatCooldown > 0) obj2._splatCooldown--;
+      if (obj2._brickBounceImmune > 0) obj2._brickBounceImmune--;
+      // Apply splat gravity boost
+      if (obj2._splatGravFrames > 0) {
+        obj2._splatGravFrames--;
+        var _sg = obj2._splatGravMult || 1;
+        var _grav = 0.4 * ((window.Settings && Settings.gravityMult) || 1.0);
+        obj2.vy += _grav * (_sg - 1);  // extra gravity on top of normal
+        if (obj2._splatGravFrames <= 0) obj2._splatGravMult = 1;
+      }
       if (obj2.type === BALL_TYPES.SQUIGGLY && obj2.inFlight && !obj2.stuckTo && !obj2._fromChute) {
         var sqT2 = (obj2._sqT || 0) + 1;
         obj2._sqT = sqT2;
@@ -2011,20 +2025,7 @@ class Game {
               if (spDist > sp2.coreR) continue;
               // Apply effect to whichever ball is not the splatter
               var affBall = (a.type !== BALL_TYPES.SPLATTER) ? a : b;
-              if (!affBall._splatCooldown) {
-                if (sp2.type === 'dead') {
-                  affBall.vx *= 0.08; affBall.vy *= 0.08;
-                  affBall._splatCooldown = 20;
-                } else if (sp2.type === 'boost') {
-                  var _bspd = Math.hypot(affBall.vx, affBall.vy);
-                  if (_bspd > 0.1) { affBall.vx *= 2.2; affBall.vy *= 2.2; }
-                  affBall._splatCooldown = 20;
-                } else if (sp2.type === 'goo') {
-                  affBall.stuckTo = '_wall_';
-                  affBall.vx = 0; affBall.vy = 0; affBall.inFlight = false;
-                  affBall._splatCooldown = 60;
-                }
-              }
+              this._applySplatEffect(sp2, affBall);
             }
           }
           if (a.type === BALL_TYPES.STICKY && a.stuckTo === '_wall_') {
@@ -2147,16 +2148,7 @@ class Game {
             var _swy = _sp.brick.y + _sp.offX * Math.sin(_sbrot) + _sp.offY * Math.cos(_sbrot);
             var _sdist = Math.hypot(ball.x - _swx, ball.y - _swy);
             if (_sdist > _sp.coreR + ball.r) continue;
-            if (_sp.type === 'dead') {
-              ball.vx *= 0.08; ball.vy *= 0.08; ball._splatCooldown = 20;
-            } else if (_sp.type === 'boost') {
-              var _bspd2 = Math.hypot(ball.vx, ball.vy);
-              if (_bspd2 > 0.1) { ball.vx *= 2.2; ball.vy *= 2.2; }
-              ball._splatCooldown = 20;
-            } else if (_sp.type === 'goo') {
-              ball.stuckTo = '_wall_'; ball.vx = 0; ball.vy = 0; ball.inFlight = false;
-              ball._splatCooldown = 60;
-            }
+            this._applySplatEffect(_sp, ball);
             break;
           }
         }
@@ -2286,11 +2278,29 @@ class Game {
         }
 
         if (ball.type === BALL_TYPES.STICKY) {
+          var _wasStuck = ball.stuckTo;
           this._checkStickyWall(ball);
-          // Store brick surface normal if it just stuck
           if (ball.stuckTo === '_wall_') {
+            // Just stuck — store normal
             ball._stickNx = bnx;
             ball._stickNy = bny;
+          } else if (!_wasStuck) {
+            // Bounced off brick without sticking — set brief immunity to prevent
+            // sticking on the far side of the same brick
+            ball._brickBounceImmune = 8;
+          }
+        }
+        // If hitter ball hits a sticky that's stuck to this brick, try knocking it off
+        if (ball.type !== BALL_TYPES.STICKY) {
+          var _impSpd = Math.hypot(ball.vx, ball.vy);
+          for (var _ski = 0; _ski < this.objects.length; _ski++) {
+            var _stkBall = this.objects[_ski];
+            if (_stkBall.type !== BALL_TYPES.STICKY) continue;
+            if (_stkBall.stuckTo !== '_wall_') continue;
+            if (Math.hypot(_stkBall.x - brick.x, _stkBall.y - brick.y) > brick.w + _stkBall.r + 4) continue;
+            if (Math.hypot(_stkBall.x - ball.x, _stkBall.y - ball.y) < _stkBall.r + ball.r + 6) {
+              this._tryKnockSticky(_stkBall, _impSpd, ball.type);
+            }
           }
         }
 
@@ -2502,6 +2512,8 @@ class Game {
   _checkStickyWall(obj) {
     if (obj.type !== BALL_TYPES.STICKY) return;
     if (obj.stuckTo || obj._fromChute) return;
+    if (obj._knockImmune > 0) return;  // recently knocked off — don't re-stick
+    if (obj._brickBounceImmune > 0) { obj._brickBounceImmune--; return; }  // just bounced through brick
     var threshold = (window.BallSettings && BallSettings.sticky.stickThreshold) || 6;
     var speed = Math.hypot(obj.vx, obj.vy);
     if (speed < threshold) {
@@ -2536,10 +2548,44 @@ class Game {
   }
 
   // Try to unstick a sticky ball that was hit by another ball
+  _applySplatEffect(sp, ball) {
+    if (!sp || !ball || ball._splatCooldown) return;
+    var sq = (window.Settings && window.Settings.splatter) || {};
+    if (sp.type === 'dead') {
+      // Gravity bomb: spike gravity on the ball temporarily
+      var gravMult = sq.deadGravMult !== undefined ? sq.deadGravMult : 8;
+      var gravDur  = sq.deadGravDur  !== undefined ? sq.deadGravDur  : 90;
+      ball._splatGravMult    = gravMult;
+      ball._splatGravFrames  = gravDur > 0 ? gravDur : 9999;
+      // Kill horizontal momentum proportionally
+      ball.vx *= Math.max(0, 1 - gravMult * 0.06);
+      ball._splatCooldown = 25;
+    } else if (sp.type === 'boost') {
+      var boostMult = sq.boostMult !== undefined ? sq.boostMult : 2.2;
+      var spd = Math.hypot(ball.vx, ball.vy);
+      if (spd > 0.1) { ball.vx *= boostMult; ball.vy *= boostMult; }
+      ball._splatCooldown = 25;
+    } else if (sp.type === 'goo') {
+      var permanent = sq.gooPermanent !== undefined ? sq.gooPermanent : false;
+      ball.stuckTo   = '_wall_';
+      ball.vx = 0; ball.vy = 0; ball.inFlight = false;
+      if (permanent) {
+        ball._gooPermStuck = true;  // flag: gravity well can't pull it off
+        ball._knockImmune  = 99999;
+      } else {
+        ball._gooStickiness = sq.gooStickiness !== undefined ? sq.gooStickiness : 50;
+      }
+      ball._splatCooldown = 60;
+    }
+  }
+
   _tryKnockSticky(sticky, impactSpeed, hitterType) {
     if (sticky.type !== BALL_TYPES.STICKY || sticky.stuckTo !== '_wall_') return;
-    var stickiness = (window.BallSettings && BallSettings.sticky && BallSettings.sticky.stickiness !== undefined)
-      ? BallSettings.sticky.stickiness : 50;
+    // Use goo stickiness if ball was stuck by splat goo
+    var stickiness = sticky._gooStickiness !== undefined
+      ? sticky._gooStickiness
+      : ((window.BallSettings && BallSettings.sticky && BallSettings.sticky.stickiness !== undefined)
+        ? BallSettings.sticky.stickiness : 50);
     var hDensity = (hitterType && window.BallSettings && BallSettings[hitterType])
       ? (BallSettings[hitterType].density || 1.0) : 1.0;
     var knockForce = impactSpeed * hDensity;
@@ -2960,27 +3006,26 @@ class Game {
 
   _createSplat(wx, wy, nx, ny, brick) {
     var sqSet = (window.Settings && window.Settings.splatter) || {};
-    var type    = sqSet.type     || 'goo';
-    var coreR   = sqSet.size     || 11;
-    var numDrips= Math.round(sqSet.drips    || 3);
-    var rawDur  = sqSet.duration !== undefined ? sqSet.duration : 30;
-    var duration= rawDur * 60;  // convert seconds to frames
-    var maxSplats = sqSet.maxSplats !== undefined ? sqSet.maxSplats : 6;
-    this.splats = this.splats || [];
-    // Remove oldest if over cap
+    var type     = sqSet.type      || 'goo';
+    var coreR    = sqSet.size      || 11;
+    var numDrips = Math.round(sqSet.drips    || 3);
+    var rawDur   = sqSet.duration  !== undefined ? sqSet.duration : 30;
+    var duration = rawDur * 60;
+    var maxSplats= sqSet.maxSplats !== undefined ? sqSet.maxSplats : 6;
+    this.splats  = this.splats || [];
     while (this.splats.length >= maxSplats) this.splats.shift();
 
-    // Clamp normal to always face generally downward (ny >= 0 preferred)
-    // If normal points mostly upward (ny < -0.3), flip it so splat coats
-    // the bottom/sides of the brick not the top face
-    if (ny < -0.3) { nx = -nx; ny = -ny; }
-
     var isCircular = brick && (typeof CircularBrick !== 'undefined') && (brick instanceof CircularBrick);
-    var brickW   = (!isCircular && brick) ? (brick.w || 80) : 0;
-    var brickH   = (!isCircular && brick) ? (brick.h || 22) : 0;
-    var brickRot = (brick && brick._rotation) || 0;
-    var brickR   = isCircular ? (brick.r || 22) : 0;
+    var brickW  = (!isCircular && brick) ? (brick.w || 80) : 0;
+    var brickH  = (!isCircular && brick) ? (brick.h || 22) : 0;
+    var brickRot= (brick && brick._rotation) || 0;
+    var brickR  = isCircular ? (brick.r || 22) : 0;
 
+    // Determine which face was hit by converting normal to brick-local space
+    var lnx = nx * Math.cos(-brickRot) - ny * Math.sin(-brickRot);
+    var lny = nx * Math.sin(-brickRot) + ny * Math.cos(-brickRot);
+
+    // Impact point relative to brick center, in brick-local space
     var offX = brick ? (wx - brick.x) : 0;
     var offY = brick ? (wy - brick.y) : 0;
     if (brick && brickRot) {
@@ -2989,36 +3034,57 @@ class Game {
       var ry2 = offX * Math.sin(br) + offY * Math.cos(br);
       offX = rx2; offY = ry2;
     }
-    // Snap offY to the brick edge (half-height in local space) so splat sits on the surface
+    // Snap offY to correct edge using local normal direction
+    // offX (along brick length) is preserved as the actual impact position
     if (!isCircular && brick && (brickW > 0 || brickH > 0)) {
-      var _halfShort = Math.min(brickW, brickH) * 0.5;
-      var _sign = offY >= 0 ? 1 : -1;
-      offY = _sign * _halfShort;  // snap to edge
+      var halfShort = Math.min(brickW, brickH) * 0.5;
+      var halfLong  = Math.max(brickW, brickH) * 0.5;
+      // Determine if hit is on long edge (lny dominant) or short edge (lnx dominant)
+      if (Math.abs(lny) >= Math.abs(lnx)) {
+        // Top or bottom hit — offY snaps to ±halfShort, offX preserved (clamped to long edge)
+        offY = (lny >= 0 ? 1 : -1) * halfShort;
+        offX = Math.max(-halfLong, Math.min(halfLong, offX));
+      } else {
+        // Left or right hit — offX snaps to ±halfLong, offY preserved (clamped to short edge)
+        offX = (lnx >= 0 ? 1 : -1) * halfLong;
+        offY = Math.max(-halfShort, Math.min(halfShort, offY));
+      }
     }
 
-    // Drips spread along brick length axis
+    // Build drips centered at impact point along edge
     var halfLen = isCircular ? brickR * 0.8 : Math.max(brickW, brickH) * 0.5;
+    var spread  = Math.min(coreR * 1.4, halfLen * 0.85);
+    // hitFromTop = local normal Y is negative (ball came from above in local space)
+    var hitFromTop = (lny < -0.3);
+    var hitFromBottom = (lny > 0.3);
     var dripArr = [];
     for (var di = 0; di < numDrips; di++) {
-      var t = numDrips > 1 ? (di / (numDrips-1) - 0.5) : 0;
-      var lx = Math.cos(brickRot) * t * halfLen * 1.3 + (Math.random()-0.5)*coreR*0.3;
-      var ly = Math.sin(brickRot) * t * halfLen * 1.3 + (Math.random()-0.5)*coreR*0.1;
+      var t = numDrips > 1 ? (di / (numDrips - 1) - 0.5) : 0;
+      // Drip x = spread along edge from impact point (offX in local space)
+      // Drip position is in world space
+      var localDripX = t * spread * 1.2 + (Math.random()-0.5) * coreR * 0.2;
+      // Rotate local drip x to world space
+      var worldDripX = localDripX * Math.cos(brickRot);
+      var worldDripY = localDripX * Math.sin(brickRot);
       dripArr.push({
-        ox: lx, oy: ly + coreR * 0.15,
-        vy: 0.6 + Math.random() * 0.7,
-        len: coreR * (0.7 + Math.random() * 0.9),
-        age: 0, maxAge: 90 + Math.random() * 60,
-        r: 2 + Math.random() * 2.5,
+        ox: worldDripX,
+        oy: worldDripY,
+        vy: 0.5 + Math.random() * 0.6,
+        len: coreR * (0.8 + Math.random() * 1.0),
+        age: 0, maxAge: 100 + Math.random() * 80,
+        r: 2.5 + Math.random() * 2.5,
+        hitFromTop: hitFromTop,  // drips go over brick surface
       });
     }
 
     this.splats.push({
       wx: wx, wy: wy, offX: offX, offY: offY,
-      nx: nx, ny: ny,
+      nx: nx, ny: ny, lnx: lnx, lny: lny,
       brick: brick || null,
       isCircular: isCircular,
       brickW: brickW, brickH: brickH, brickR: brickR, brickRot: brickRot,
-      type: type, coreR: coreR, outerR: coreR * 2.0,
+      hitFromTop: hitFromTop, hitFromBottom: hitFromBottom,
+      type: type, coreR: coreR, spread: spread,
       timer: duration, maxTimer: duration, drips: dripArr,
     });
 
@@ -3066,22 +3132,15 @@ class Game {
       goo:   { core:'#44bb11', hi:'#aaff55', lo:'#0a2200', glow:'#66ff22', bulb:'#55dd22' },
     };
 
-    function hexRGB(h) {
-      return [parseInt(h.slice(1,3),16)||0, parseInt(h.slice(3,5),16)||0, parseInt(h.slice(5,7),16)||0];
-    }
-    function rgba(h, a) {
-      var c = hexRGB(h);
-      return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a.toFixed(3)+')';
-    }
+    function hexRGB(h) { return [parseInt(h.slice(1,3),16)||0,parseInt(h.slice(3,5),16)||0,parseInt(h.slice(5,7),16)||0]; }
+    function rgba(h, a) { var c=hexRGB(h); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a.toFixed(3)+')'; }
 
     for (var si = 0; si < this.splats.length; si++) {
       var sp = this.splats[si];
       var pal = PAL[sp.type] || PAL.goo;
-
-      // Current brick rotation (may change if brick is moving)
       var brot = (sp.brick && sp.brick._rotation) || 0;
 
-      // World position of splat center
+      // World position of splat (impact point on brick edge)
       var wx = sp.brick
         ? sp.brick.x + sp.offX * Math.cos(brot) - sp.offY * Math.sin(brot)
         : sp.wx;
@@ -3089,190 +3148,185 @@ class Game {
         ? sp.brick.y + sp.offX * Math.sin(brot) + sp.offY * Math.cos(brot)
         : sp.wy;
 
-      // Fade
       var fadeIn  = Math.min(1, (sp.maxTimer - sp.timer) / 6);
       var fadeOut = Math.min(1, sp.timer / Math.min(sp.maxTimer * 0.25, 35));
       var alpha   = fadeIn * fadeOut;
       if (alpha <= 0.01) continue;
 
-      var cr = sp.coreR;
+      var cr   = sp.coreR;
+      var spread = sp.spread || cr * 1.4;
+
+      // lny in current brick space (brick may have rotated since splat was created)
+      var lny2 = sp.lny !== undefined ? sp.lny : 1;
+      var hitFromTop = sp.hitFromTop;
 
       ctx.save();
       ctx.translate(wx, wy);
-      // Rotate so that the brick's length axis runs horizontal (X) in local space
-      // The brick's long axis is along brot direction.
-      // We want to draw the splat hugging the edge the ball came from.
-      // The impact normal (nx,ny) points FROM brick surface TOWARD ball.
-      // In rotated space, the "bottom edge" is perpendicular to normal.
-      ctx.rotate(brot);
+      ctx.rotate(brot);  // align X axis with brick long axis
 
-      // Impact normal in brick-local space (unrotated)
-      var lnx = sp.nx * Math.cos(-brot) - sp.ny * Math.sin(-brot);
-      var lny = sp.nx * Math.sin(-brot) + sp.ny * Math.cos(-brot);
+      // In rotated local space:
+      // X = along brick length, Y = away from surface (in direction of normal)
+      // For bottom hit: normal points down (+Y world) → goo extends upward (-Y local = into brick)
+      //   and droops downward (+Y local = free space)
+      // For top hit: normal points up (-Y world) → goo extends downward (+Y local = into brick)
+      //   and drips fall over the brick face (also +Y local but limited by brick width)
 
-      // Half-length of brick along long axis
-      var halfLen;
-      if (sp.isCircular) {
-        halfLen = sp.brickR || cr;
-      } else {
-        var bw = sp.brickW || 80, bh = sp.brickH || 22;
-        halfLen = Math.max(bw, bh) * 0.5;
-      }
-      // Spread of splat along the edge (controlled by coreR setting)
-      var spread = Math.min(cr * 1.6, halfLen * 0.9);
+      var numPts = 22;
+      var seed   = si * 7.3;
 
-      // "Up" in splat space = direction toward ball (the normal direction)
-      // The edge runs perpendicular to the normal.
-      // In local space after brot rotation, we work in 2D:
-      // edge direction = perpendicular to (lnx, lny) = (-lny, lnx)
-
-      // Sample points along the edge
-      var numPts = 24;
-      var seed = si * 7.3;  // deterministic per-splat
-
-      // Build edge profile: for each x position along edge,
-      // how far does goo extend inward (toward normal direction)?
-      // Center gets most coverage, tapers to 0 at spread edges.
-      // Max height = 4px above edge (inward), plus 3px below (outward droop)
-
-      var maxIn  = 4;   // max pixels the goo goes "inward" on the brick face
-      var droopOut = 3; // max pixels it hangs below the edge
-
-      // We'll build a filled shape:
-      // Top profile (inward edge) = wavy line hugging brick
-      // Bottom profile (outward droop) = rounded bulges
-
-      // Pre-generate the profile heights
+      // Profile: height of goo at each X position (distance from edge, going INTO surface)
+      var maxIn   = 4;   // max pixels goo creeps onto brick face
+      var droopOut= 3;   // max pixels goo hangs off edge (free space side)
       var profile = [];
       for (var pi2 = 0; pi2 <= numPts; pi2++) {
-        var t2 = pi2 / numPts;  // 0..1 along the edge
-        var x2 = (t2 - 0.5) * spread * 2;
-        // Envelope: 0 at edges, 1 at center (soft cosine)
-        var env = Math.pow(Math.max(0, 1 - Math.abs(x2) / spread), 0.6);
-        // Wavy noise
+        var t2    = pi2 / numPts;
+        var xPos  = (t2 - 0.5) * spread * 2;
+        var env   = Math.pow(Math.max(0, 1 - Math.abs(xPos) / spread), 0.55);
         var noise = 0.5 + 0.5 * Math.sin(t2 * 11.3 + seed) * Math.sin(t2 * 7.1 + seed * 1.7);
-        var h2 = env * maxIn * (0.55 + 0.45 * noise);
-        profile.push({ x: x2, h: h2 });
+        profile.push({ x: xPos, h: env * maxIn * (0.5 + 0.5 * noise), env: env });
       }
 
       if (sp.isCircular && sp.brickR > 0) {
-        // Circular brick: draw arc-hugging splat
+        // Arc splat for circular bricks
         var arcR = sp.brickR;
-        var impAngle = Math.atan2(lny, lnx);
+        var impAngle = Math.atan2(sp.ny, sp.nx);
         var arcSpread = spread / arcR;
-
-        ctx.restore();  // restore before arc draw (arc needs world coords)
-        ctx.save();
+        ctx.restore(); ctx.save();
         var cx2 = wx - sp.nx * arcR, cy2 = wy - sp.ny * arcR;
-
-        for (var layer = 0; layer < 3; layer++) {
-          var layerAlpha = alpha * [0.45, 0.7, 0.9][layer];
-          var layerInset = [arcR + droopOut + 2, arcR + 1, arcR - maxIn * 0.5][layer];
-          var layerOuter = [arcR + droopOut + 4, arcR + droopOut, arcR + 2][layer];
-          var layerCol   = [pal.lo, pal.core, pal.hi][layer];
-          var layerSpread= arcSpread * [1.0, 0.75, 0.5][layer];
-
+        for (var lay = 0; lay < 3; lay++) {
+          var la2 = alpha * [0.45,0.75,0.92][lay];
+          var lIn  = arcR - [cr*0.1, 0, -cr*0.15][lay];
+          var lOut = arcR + [droopOut+2, droopOut, 1][lay];
+          var lSp  = arcSpread * [1.0, 0.72, 0.45][lay];
+          var lCol = [pal.lo, pal.core, pal.hi][lay];
           ctx.beginPath();
-          ctx.arc(cx2, cy2, layerOuter,  impAngle - layerSpread, impAngle + layerSpread);
-          ctx.arc(cx2, cy2, layerInset,  impAngle + layerSpread, impAngle - layerSpread, true);
+          ctx.arc(cx2, cy2, lOut, impAngle-lSp, impAngle+lSp);
+          ctx.arc(cx2, cy2, lIn,  impAngle+lSp, impAngle-lSp, true);
           ctx.closePath();
-          ctx.fillStyle = rgba(layerCol, layerAlpha);
-          ctx.shadowColor = pal.glow; ctx.shadowBlur = layer === 2 ? 5 : 0;
-          ctx.fill();
-          ctx.shadowBlur = 0;
+          ctx.fillStyle = rgba(lCol, la2);
+          if (lay===2){ctx.shadowColor=pal.glow;ctx.shadowBlur=5;}
+          ctx.fill(); ctx.shadowBlur=0;
         }
-
       } else {
         // Rectangular / wall splat
-        // In rotated local space: X = along brick length, Y = into brick (normal direction)
-        // The edge sits at Y=0 in local space. Inward = -lny direction (into brick face).
-        // We need to map our profile to screen coords using the normal direction.
+        // Sign of Y: normal in local space
+        // lny2 > 0 means normal points in +local-Y (bottom hit: goo droops in +Y = down)
+        // lny2 < 0 means normal points in -local-Y (top hit: goo droops in -Y but brick is there)
+        var normalSign = (lny2 >= 0) ? 1 : -1;  // +1 = bottom hit, -1 = top hit
 
-        // edge Y offset: how far from brick center to the edge the ball hit
-        // For a rect brick, the edge is at ±halfBrickH/2 from center along normal
-        var edgeOff = 0; // already at wx,wy which is the impact point on the surface
+        // For top hit, "inward" means toward +Y (down, into brick face)
+        // "outward" means toward -Y (up, above brick = free space above... wait, that's above the brick)
+        // Actually for top hit: ball came from ABOVE, so surface is the TOP face
+        // Inward = into brick (+Y down), outward = above brick (-Y up, free space)
+        // BUT we want drips to go DOWN over the brick face
+        // So for top hit: drips go in +Y direction (downward), covering the brick face
 
-        // Draw 3 layers: shadow, main goo, highlight
+        // Draw 3 color layers
         for (var layer2 = 0; layer2 < 3; layer2++) {
-          var la = alpha * [0.55, 0.82, 0.7][layer2];
-          var lCol = [pal.lo, pal.core, pal.hi][layer2];
-          var inMult  = [0.5, 1.0, 0.65][layer2];
-          var outMult = [1.3, 1.0, 0.5][layer2];
+          var la3 = alpha * [0.55, 0.85, 0.72][layer2];
+          var inMult  = [0.45, 1.0, 0.6][layer2];
+          var outMult = [1.3, 1.0, 0.45][layer2];
+          var lCol2   = [pal.lo, pal.core, pal.hi][layer2];
 
           ctx.beginPath();
-          // Bottom path (outward droop side, from right to left)
-          var firstX = profile[0].x;
-          // Start at right edge, at the edge line + small droop
-          ctx.moveTo(firstX, droopOut * outMult * 0.3);
+          // Outer edge (away from brick surface = drooping/free side)
+          // For bottom hit: outward = +Y. For top hit: outward = -Y.
+          ctx.moveTo(profile[0].x, normalSign * droopOut * outMult * 0.3);
           for (var pi3 = 0; pi3 <= numPts; pi3++) {
             var pt = profile[pi3];
-            // Droop: follows envelope but rounder/bulbous
-            var droopH = pt.h > 0.5
-              ? droopOut * outMult * Math.pow(pt.h / maxIn, 0.7)
-              : droopOut * outMult * 0.15;
-            ctx.lineTo(pt.x, droopH);
+            var dh = pt.h > 0.5 ? droopOut * outMult * Math.pow(pt.h / maxIn, 0.65) : droopOut * outMult * 0.12;
+            ctx.lineTo(pt.x, normalSign * dh);
           }
-          // Top path (inward, into brick face) from left to right
+          // Inner edge (into brick face)
           for (var pi4 = numPts; pi4 >= 0; pi4--) {
             var pt2 = profile[pi4];
-            ctx.lineTo(pt2.x, -pt2.h * inMult);
+            ctx.lineTo(pt2.x, -normalSign * pt2.h * inMult);
           }
           ctx.closePath();
-          ctx.fillStyle = rgba(lCol, la);
-          if (layer2 === 1) { ctx.shadowColor = pal.glow; ctx.shadowBlur = 6; }
-          ctx.fill();
-          ctx.shadowBlur = 0;
+          ctx.fillStyle = rgba(lCol2, la3);
+          if (layer2===1){ctx.shadowColor=pal.glow;ctx.shadowBlur=6;}
+          ctx.fill(); ctx.shadowBlur=0;
         }
 
-        // Bulbous drips along the bottom
-        var numBulbs = 2 + Math.floor(spread / 18);
-        for (var bi2 = 0; bi2 < numBulbs; bi2++) {
-          var bx2 = (bi2 / (numBulbs-1) - 0.5) * spread * 1.4;
-          // Profile height at this x
-          var env2 = Math.pow(Math.max(0, 1 - Math.abs(bx2) / spread), 0.6);
-          if (env2 < 0.15) continue;
-          var bulbSize = (2.5 + env2 * 4) * (0.7 + 0.3 * Math.sin(bi2 * 2.9 + seed));
-          var bulbY    = droopOut + bulbSize * 0.4;
+        // Impact streaks
+        var numSt = 3 + (si % 3);
+        for (var sti = 0; sti < numSt; sti++) {
+          var stA = (sti/numSt - 0.5) * Math.PI * 0.85;
+          var stLen = spread * (0.5 + 0.5*Math.sin(sti*1.9+seed));
           ctx.beginPath();
-          // Teardrop shape: wider at top, pointed at bottom
-          ctx.ellipse(bx2, bulbY, bulbSize * 0.6, bulbSize, 0, 0, Math.PI*2);
-          ctx.fillStyle = rgba(pal.bulb, alpha * 0.85 * env2);
-          ctx.shadowColor = pal.glow; ctx.shadowBlur = 3;
-          ctx.fill();
-          ctx.shadowBlur = 0;
+          ctx.moveTo(Math.cos(stA)*cr*0.08, Math.sin(stA)*cr*0.04*normalSign);
+          ctx.lineTo(Math.cos(stA)*stLen, Math.sin(stA)*stLen*0.15*normalSign);
+          ctx.strokeStyle=rgba(pal.core, alpha*0.5);
+          ctx.lineWidth=1+Math.sin(sti)*0.7; ctx.lineCap='round'; ctx.stroke();
         }
+
+        // Bulbous drips/globules
+        // For top hit: drips hang downward (+normalSign) over the brick face
+        // For bottom hit: drips dangle into free space below
+        var numBulbs = 2 + Math.floor(spread / 16);
+        var brickHalfShort = sp.brickH ? Math.min(sp.brickW, sp.brickH) * 0.5 : 0;
+        for (var bi3 = 0; bi3 < numBulbs; bi3++) {
+          var bx3 = (numBulbs > 1 ? (bi3/(numBulbs-1) - 0.5) : 0) * spread * 1.3;
+          var env3 = Math.pow(Math.max(0, 1 - Math.abs(bx3)/spread), 0.55);
+          if (env3 < 0.12) continue;
+          var bulbSz = (2.5 + env3 * 4.5) * (0.7 + 0.3 * Math.sin(bi3*2.9+seed));
+          // Drip hangs in normalSign direction
+          var bulbStartY = normalSign * (droopOut + 0.5);
+          var bulbEndY   = bulbStartY + normalSign * bulbSz * 1.2;
+          // For top hit: limit how far drip goes into brick face (covers it, doesn't go through)
+          if (hitFromTop) {
+            var maxDrip = brickHalfShort * 2;  // cover full brick width
+            if (Math.abs(bulbEndY) > maxDrip) bulbEndY = normalSign * maxDrip;
+          }
+          ctx.beginPath();
+          ctx.ellipse(bx3, bulbEndY, bulbSz * 0.55, bulbSz * (hitFromTop ? 1.3 : 1.0), 0, 0, Math.PI*2);
+          ctx.fillStyle=rgba(pal.bulb, alpha*0.88*env3);
+          ctx.shadowColor=pal.glow; ctx.shadowBlur=3;
+          ctx.fill(); ctx.shadowBlur=0;
+          // Stem connecting bulb to edge
+          if (bulbSz > 2) {
+            ctx.beginPath();
+            ctx.moveTo(bx3, normalSign * droopOut);
+            ctx.lineTo(bx3, bulbEndY - normalSign * bulbSz * 0.5);
+            ctx.lineWidth = bulbSz * 0.45;
+            ctx.strokeStyle = rgba(pal.core, alpha * 0.7 * env3);
+            ctx.lineCap = 'round'; ctx.stroke();
+          }
+        }
+        // Specular dot
+        ctx.beginPath();
+        ctx.arc(-spread*0.1, -normalSign * maxIn * 0.3, cr * 0.1, 0, Math.PI*2);
+        ctx.fillStyle = rgba(pal.hi, alpha * 0.7); ctx.fill();
       }
 
       ctx.restore();
 
-      // Drips falling in world space
+      // Falling drips in world space (for bottom hits = dangle free; top hits = fall over brick)
       for (var di2 = 0; di2 < sp.drips.length; di2++) {
-        var d2 = sp.drips[di2];
+        var d2   = sp.drips[di2];
         var dAge = Math.min(1, d2.age / d2.maxAge);
         var dAlpha = alpha * (1 - dAge * dAge);
         if (dAlpha <= 0.02) continue;
         var dpx = wx + d2.ox;
         var dpy = wy + d2.oy;
         var stemLen = d2.len * dAlpha;
-        if (stemLen > 2) {
+        if (stemLen > 1.5) {
           var sg = ctx.createLinearGradient(dpx, dpy, dpx, dpy + stemLen);
-          sg.addColorStop(0,   rgba(pal.core, dAlpha * 0.9));
-          sg.addColorStop(0.6, rgba(pal.core, dAlpha * 0.5));
-          sg.addColorStop(1,   rgba(pal.lo,   0));
+          sg.addColorStop(0, rgba(pal.core, dAlpha * 0.9));
+          sg.addColorStop(0.6, rgba(pal.core, dAlpha * 0.45));
+          sg.addColorStop(1, rgba(pal.lo, 0));
           ctx.beginPath();
-          ctx.moveTo(dpx - d2.r * 0.35, dpy);
-          ctx.quadraticCurveTo(dpx + d2.r * 0.2, dpy + stemLen * 0.55, dpx, dpy + stemLen);
-          ctx.lineWidth = d2.r * (1 - dAge * 0.6);
+          ctx.moveTo(dpx - d2.r*0.3, dpy);
+          ctx.quadraticCurveTo(dpx + d2.r*0.2, dpy + stemLen*0.5, dpx, dpy + stemLen);
+          ctx.lineWidth = d2.r * (1 - dAge * 0.5);
           ctx.strokeStyle = sg; ctx.lineCap = 'round'; ctx.stroke();
         }
-        // Bulb at end
-        var bulbR2 = d2.r * (0.7 + 0.3 * Math.sin(d2.age * 0.22)) * dAlpha;
-        if (bulbR2 > 0.8) {
-          ctx.shadowColor = pal.glow; ctx.shadowBlur = 4;
+        var bulbR3 = d2.r * (0.6 + 0.4*Math.sin(d2.age*0.22)) * dAlpha;
+        if (bulbR3 > 0.8) {
+          ctx.shadowColor = pal.glow; ctx.shadowBlur = 3;
           ctx.beginPath();
-          ctx.ellipse(dpx, dpy + stemLen + bulbR2 * 0.5, bulbR2 * 0.65, bulbR2, 0, 0, Math.PI*2);
-          ctx.fillStyle = rgba(pal.bulb, dAlpha * 0.9);
-          ctx.fill();
+          ctx.ellipse(dpx, dpy+stemLen+bulbR3*0.4, bulbR3*0.6, bulbR3, 0, 0, Math.PI*2);
+          ctx.fillStyle = rgba(pal.bulb, dAlpha * 0.9); ctx.fill();
           ctx.shadowBlur = 0;
         }
       }
@@ -3411,17 +3465,20 @@ class Game {
 
   _tryDeleteBall(px, py) {
     if (!this._deleteMode) return false;
-    for (var i = this.objects.length - 1; i >= 0; i--) {
+    var best = null, bestDist = 9999;
+    for (var i = 0; i < this.objects.length; i++) {
       var obj = this.objects[i];
-      if (obj.dead) continue;
-      if (Math.hypot(px - obj.x, py - obj.y) < obj.r + 10) {
-        this.objects.splice(i, 1);
-        this.ui.attachObjects(this.objects);
-        Physics.spawnSparks(this.sparks, obj.x, obj.y, '#ff4444', 18);
-        if (window.Sound) Sound.thud(10);
-        // Stay in delete mode — don't auto-exit
-        return true;
-      }
+      if (obj.dead || obj.exploded) continue;
+      var d = Math.hypot(px - obj.x, py - obj.y);
+      if (d < obj.r + 14 && d < bestDist) { bestDist = d; best = i; }
+    }
+    if (best !== null) {
+      var obj2 = this.objects[best];
+      Physics.spawnSparks(this.sparks, obj2.x, obj2.y, '#ff4444', 18);
+      if (window.Sound) Sound.thud(10);
+      this.objects.splice(best, 1);
+      this.ui.attachObjects(this.objects);
+      return true;
     }
     return false;
   }
