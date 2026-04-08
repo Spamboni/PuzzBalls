@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1552;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1553;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -802,12 +802,19 @@ class TubeManager {
   _drawOneJoint(ctx, tubeA, sideA, tubeB, sideB) {
     var ptsA = tubeA._path, ptsB = tubeB._path;
     if (!ptsA || ptsA.length < 2 || !ptsB || ptsB.length < 2) return;
-    var r = Math.min(tubeA.radius, tubeB.radius);
+    var rA = tubeA.radius, rB = tubeB.radius;
+    var r = Math.max(rA, rB);
 
     var idxA = sideA === 'A' ? 0 : ptsA.length - 1;
     var idxB = sideB === 'A' ? 0 : ptsB.length - 1;
     var jx = (ptsA[idxA].x + ptsB[idxB].x) / 2;
     var jy = (ptsA[idxA].y + ptsB[idxB].y) / 2;
+
+    // Tangent directions pointing into each tube from the joint
+    var inA = sideA === 'A' ? Math.min(3, ptsA.length - 1) : Math.max(ptsA.length - 4, 0);
+    var inB = sideB === 'A' ? Math.min(3, ptsB.length - 1) : Math.max(ptsB.length - 4, 0);
+    var angA = Math.atan2(ptsA[inA].y - ptsA[idxA].y, ptsA[inA].x - ptsA[idxA].x);
+    var angB = Math.atan2(ptsB[inB].y - ptsB[idxB].y, ptsB[inB].x - ptsB[idxB].x);
 
     var color = tubeA._tubeColor();
     var cr = parseInt(color.slice(1,3),16)||0;
@@ -817,85 +824,99 @@ class TubeManager {
     var style = tubeA.style;
     var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
 
-    // Tangent directions pointing AWAY from joint into each tube
-    var inA = sideA === 'A' ? Math.min(3, ptsA.length - 1) : Math.max(ptsA.length - 4, 0);
-    var inB = sideB === 'A' ? Math.min(3, ptsB.length - 1) : Math.max(ptsB.length - 4, 0);
-    var angA = Math.atan2(ptsA[inA].y - ptsA[idxA].y, ptsA[inA].x - ptsA[idxA].x);
-    var angB = Math.atan2(ptsB[inB].y - ptsB[idxB].y, ptsB[inB].x - ptsB[idxB].x);
+    // Erase radius — slightly bigger than tube radius to clear wall strokes
+    var eraseR = r + 10;
 
-    // Bend direction via cross product
-    var cross = Math.sin(angB - angA);
-    var sign = cross >= 0 ? 1 : -1;
-
-    // Wall endpoints at joint: outer and inner for each tube
-    var outerAngA = angA + sign * Math.PI / 2;
-    var outerAngB = angB + sign * Math.PI / 2;
-    var innerAngA = angA - sign * Math.PI / 2;
-    var innerAngB = angB - sign * Math.PI / 2;
-
-    // Dark patch to hide seam
+    // ── Step 1: ERASE the joint area ─────────────────────────────────────
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(jx, jy, r + 1, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,2,10,' + (alpha * 0.85) + ')';
+    ctx.arc(jx, jy, eraseR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,1)';
     ctx.fill();
+    ctx.restore();
 
-    // Body fill patch
+    // ── Step 2: REDRAW — clip to the erased circle, draw both tubes' body+walls through it
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(jx, jy, r, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
-    ctx.fill();
+    ctx.arc(jx, jy, eraseR, 0, Math.PI * 2);
+    ctx.clip();
 
-    // Arc on outer wall (convex side of bend)
-    var oStart = outerAngA + Math.PI;  // point back toward joint from tubeA wall end
-    var oEnd   = outerAngB + Math.PI;
-    ctx.beginPath();
-    ctx.arc(jx, jy, r, oStart, oEnd, cross < 0);
-    ctx.lineWidth = style === 'solid' ? 5 : 4;
-    ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
-    ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
-    ctx.shadowBlur = 6; ctx.lineCap = 'butt';
-    ctx.stroke(); ctx.shadowBlur = 0;
+    // Redraw body fills for both tubes through the joint
+    var tubes2 = [tubeA, tubeB];
+    for (var ti2 = 0; ti2 < 2; ti2++) {
+      var tube = tubes2[ti2];
+      var pts = tube._path;
+      var tR = tube.radius;
+      var eA = tube._offsetPath(pts, -tR);
+      var eB = tube._offsetPath(pts,  tR);
 
-    // Arc on inner wall (concave side)
-    var iStart = innerAngA + Math.PI;
-    var iEnd   = innerAngB + Math.PI;
-    ctx.beginPath();
-    ctx.arc(jx, jy, r, iStart, iEnd, cross >= 0);
-    ctx.lineWidth = style === 'solid' ? 5 : 4;
-    ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
-    ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
-    ctx.shadowBlur = 6;
-    ctx.stroke(); ctx.shadowBlur = 0;
-
-    // Highlight arc on wall closest to top (lower Y = world top)
-    var outerMidY = jy + Math.sin((oStart + oEnd) / 2) * r;
-    var innerMidY = jy + Math.sin((iStart + iEnd) / 2) * r;
-    var hlS, hlE, hlCCW;
-    if (outerMidY < innerMidY) {
-      hlS = oStart; hlE = oEnd; hlCCW = (cross < 0);
-    } else {
-      hlS = iStart; hlE = iEnd; hlCCW = (cross >= 0);
+      // Body fill
+      ctx.beginPath();
+      ctx.moveTo(eA[0].x, eA[0].y);
+      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+      for (var i = eB.length - 1; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+      ctx.fill();
     }
-    ctx.beginPath();
-    ctx.arc(jx, jy, r, hlS, hlE, hlCCW);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
-    ctx.lineCap = 'butt';
-    ctx.stroke();
 
-    // Specular gloss through joint
-    if (style === 'glass' || style === 'window') {
-      var glossOff = r * 0.48;
-      var avgAng = Math.atan2(Math.sin(angA) + Math.sin(angB), Math.cos(angA) + Math.cos(angB));
-      var gLen = r * 0.7;
-      var gx0 = jx - Math.cos(avgAng) * gLen, gy0 = jy - glossOff - Math.sin(avgAng) * gLen;
-      var gx1 = jx + Math.cos(avgAng) * gLen, gy1 = jy - glossOff + Math.sin(avgAng) * gLen;
-      ctx.beginPath(); ctx.moveTo(gx0, gy0); ctx.lineTo(gx1, gy1);
-      ctx.lineWidth = style === 'glass' ? r * 0.22 : r * 0.10;
-      ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.38 : 0.18)) + ')';
-      ctx.lineCap = 'round';
+    // Redraw walls for both tubes through the joint
+    for (var ti3 = 0; ti3 < 2; ti3++) {
+      var tube = tubes2[ti3];
+      var pts = tube._path;
+      var tR = tube.radius;
+      var eA = tube._offsetPath(pts, -tR);
+      var eB = tube._offsetPath(pts,  tR);
+
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      // Outer glow
+      [eA, eB].forEach(function(edge) {
+        ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+        for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+        ctx.lineWidth = style === 'solid' ? 8 : 7;
+        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.22) + ')';
+        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.5)';
+        ctx.shadowBlur = 10;
+        ctx.stroke(); ctx.shadowBlur = 0;
+      });
+      // Main wall
+      [eA, eB].forEach(function(edge) {
+        ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+        for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+        ctx.lineWidth = style === 'solid' ? 5 : 4;
+        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
+        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
+        ctx.shadowBlur = 6;
+        ctx.stroke(); ctx.shadowBlur = 0;
+      });
+      // Bright highlight on top edge
+      ctx.beginPath(); ctx.moveTo(eA[0].x, eA[0].y);
+      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
       ctx.stroke();
+
+      // Specular gloss
+      if (style === 'glass' || style === 'window') {
+        var glossUp = tR * 0.48;
+        var glossPts = pts.map(function(p) { return { x: p.x, y: p.y - glossUp }; });
+        ctx.beginPath(); ctx.moveTo(glossPts[0].x, glossPts[0].y);
+        for (var i = 1; i < glossPts.length; i++) ctx.lineTo(glossPts[i].x, glossPts[i].y);
+        ctx.lineWidth = style === 'glass' ? tR * 0.22 : tR * 0.10;
+        ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.38 : 0.18)) + ')';
+        ctx.stroke();
+        // Thin bright line
+        var glossThinPts = pts.map(function(p) { return { x: p.x, y: p.y - tR * 0.62 }; });
+        ctx.beginPath(); ctx.moveTo(glossThinPts[0].x, glossThinPts[0].y);
+        for (var i = 1; i < glossThinPts.length; i++) ctx.lineTo(glossThinPts[i].x, glossThinPts[i].y);
+        ctx.lineWidth = 1.0;
+        ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.55) + ')';
+        ctx.stroke();
+      }
     }
+
+    ctx.restore();  // remove clip
   }
 
   toJSON() {
