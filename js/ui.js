@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1546;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1548;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -85,7 +85,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:30, maxSplats:6 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:0, maxSplats:20 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
@@ -612,7 +612,7 @@ class UI {
           splatRow.style.cssText = 'display:flex;gap:4px;margin-bottom:8px;';
           var splatTypes = [{id:'dead',label:'💀 DEAD',col:'#aa6600'},{id:'boost',label:'⚡ BOOST',col:'#ddcc00'},{id:'goo',label:'🟢 GOO',col:'#44aa00'}];
           // Init splatter sub-settings — must be before any property access
-          window.Settings.splatter = window.Settings.splatter || {type:'goo',size:11,drips:3,duration:30,maxSplats:6};
+          window.Settings.splatter = window.Settings.splatter || {type:'goo',size:11,drips:3,duration:0,maxSplats:20};
           window.Settings.splatter.deadGravMult = window.Settings.splatter.deadGravMult !== undefined ? window.Settings.splatter.deadGravMult : 8;
           window.Settings.splatter.deadGravDur  = window.Settings.splatter.deadGravDur  !== undefined ? window.Settings.splatter.deadGravDur  : 90;
           window.Settings.splatter.boostMult    = window.Settings.splatter.boostMult    !== undefined ? window.Settings.splatter.boostMult    : 2.2;
