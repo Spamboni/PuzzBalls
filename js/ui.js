@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1548;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1550;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -36,6 +36,20 @@ class UI {
     this._btnBack.addEventListener('touchend', doBack);
     this._btnSettings.addEventListener('click',    doSettings);
     this._btnSettings.addEventListener('touchend', doSettings);
+
+    var btnSave = document.getElementById('btn-save-level');
+    var btnLoad = document.getElementById('btn-load-level');
+    if (btnSave && opts.game) {
+      function doSave(e) { e.preventDefault(); e.stopPropagation(); opts.game._saveCustomLevel(); }
+      btnSave.addEventListener('click', doSave);
+      btnSave.addEventListener('touchend', doSave);
+    }
+    if (btnLoad && opts.game) {
+      function doLoad(e) { e.preventDefault(); e.stopPropagation(); opts.game._showLoadLevelOverlay(); }
+      btnLoad.addEventListener('click', doLoad);
+      btnLoad.addEventListener('touchend', doLoad);
+    }
+
     if (this._btnEditor && opts.game) {
       function doEditor(e) { e.preventDefault(); e.stopPropagation(); opts.game.toggleEditor(); }
       this._btnEditor.addEventListener('click',    doEditor);
