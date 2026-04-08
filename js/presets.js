@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 1561;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 1562;
 // presets.js — Physics preset save/load system
 // Presets are stored in localStorage under 'puzzballs_presets'
 
