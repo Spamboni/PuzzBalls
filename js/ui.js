@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1537;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1539;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1537</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1539</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -276,7 +276,7 @@ class UI {
         var bHdr3 = _el('div',''); bHdr3.textContent = '⚙ MOVABLE BRICK DEFAULTS';
         bHdr3.style.cssText = 'color:#ffaa44;font-size:10px;font-weight:bold;padding:8px 0 2px;';
         pane.appendChild(bHdr3);
-        _addSlider(pane,'Density',   'BrickDefaults','density',   0.5, 5.0, 0.5, function(v){return v.toFixed(1)+'x';});
+        _addSlider(pane,'Mass',   'BrickDefaults','density',   0.5, 5.0, 0.5, function(v){return v.toFixed(1)+'x';});
         _addSlider(pane,'Max Travel','BrickDefaults','maxTravel',  0,  900,  10,  function(v){return v+'px';});
         _addSlider(pane,'Decelerate','BrickDefaults','decel',     0.5, 0.99, 0.01,function(v){return Math.round(v*100)+'%';});
 
@@ -520,7 +520,7 @@ class UI {
         _addSlider(pane,'Velocity',   null, null, 0.3,3.0,0.05, function(v){return Math.round(v*100)+'%';},t.id,'velocity');
         _addSlider(pane,'Bounce',     null, null, 0.0,2.0,0.05, function(v){return Math.round(v*100)+'%';},t.id,'bounciness');
         _addSlider(pane,'Bounce Decay',null,null, 0.05,0.95,0.02, function(v){return v.toFixed(2);},   t.id,'bounceDecay');
-        _addSlider(pane,'Density',    null, null, 0.2,4.0,0.1,  function(v){return v.toFixed(1)+'x';}, t.id,'density');
+        _addSlider(pane,'Mass',    null, null, 0.2,4.0,0.1,  function(v){return v.toFixed(1)+'x';}, t.id,'density');
         _addSlider(pane,'Ground Roll',null, null, 0.50,0.99,0.01,function(v){return Math.round(v*100)+'%';},t.id,'groundFriction');
         _addSlider(pane,'Brick Dmg',  null, null, 5, 60, 1,    function(v){return v+' hp';},        t.id,'baseDamage');
         if (t.id==='exploder') { _addSlider(pane,'Blast Radius',null,null,40,250,5,function(v){return v+'px';},t.id,'blastRadius'); _addSlider(pane,'Blast Force',null,null,4,40,1,function(v){return v;},t.id,'blastForce'); _addSlider(pane,'Explode Damage',null,null,0,100,5,function(v){return v+' hp';},t.id,'explosionDamage'); }
