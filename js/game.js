@@ -4498,7 +4498,6 @@ class Game {
     var ps = this._tubePinchStart;
     var d0 = Math.hypot(p0.x-ps.p0.x, p0.y-ps.p0.y);
     var d1 = Math.hypot(p1.x-ps.p1.x, p1.y-ps.p1.y);
-    var ANCHOR = 6;
 
     // New angle and length from finger positions
     var newAngle = Math.atan2(p1.y-p0.y, p1.x-p0.x);
@@ -4506,24 +4505,13 @@ class Game {
     if (snapDeg > 0) { var sr = snapDeg*Math.PI/180; newAngle = Math.round(newAngle/sr)*sr; }
     td.rotation = newAngle;
 
-    // Scale length from finger distance for all types
+    // Length = distance between fingers
     var newDist2 = Math.hypot(p1.x-p0.x, p1.y-p0.y);
-    if (ps.dist > 5) {
-      var scaleFactor = newDist2 / ps.dist;
-      td.length = Math.max(20, Math.min(600, ps.len * scaleFactor));
-    }
+    td.length = Math.max(20, Math.min(600, newDist2));
 
-    if (d0 < ANCHOR) {
-      // Finger 0 anchors at p0 — that end stays
-      td.x = p0.x + Math.cos(newAngle) * td.length / 2;
-      td.y = p0.y + Math.sin(newAngle) * td.length / 2;
-    } else if (d1 < ANCHOR) {
-      td.x = p1.x - Math.cos(newAngle) * td.length / 2;
-      td.y = p1.y - Math.sin(newAngle) * td.length / 2;
-    } else {
-      td.x = (p0.x + p1.x) / 2;
-      td.y = (p0.y + p1.y) / 2;
-    }
+    // Socket A (x,y) = finger 0 position, socket B = finger 1 position
+    td.x = p0.x;
+    td.y = p0.y;
     td.rebuild();
   }
 
@@ -5677,11 +5665,17 @@ class Game {
       this._tubeSelected = null;
       return;
     }
-    // Build mode: place new tube
+    // Build mode: place new tube (centered on tap)
     var type  = this._tubeType  || 'straight';
     var style = this._tubeStyle || 'glass';
-    var tube  = new TubePiece(type, pos.x, pos.y, this._tubeRotation || 0, {
-      length: this._tubeLength || 80, style: style,
+    var tLen  = this._tubeLength || 80;
+    var tRot  = this._tubeRotation || 0;
+    // Offset so tube center lands on finger, not socket A
+    var halfLen = tLen / 2;
+    var cx = pos.x - Math.cos(tRot) * halfLen;
+    var cy = pos.y - Math.sin(tRot) * halfLen;
+    var tube  = new TubePiece(type, cx, cy, tRot, {
+      length: tLen, style: style,
       speedMod: this._tubeSpeedMod || 1.0,
       radius: 14, layer: this._tubeLayer || 'main',
     });
