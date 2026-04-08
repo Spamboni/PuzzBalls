@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1539;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1541;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -40,7 +40,7 @@ var BallSettings = {
     velocity: 1.0, bounciness: 0.15,
     density: 2.2, groundFriction: 0.70,
     stickyStrength: 0.85,
-    stickThreshold: 10,
+    stickThreshold: 20,
     baseDamage: 25,
     bounceDecay: 0.50,
     bounceHeightY: 80,     // max Y distance on tap-bounce (§1.2)
@@ -217,20 +217,26 @@ function applyGravityWell(well, objects) {
           // Spin accelerates as cube approaches well (S-curve: slow start, ramp up, plateau)
           var closeness = 1 - Math.min(1, dist / range);  // 0 at edge, 1 at center
           var spinTarget = closeness * closeness * 0.45;  // quadratic ramp, plateau at 0.45
-          // Gradually push each axis toward spinTarget magnitude
-          var _rx = obj._cubeRX || 0, _ry = obj._cubeRY || 0, _rz = obj._cubeRZ || 0;
+          var accel = pull * 0.06;
+
+          // If cube has no spin yet, assign random directions NOW
+          if (!obj._cubeRX && !obj._cubeRY) {
+            obj._cubeRX = (Math.random() < 0.5 ? 1 : -1) * 0.005;
+            obj._cubeRY = (Math.random() < 0.5 ? 1 : -1) * 0.005;
+            obj._cubeRZ = (Math.random() - 0.5) * 0.005;
+          }
+
+          var _rx = obj._cubeRX, _ry = obj._cubeRY;
           var _rxSpd = Math.abs(_rx), _rySpd = Math.abs(_ry);
-          // Accelerate toward target speed (keep direction, increase magnitude)
-          var accel = pull * 0.04;
-          if (_rxSpd < spinTarget) obj._cubeRX = _rx + Math.sign(_rx || 1) * accel;
-          if (_rySpd < spinTarget) obj._cubeRY = _ry + Math.sign(_ry || 1) * accel;
-          // Also add a little Z wobble
+          // Accelerate toward target speed, keeping existing direction
+          if (_rxSpd < spinTarget) obj._cubeRX = _rx + Math.sign(_rx) * accel;
+          if (_rySpd < spinTarget) obj._cubeRY = _ry + Math.sign(_ry) * accel;
           obj._cubeRZ = (obj._cubeRZ||0) + (Math.random()-0.5) * accel * 0.3;
-          obj._cubeRZ = Math.max(-0.2, Math.min(0.2, obj._cubeRZ));
           // Hard cap
           var maxSpin = 0.5;
           obj._cubeRX = Math.max(-maxSpin, Math.min(maxSpin, obj._cubeRX));
           obj._cubeRY = Math.max(-maxSpin, Math.min(maxSpin, obj._cubeRY));
+          obj._cubeRZ = Math.max(-0.2,     Math.min(0.2,     obj._cubeRZ));
         }
       }
     }
