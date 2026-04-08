@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1560;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1561;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -867,26 +867,37 @@ class TubeManager {
     var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
 
     // ── Compute tangent-matched Bezier control point for each wall pair ──
-    // The control point is where the tangent lines from each wall endpoint
-    // intersect. For wall endpoint on tube A, the tangent direction is dA
-    // (into the tube). For wall endpoint on tube B, the tangent direction is dB.
-    // The quadratic Bezier through p0→cp→p1 is automatically tangent to
-    // the line (p0→cp) at p0 and tangent to (cp→p1) at p1.
-    // So cp = intersection of: p0 - t*dA and p1 - s*dB  (going AWAY from tubes)
-    var _findCP = function(p0, p1) {
-      // Lines: p0 + t*(-dA) and p1 + s*(-dB)
-      // p0.x - t*dAx = p1.x - s*dBx  →  -t*dAx + s*dBx = p1.x - p0.x
-      // p0.y - t*dAy = p1.y - s*dBy  →  -t*dAy + s*dBy = p1.y - p0.y
-      var det = (-dAx) * (-dBy) - (-dAy) * (-dBx);
+    // A quadratic Bezier through p0→cp→p1 is tangent to (p0→cp) at p0
+    // and tangent to (cp→p1) at p1.
+    // For convex (outer bend): CP = intersection of tangent lines going AWAY
+    //   from tubes (-dA, -dB) — CP is outside the bend.
+    // For concave (inner bend): CP = intersection of tangent lines going INTO
+    //   tubes (+dA, +dB) — then reflected through the chord midpoint to sit
+    //   inside the bend. This makes the curve bow inward.
+    var _findCP = function(p0, p1, inward) {
+      // Direction signs: outward (-dA,-dB) for convex, inward (+dA,+dB) for concave
+      var sA_x = inward ? dAx : -dAx;
+      var sA_y = inward ? dAy : -dAy;
+      var sB_x = inward ? dBx : -dBx;
+      var sB_y = inward ? dBy : -dBy;
+      // Lines: p0 + t*sA  and  p1 + s*sB — find intersection
+      // p0.x + t*sA_x = p1.x + s*sB_x
+      // p0.y + t*sA_y = p1.y + s*sB_y
+      var det = sA_x * (-sB_y) - sA_y * (-sB_x);
       if (Math.abs(det) < 1e-6) {
-        // Parallel — just use midpoint
         return { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
       }
-      var t = ((p1.x - p0.x) * (-dBy) - (p1.y - p0.y) * (-dBx)) / det;
-      var cpx = p0.x + t * (-dAx);
-      var cpy = p0.y + t * (-dAy);
-      // Sanity clamp: if control point is absurdly far, pull it back
-      var maxDist = r * 6;
+      var t = ((p1.x - p0.x) * (-sB_y) - (p1.y - p0.y) * (-sB_x)) / det;
+      var cpx = p0.x + t * sA_x;
+      var cpy = p0.y + t * sA_y;
+      // For concave: reflect CP through the chord midpoint so curve bows inward
+      if (inward) {
+        var mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+        cpx = 2 * mx - cpx;
+        cpy = 2 * my - cpy;
+      }
+      // Sanity clamp
+      var maxDist = r * 4;
       var cpDist = Math.hypot(cpx - jx, cpy - jy);
       if (cpDist > maxDist) {
         var scale = maxDist / cpDist;
@@ -896,8 +907,8 @@ class TubeManager {
       return { x: cpx, y: cpy };
     };
 
-    var convexCP  = _findCP(convexPair[0], convexPair[1]);
-    var concaveCP = _findCP(concavePair[0], concavePair[1]);
+    var convexCP  = _findCP(convexPair[0], convexPair[1], false);
+    var concaveCP = _findCP(concavePair[0], concavePair[1], true);
 
     // ── Body fill: closed shape using Bezier curves ─────────────────────
     ctx.beginPath();
