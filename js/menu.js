@@ -1,4 +1,5 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['menu.js'] = 1552;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_BUILD_TIMESTAMP = '04/08/2026 05:52 AM CT';
+window.PUZZBALLS_FILE_VERSION['menu.js'] = 1553;
 // menu.js — Main menu / level selector screen
 
 var LEVEL_CATALOG = [
@@ -71,8 +72,8 @@ var Menu = (function() {
     var header = _el('div', 'menu-header');
     var _ver = window.PUZZBALLS_FILE_VERSION && window.PUZZBALLS_FILE_VERSION['game.js'];
     var _verStr = _ver ? ('v' + String(_ver).slice(0,2) + '.' + String(_ver).slice(2)) : 'v?';
-    var _BUILD_TIME = '4/8 3:57am';
-    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">' + _verStr + ' · ' + _BUILD_TIME + '</div>';
+    var _BUILD_TIME = window.PUZZBALLS_BUILD_TIMESTAMP || '';
+    header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version" style="color:#ffff00">' + _verStr + ' · ' + _BUILD_TIME + '</div>';
     _container.appendChild(header);
 
     // ── Preset selector ──────────────────────────────────────────────────────
