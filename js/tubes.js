@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1551;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1552;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -779,7 +779,7 @@ class TubeManager {
   }
 
   _drawJoints(ctx, layer) {
-    var drawn = {};  // track drawn pairs to avoid duplicates
+    var drawn = {};
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var tubeA = this.tubes[ti];
       if (tubeA.layer !== layer) continue;
@@ -791,7 +791,6 @@ class TubeManager {
         var tubeB = conn.tube;
         if (tubeB.layer !== layer) continue;
         if (tubeB.style === 'energy' || tubeB.type === 'funnel') continue;
-        // Unique pair key
         var pairKey = tubeA.id < tubeB.id ? tubeA.id+'|'+tubeB.id : tubeB.id+'|'+tubeA.id;
         if (drawn[pairKey]) continue;
         drawn[pairKey] = true;
@@ -803,47 +802,13 @@ class TubeManager {
   _drawOneJoint(ctx, tubeA, sideA, tubeB, sideB) {
     var ptsA = tubeA._path, ptsB = tubeB._path;
     if (!ptsA || ptsA.length < 2 || !ptsB || ptsB.length < 2) return;
-    var rA = tubeA.radius, rB = tubeB.radius;
-    var r = Math.min(rA, rB);
+    var r = Math.min(tubeA.radius, tubeB.radius);
 
-    // Get the endpoint indices for each tube at the joint
     var idxA = sideA === 'A' ? 0 : ptsA.length - 1;
     var idxB = sideB === 'A' ? 0 : ptsB.length - 1;
-    // Get a point slightly inside each tube (to find wall edge directions)
-    var inA = sideA === 'A' ? Math.min(2, ptsA.length - 1) : Math.max(ptsA.length - 3, 0);
-    var inB = sideB === 'A' ? Math.min(2, ptsB.length - 1) : Math.max(ptsB.length - 3, 0);
-
-    // Joint center point
     var jx = (ptsA[idxA].x + ptsB[idxB].x) / 2;
     var jy = (ptsA[idxA].y + ptsB[idxB].y) / 2;
 
-    // Tangent directions pointing INTO each tube from joint
-    var tAx = ptsA[inA].x - ptsA[idxA].x, tAy = ptsA[inA].y - ptsA[idxA].y;
-    var tBx = ptsB[inB].x - ptsB[idxB].x, tBy = ptsB[inB].y - ptsB[idxB].y;
-    var lenA = Math.hypot(tAx, tAy) || 1, lenB = Math.hypot(tBx, tBy) || 1;
-    tAx /= lenA; tAy /= lenA; tBx /= lenB; tBy /= lenB;
-
-    // Perpendicular normals (left side = -perp, right side = +perp)
-    var nAx = -tAy, nAy = tAx;  // perp to tube A direction
-    var nBx = -tBy, nBy = tBx;  // perp to tube B direction
-
-    // 4 wall endpoints at joint: each tube has a "left" and "right" wall edge
-    var aL = { x: jx + nAx * r, y: jy + nAy * r };
-    var aR = { x: jx - nAx * r, y: jy - nAy * r };
-    var bL = { x: jx + nBx * r, y: jy + nBy * r };
-    var bR = { x: jx - nBx * r, y: jy - nBy * r };
-
-    // Determine which wall endpoints pair up (closest matches)
-    var d1 = Math.hypot(aL.x - bL.x, aL.y - bL.y) + Math.hypot(aR.x - bR.x, aR.y - bR.y);
-    var d2 = Math.hypot(aL.x - bR.x, aL.y - bR.y) + Math.hypot(aR.x - bL.x, aR.y - bL.y);
-    var outerPair, innerPair;
-    if (d1 <= d2) {
-      outerPair = [aL, bL]; innerPair = [aR, bR];
-    } else {
-      outerPair = [aL, bR]; innerPair = [aR, bL];
-    }
-
-    // Get color from tube A
     var color = tubeA._tubeColor();
     var cr = parseInt(color.slice(1,3),16)||0;
     var cg = parseInt(color.slice(3,5),16)||0;
@@ -852,99 +817,87 @@ class TubeManager {
     var style = tubeA.style;
     var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
 
-    // ── Fill the joint gap ──────────────────────────────────────────────────
-    // Draw a filled quad between the 4 wall endpoints
+    // Tangent directions pointing AWAY from joint into each tube
+    var inA = sideA === 'A' ? Math.min(3, ptsA.length - 1) : Math.max(ptsA.length - 4, 0);
+    var inB = sideB === 'A' ? Math.min(3, ptsB.length - 1) : Math.max(ptsB.length - 4, 0);
+    var angA = Math.atan2(ptsA[inA].y - ptsA[idxA].y, ptsA[inA].x - ptsA[idxA].x);
+    var angB = Math.atan2(ptsB[inB].y - ptsB[idxB].y, ptsB[inB].x - ptsB[idxB].x);
+
+    // Bend direction via cross product
+    var cross = Math.sin(angB - angA);
+    var sign = cross >= 0 ? 1 : -1;
+
+    // Wall endpoints at joint: outer and inner for each tube
+    var outerAngA = angA + sign * Math.PI / 2;
+    var outerAngB = angB + sign * Math.PI / 2;
+    var innerAngA = angA - sign * Math.PI / 2;
+    var innerAngB = angB - sign * Math.PI / 2;
+
+    // Dark patch to hide seam
     ctx.beginPath();
-    ctx.moveTo(outerPair[0].x, outerPair[0].y);
-    ctx.lineTo(outerPair[1].x, outerPair[1].y);
-    ctx.lineTo(innerPair[1].x, innerPair[1].y);
-    ctx.lineTo(innerPair[0].x, innerPair[0].y);
-    ctx.closePath();
+    ctx.arc(jx, jy, r + 1, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,2,10,' + (alpha * 0.85) + ')';
+    ctx.fill();
+
+    // Body fill patch
+    ctx.beginPath();
+    ctx.arc(jx, jy, r, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
     ctx.fill();
 
-    // ── Draw arc walls connecting each pair ─────────────────────────────────
-    var pairs = [outerPair, innerPair];
-    for (var pi = 0; pi < pairs.length; pi++) {
-      var p0 = pairs[pi][0], p1 = pairs[pi][1];
-      var gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-      if (gap < 1) continue;
+    // Arc on outer wall (convex side of bend)
+    var oStart = outerAngA + Math.PI;  // point back toward joint from tubeA wall end
+    var oEnd   = outerAngB + Math.PI;
+    ctx.beginPath();
+    ctx.arc(jx, jy, r, oStart, oEnd, cross < 0);
+    ctx.lineWidth = style === 'solid' ? 5 : 4;
+    ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
+    ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
+    ctx.shadowBlur = 6; ctx.lineCap = 'butt';
+    ctx.stroke(); ctx.shadowBlur = 0;
 
-      // Quadratic bezier arc through midpoint bulged toward joint center
-      var mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
-      // Bulge control point toward joint center for a smooth curve
-      var bulge = Math.min(gap * 0.25, r * 0.4);
-      var toJx = jx - mx, toJy = jy - my;
-      var toJlen = Math.hypot(toJx, toJy) || 1;
-      var cpx = mx + (toJx / toJlen) * bulge;
-      var cpy = my + (toJy / toJlen) * bulge;
+    // Arc on inner wall (concave side)
+    var iStart = innerAngA + Math.PI;
+    var iEnd   = innerAngB + Math.PI;
+    ctx.beginPath();
+    ctx.arc(jx, jy, r, iStart, iEnd, cross >= 0);
+    ctx.lineWidth = style === 'solid' ? 5 : 4;
+    ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
+    ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
+    ctx.shadowBlur = 6;
+    ctx.stroke(); ctx.shadowBlur = 0;
 
-      // Outer glow
-      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
-      ctx.quadraticCurveTo(cpx, cpy, p1.x, p1.y);
-      ctx.lineWidth = style === 'solid' ? 8 : 7;
-      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.22) + ')';
-      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.5)';
-      ctx.shadowBlur = 10;
-      ctx.lineCap = 'round';
-      ctx.stroke(); ctx.shadowBlur = 0;
-
-      // Main wall
-      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
-      ctx.quadraticCurveTo(cpx, cpy, p1.x, p1.y);
-      ctx.lineWidth = style === 'solid' ? 5 : 4;
-      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
-      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
-      ctx.shadowBlur = 6;
-      ctx.stroke(); ctx.shadowBlur = 0;
+    // Highlight arc on wall closest to top (lower Y = world top)
+    var outerMidY = jy + Math.sin((oStart + oEnd) / 2) * r;
+    var innerMidY = jy + Math.sin((iStart + iEnd) / 2) * r;
+    var hlS, hlE, hlCCW;
+    if (outerMidY < innerMidY) {
+      hlS = oStart; hlE = oEnd; hlCCW = (cross < 0);
+    } else {
+      hlS = iStart; hlE = iEnd; hlCCW = (cross >= 0);
     }
+    ctx.beginPath();
+    ctx.arc(jx, jy, r, hlS, hlE, hlCCW);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
+    ctx.lineCap = 'butt';
+    ctx.stroke();
 
-    // ── Bright inner highlight arc on the pair closest to "up" (world top) ──
-    // Pick whichever pair has the lower average Y
-    var topPair = (outerPair[0].y + outerPair[1].y < innerPair[0].y + innerPair[1].y)
-                  ? outerPair : innerPair;
-    var tp0 = topPair[0], tp1 = topPair[1];
-    var tGap = Math.hypot(tp1.x - tp0.x, tp1.y - tp0.y);
-    if (tGap > 1) {
-      var tmx = (tp0.x + tp1.x) / 2, tmy = (tp0.y + tp1.y) / 2;
-      var tBulge = Math.min(tGap * 0.25, r * 0.4);
-      var tToJx = jx - tmx, tToJy = jy - tmy;
-      var tToJlen = Math.hypot(tToJx, tToJy) || 1;
-      var tcpx = tmx + (tToJx / tToJlen) * tBulge;
-      var tcpy = tmy + (tToJy / tToJlen) * tBulge;
-      ctx.beginPath(); ctx.moveTo(tp0.x, tp0.y);
-      ctx.quadraticCurveTo(tcpx, tcpy, tp1.x, tp1.y);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
-      ctx.lineCap = 'round';
-      ctx.stroke();
-    }
-
-    // ── Specular gloss arc (gravity-aligned) ────────────────────────────────
+    // Specular gloss through joint
     if (style === 'glass' || style === 'window') {
-      var glossUp = r * 0.48;
-      var g0 = { x: jx - tAx * r * 0.5, y: jy - tAy * r * 0.5 - glossUp };
-      var g1 = { x: jx - tBx * r * 0.5, y: jy - tBy * r * 0.5 - glossUp };
-      var gm = { x: jx, y: jy - glossUp };
-      ctx.beginPath(); ctx.moveTo(g0.x, g0.y);
-      ctx.quadraticCurveTo(gm.x, gm.y, g1.x, g1.y);
+      var glossOff = r * 0.48;
+      var avgAng = Math.atan2(Math.sin(angA) + Math.sin(angB), Math.cos(angA) + Math.cos(angB));
+      var gLen = r * 0.7;
+      var gx0 = jx - Math.cos(avgAng) * gLen, gy0 = jy - glossOff - Math.sin(avgAng) * gLen;
+      var gx1 = jx + Math.cos(avgAng) * gLen, gy1 = jy - glossOff + Math.sin(avgAng) * gLen;
+      ctx.beginPath(); ctx.moveTo(gx0, gy0); ctx.lineTo(gx1, gy1);
       ctx.lineWidth = style === 'glass' ? r * 0.22 : r * 0.10;
       ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.38 : 0.18)) + ')';
       ctx.lineCap = 'round';
       ctx.stroke();
-      // Thin bright line
-      var gt0 = { x: g0.x, y: g0.y - r * 0.14 };
-      var gt1 = { x: g1.x, y: g1.y - r * 0.14 };
-      var gtm = { x: gm.x, y: gm.y - r * 0.14 };
-      ctx.beginPath(); ctx.moveTo(gt0.x, gt0.y);
-      ctx.quadraticCurveTo(gtm.x, gtm.y, gt1.x, gt1.y);
-      ctx.lineWidth = 1.0;
-      ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.55) + ')';
-      ctx.stroke();
     }
   }
 
-  // ── Serialise for level save ──────────────────────────────────────────────
   toJSON() {
     return this.tubes.map(function(t) {
       return {
