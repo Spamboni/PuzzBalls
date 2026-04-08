@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1550;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1551;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -773,6 +773,174 @@ class TubeManager {
       var tube = this.tubes[ti];
       if (tube.layer !== layer) continue;
       tube.draw(ctx, frame, tube === selectedTube);
+    }
+    // ── Seamless joint fillets between connected tubes ─────────────────────
+    this._drawJoints(ctx, layer);
+  }
+
+  _drawJoints(ctx, layer) {
+    var drawn = {};  // track drawn pairs to avoid duplicates
+    for (var ti = 0; ti < this.tubes.length; ti++) {
+      var tubeA = this.tubes[ti];
+      if (tubeA.layer !== layer) continue;
+      if (tubeA.style === 'energy' || tubeA.type === 'funnel') continue;
+      var sides = ['connectedA', 'connectedB'];
+      for (var si = 0; si < sides.length; si++) {
+        var conn = tubeA[sides[si]];
+        if (!conn) continue;
+        var tubeB = conn.tube;
+        if (tubeB.layer !== layer) continue;
+        if (tubeB.style === 'energy' || tubeB.type === 'funnel') continue;
+        // Unique pair key
+        var pairKey = tubeA.id < tubeB.id ? tubeA.id+'|'+tubeB.id : tubeB.id+'|'+tubeA.id;
+        if (drawn[pairKey]) continue;
+        drawn[pairKey] = true;
+        this._drawOneJoint(ctx, tubeA, sides[si] === 'connectedA' ? 'A' : 'B', tubeB, conn.side);
+      }
+    }
+  }
+
+  _drawOneJoint(ctx, tubeA, sideA, tubeB, sideB) {
+    var ptsA = tubeA._path, ptsB = tubeB._path;
+    if (!ptsA || ptsA.length < 2 || !ptsB || ptsB.length < 2) return;
+    var rA = tubeA.radius, rB = tubeB.radius;
+    var r = Math.min(rA, rB);
+
+    // Get the endpoint indices for each tube at the joint
+    var idxA = sideA === 'A' ? 0 : ptsA.length - 1;
+    var idxB = sideB === 'A' ? 0 : ptsB.length - 1;
+    // Get a point slightly inside each tube (to find wall edge directions)
+    var inA = sideA === 'A' ? Math.min(2, ptsA.length - 1) : Math.max(ptsA.length - 3, 0);
+    var inB = sideB === 'A' ? Math.min(2, ptsB.length - 1) : Math.max(ptsB.length - 3, 0);
+
+    // Joint center point
+    var jx = (ptsA[idxA].x + ptsB[idxB].x) / 2;
+    var jy = (ptsA[idxA].y + ptsB[idxB].y) / 2;
+
+    // Tangent directions pointing INTO each tube from joint
+    var tAx = ptsA[inA].x - ptsA[idxA].x, tAy = ptsA[inA].y - ptsA[idxA].y;
+    var tBx = ptsB[inB].x - ptsB[idxB].x, tBy = ptsB[inB].y - ptsB[idxB].y;
+    var lenA = Math.hypot(tAx, tAy) || 1, lenB = Math.hypot(tBx, tBy) || 1;
+    tAx /= lenA; tAy /= lenA; tBx /= lenB; tBy /= lenB;
+
+    // Perpendicular normals (left side = -perp, right side = +perp)
+    var nAx = -tAy, nAy = tAx;  // perp to tube A direction
+    var nBx = -tBy, nBy = tBx;  // perp to tube B direction
+
+    // 4 wall endpoints at joint: each tube has a "left" and "right" wall edge
+    var aL = { x: jx + nAx * r, y: jy + nAy * r };
+    var aR = { x: jx - nAx * r, y: jy - nAy * r };
+    var bL = { x: jx + nBx * r, y: jy + nBy * r };
+    var bR = { x: jx - nBx * r, y: jy - nBy * r };
+
+    // Determine which wall endpoints pair up (closest matches)
+    var d1 = Math.hypot(aL.x - bL.x, aL.y - bL.y) + Math.hypot(aR.x - bR.x, aR.y - bR.y);
+    var d2 = Math.hypot(aL.x - bR.x, aL.y - bR.y) + Math.hypot(aR.x - bL.x, aR.y - bL.y);
+    var outerPair, innerPair;
+    if (d1 <= d2) {
+      outerPair = [aL, bL]; innerPair = [aR, bR];
+    } else {
+      outerPair = [aL, bR]; innerPair = [aR, bL];
+    }
+
+    // Get color from tube A
+    var color = tubeA._tubeColor();
+    var cr = parseInt(color.slice(1,3),16)||0;
+    var cg = parseInt(color.slice(3,5),16)||0;
+    var cb = parseInt(color.slice(5,7),16)||0;
+    var alpha = tubeA.layer === 'behind' ? 0.50 : 1.0;
+    var style = tubeA.style;
+    var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
+
+    // ── Fill the joint gap ──────────────────────────────────────────────────
+    // Draw a filled quad between the 4 wall endpoints
+    ctx.beginPath();
+    ctx.moveTo(outerPair[0].x, outerPair[0].y);
+    ctx.lineTo(outerPair[1].x, outerPair[1].y);
+    ctx.lineTo(innerPair[1].x, innerPair[1].y);
+    ctx.lineTo(innerPair[0].x, innerPair[0].y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+    ctx.fill();
+
+    // ── Draw arc walls connecting each pair ─────────────────────────────────
+    var pairs = [outerPair, innerPair];
+    for (var pi = 0; pi < pairs.length; pi++) {
+      var p0 = pairs[pi][0], p1 = pairs[pi][1];
+      var gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      if (gap < 1) continue;
+
+      // Quadratic bezier arc through midpoint bulged toward joint center
+      var mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+      // Bulge control point toward joint center for a smooth curve
+      var bulge = Math.min(gap * 0.25, r * 0.4);
+      var toJx = jx - mx, toJy = jy - my;
+      var toJlen = Math.hypot(toJx, toJy) || 1;
+      var cpx = mx + (toJx / toJlen) * bulge;
+      var cpy = my + (toJy / toJlen) * bulge;
+
+      // Outer glow
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(cpx, cpy, p1.x, p1.y);
+      ctx.lineWidth = style === 'solid' ? 8 : 7;
+      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.22) + ')';
+      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.5)';
+      ctx.shadowBlur = 10;
+      ctx.lineCap = 'round';
+      ctx.stroke(); ctx.shadowBlur = 0;
+
+      // Main wall
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(cpx, cpy, p1.x, p1.y);
+      ctx.lineWidth = style === 'solid' ? 5 : 4;
+      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
+      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
+      ctx.shadowBlur = 6;
+      ctx.stroke(); ctx.shadowBlur = 0;
+    }
+
+    // ── Bright inner highlight arc on the pair closest to "up" (world top) ──
+    // Pick whichever pair has the lower average Y
+    var topPair = (outerPair[0].y + outerPair[1].y < innerPair[0].y + innerPair[1].y)
+                  ? outerPair : innerPair;
+    var tp0 = topPair[0], tp1 = topPair[1];
+    var tGap = Math.hypot(tp1.x - tp0.x, tp1.y - tp0.y);
+    if (tGap > 1) {
+      var tmx = (tp0.x + tp1.x) / 2, tmy = (tp0.y + tp1.y) / 2;
+      var tBulge = Math.min(tGap * 0.25, r * 0.4);
+      var tToJx = jx - tmx, tToJy = jy - tmy;
+      var tToJlen = Math.hypot(tToJx, tToJy) || 1;
+      var tcpx = tmx + (tToJx / tToJlen) * tBulge;
+      var tcpy = tmy + (tToJy / tToJlen) * tBulge;
+      ctx.beginPath(); ctx.moveTo(tp0.x, tp0.y);
+      ctx.quadraticCurveTo(tcpx, tcpy, tp1.x, tp1.y);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // ── Specular gloss arc (gravity-aligned) ────────────────────────────────
+    if (style === 'glass' || style === 'window') {
+      var glossUp = r * 0.48;
+      var g0 = { x: jx - tAx * r * 0.5, y: jy - tAy * r * 0.5 - glossUp };
+      var g1 = { x: jx - tBx * r * 0.5, y: jy - tBy * r * 0.5 - glossUp };
+      var gm = { x: jx, y: jy - glossUp };
+      ctx.beginPath(); ctx.moveTo(g0.x, g0.y);
+      ctx.quadraticCurveTo(gm.x, gm.y, g1.x, g1.y);
+      ctx.lineWidth = style === 'glass' ? r * 0.22 : r * 0.10;
+      ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.38 : 0.18)) + ')';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      // Thin bright line
+      var gt0 = { x: g0.x, y: g0.y - r * 0.14 };
+      var gt1 = { x: g1.x, y: g1.y - r * 0.14 };
+      var gtm = { x: gm.x, y: gm.y - r * 0.14 };
+      ctx.beginPath(); ctx.moveTo(gt0.x, gt0.y);
+      ctx.quadraticCurveTo(gtm.x, gtm.y, gt1.x, gt1.y);
+      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.55) + ')';
+      ctx.stroke();
     }
   }
 
