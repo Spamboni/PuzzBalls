@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1561;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1562;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -298,7 +298,7 @@ class TubePiece {
       var edgeB = this._offsetPath(pts,  tubeR);   // "bottom" edge
 
       // Trim edges at connected sockets to prevent wall overlap at joints
-      var trimPts = 2;
+      var trimPts = 3;
       if (this.connectedA && edgeA.length > trimPts * 2 + 2) {
         edgeA = edgeA.slice(trimPts);
         edgeB = edgeB.slice(trimPts);
@@ -837,24 +837,41 @@ class TubeManager {
     var lenAd = Math.hypot(dAx, dAy) || 1, lenBd = Math.hypot(dBx, dBy) || 1;
     dAx /= lenAd; dAy /= lenAd; dBx /= lenBd; dBy /= lenBd;
 
-    // Perpendiculars (90° CCW from inward direction)
+    // Perpendicular to tube A (90° CCW): nA = (-dAy, dAx)
     var nAx = -dAy, nAy = dAx;
     var nBx = -dBy, nBy = dBx;
 
-    // 4 wall endpoints at the joint
-    var aL = { x: jx + nAx * rA, y: jy + nAy * rA };
-    var aR = { x: jx - nAx * rA, y: jy - nAy * rA };
-    var bL = { x: jx + nBx * rB, y: jy + nBy * rB };
-    var bR = { x: jx - nBx * rB, y: jy - nBy * rB };
+    // Use cross product of dA × dB to determine which side is concave (inside bend)
+    // cross > 0: bend turns left (CCW) — +nA side is inside
+    // cross < 0: bend turns right (CW) — -nA side is inside
+    var cross = dAx * dBy - dAy * dBx;
 
-    // Pair closest wall points (concave = inner bend, convex = outer bend)
-    var d1 = Math.hypot(aL.x-bL.x, aL.y-bL.y) + Math.hypot(aR.x-bR.x, aR.y-bR.y);
-    var d2 = Math.hypot(aL.x-bR.x, aL.y-bR.y) + Math.hypot(aR.x-bL.x, aR.y-bL.y);
-    var concavePair, convexPair;
-    if (d1 <= d2) {
-      concavePair = [aL, bL]; convexPair = [aR, bR];
+    // Wall endpoints at the joint: +n side and -n side for each tube
+    var aPlusN  = { x: jx + nAx * rA, y: jy + nAy * rA };
+    var aMinusN = { x: jx - nAx * rA, y: jy - nAy * rA };
+    var bPlusN  = { x: jx + nBx * rB, y: jy + nBy * rB };
+    var bMinusN = { x: jx - nBx * rB, y: jy - nBy * rB };
+
+    // Pair walls: same-sign normals go together (+n with +n, -n with -n)
+    // Then label based on cross product
+    var pairPlus, pairMinus;
+    // Check which pairing brings same-sign normals together
+    var dPP = Math.hypot(aPlusN.x-bPlusN.x, aPlusN.y-bPlusN.y);
+    var dPM = Math.hypot(aPlusN.x-bMinusN.x, aPlusN.y-bMinusN.y);
+    if (dPP <= dPM) {
+      pairPlus  = [aPlusN, bPlusN];
+      pairMinus = [aMinusN, bMinusN];
     } else {
-      concavePair = [aL, bR]; convexPair = [aR, bL];
+      pairPlus  = [aPlusN, bMinusN];
+      pairMinus = [aMinusN, bPlusN];
+    }
+
+    var concavePair, convexPair;
+    if (cross > 0) {
+      // +nA side is inside the bend
+      concavePair = pairPlus; convexPair = pairMinus;
+    } else {
+      concavePair = pairMinus; convexPair = pairPlus;
     }
 
     var color = tubeA._tubeColor();
@@ -866,49 +883,33 @@ class TubeManager {
     if (style === 'energy') style = tubeB.style !== 'energy' ? tubeB.style : 'glass';
     var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
 
-    // ── Compute tangent-matched Bezier control point for each wall pair ──
-    // A quadratic Bezier through p0→cp→p1 is tangent to (p0→cp) at p0
-    // and tangent to (cp→p1) at p1.
-    // For convex (outer bend): CP = intersection of tangent lines going AWAY
-    //   from tubes (-dA, -dB) — CP is outside the bend.
-    // For concave (inner bend): CP = intersection of tangent lines going INTO
-    //   tubes (+dA, +dB) — then reflected through the chord midpoint to sit
-    //   inside the bend. This makes the curve bow inward.
-    var _findCP = function(p0, p1, inward) {
-      // Direction signs: outward (-dA,-dB) for convex, inward (+dA,+dB) for concave
-      var sA_x = inward ? dAx : -dAx;
-      var sA_y = inward ? dAy : -dAy;
-      var sB_x = inward ? dBx : -dBx;
-      var sB_y = inward ? dBy : -dBy;
-      // Lines: p0 + t*sA  and  p1 + s*sB — find intersection
-      // p0.x + t*sA_x = p1.x + s*sB_x
-      // p0.y + t*sA_y = p1.y + s*sB_y
-      var det = sA_x * (-sB_y) - sA_y * (-sB_x);
+    // ── Bezier control point: intersection of wall tangent lines ─────────
+    // At each wall endpoint, the wall continues in the tube's direction (dA or dB).
+    // The tangent line AWAY from the tube extends in -dA or -dB direction.
+    // For convex (outer): lines in -dA/-dB from wall endpoints converge outside
+    // For concave (inner): lines in -dA/-dB from wall endpoints converge inside
+    // Both cases: CP = intersection of (p0 going -dA) and (p1 going -dB)
+    var _findCP = function(p0, p1) {
+      // p0 + t*(-dA) = p1 + s*(-dB)
+      var det = (-dAx) * (-dBy) - (-dAy) * (-dBx);
       if (Math.abs(det) < 1e-6) {
         return { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
       }
-      var t = ((p1.x - p0.x) * (-sB_y) - (p1.y - p0.y) * (-sB_x)) / det;
-      var cpx = p0.x + t * sA_x;
-      var cpy = p0.y + t * sA_y;
-      // For concave: reflect CP through the chord midpoint so curve bows inward
-      if (inward) {
-        var mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
-        cpx = 2 * mx - cpx;
-        cpy = 2 * my - cpy;
-      }
-      // Sanity clamp
-      var maxDist = r * 4;
+      var t = ((p1.x - p0.x) * (-dBy) - (p1.y - p0.y) * (-dBx)) / det;
+      var cpx = p0.x + t * (-dAx);
+      var cpy = p0.y + t * (-dAy);
+      // Sanity clamp — keep CP within reasonable range of joint
+      var maxDist = r * 5;
       var cpDist = Math.hypot(cpx - jx, cpy - jy);
       if (cpDist > maxDist) {
-        var scale = maxDist / cpDist;
-        cpx = jx + (cpx - jx) * scale;
-        cpy = jy + (cpy - jy) * scale;
+        cpx = jx + (cpx - jx) * (maxDist / cpDist);
+        cpy = jy + (cpy - jy) * (maxDist / cpDist);
       }
       return { x: cpx, y: cpy };
     };
 
-    var convexCP  = _findCP(convexPair[0], convexPair[1], false);
-    var concaveCP = _findCP(concavePair[0], concavePair[1], true);
+    var convexCP  = _findCP(convexPair[0], convexPair[1]);
+    var concaveCP = _findCP(concavePair[0], concavePair[1]);
 
     // ── Body fill: closed shape using Bezier curves ─────────────────────
     ctx.beginPath();
