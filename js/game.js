@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1539;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1541;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -2136,6 +2136,30 @@ class Game {
       for (j = 0; j < this.objects.length; j++) {
         var ball = this.objects[j];
         if (ball.dead || ball.stuckTo === '_wall_') continue;  // stuck ball = no more damage
+        if (ball._invincTimer > 0) { ball._invincTimer--; continue; } // inner ball invincible
+        // Check splat effects at this ball position (brick-ball contact)
+        if (this.splats && this.splats.length > 0 && !ball._splatCooldown) {
+          for (var _spi = 0; _spi < this.splats.length; _spi++) {
+            var _sp = this.splats[_spi];
+            if (!_sp || !_sp.brick) continue;  // only brick-attached splats matter here
+            var _sbrot = (_sp.brick._rotation) || 0;
+            var _swx = _sp.brick.x + _sp.offX * Math.cos(_sbrot) - _sp.offY * Math.sin(_sbrot);
+            var _swy = _sp.brick.y + _sp.offX * Math.sin(_sbrot) + _sp.offY * Math.cos(_sbrot);
+            var _sdist = Math.hypot(ball.x - _swx, ball.y - _swy);
+            if (_sdist > _sp.coreR + ball.r) continue;
+            if (_sp.type === 'dead') {
+              ball.vx *= 0.08; ball.vy *= 0.08; ball._splatCooldown = 20;
+            } else if (_sp.type === 'boost') {
+              var _bspd2 = Math.hypot(ball.vx, ball.vy);
+              if (_bspd2 > 0.1) { ball.vx *= 2.2; ball.vy *= 2.2; }
+              ball._splatCooldown = 20;
+            } else if (_sp.type === 'goo') {
+              ball.stuckTo = '_wall_'; ball.vx = 0; ball.vy = 0; ball.inFlight = false;
+              ball._splatCooldown = 60;
+            }
+            break;
+          }
+        }
         // Squiggly: sync ghost to actual velocity after brick collision
         if (ball.type === BALL_TYPES.SQUIGGLY && ball._ghostX !== undefined) {
           ball._ghostX = ball.x; ball._ghostY = ball.y;
@@ -2721,6 +2745,47 @@ class Game {
     }
     Physics.spawnSparks(this.sparks, obj.x, obj.y, '#00ffff', 20);
     Physics.spawnSparks(this.sparks, obj.x, obj.y, '#ffffff', 12);
+
+    // ── Spawn inner ball ──────────────────────────────────────────────────
+    var cset2 = (window.Settings && window.Settings.cube) || {};
+    var innerType  = cset2.innerBallType || 'gravity';
+    var innerSzMult= cset2.innerBallSize !== undefined ? cset2.innerBallSize : 0.55;
+    var speedBoost = cset2.innerSpeedBoost !== undefined ? cset2.innerSpeedBoost : 1.4;
+    var invincFrames = cset2.innerInvinc !== undefined ? Math.round(cset2.innerInvinc) : 30;
+
+    var bs2 = BallSettings[innerType] || BallSettings.bouncer;
+    var innerR = Math.max(4, Math.round((bs2.size || bs2.r || 12) * innerSzMult));
+    var innerBall = new PhysObj(obj.x, obj.y, innerR,
+      innerR/10 * ((bs2.density||1.0)),
+      bs2.color, bs2.glow, bs2.label ? bs2.label.slice(0,3) : 'GRV');
+    innerBall.type      = innerType;
+    innerBall.inFlight  = true;
+    innerBall.pinned    = false;
+    innerBall.dead      = false;
+    innerBall.exploded  = false;
+    innerBall.hasStuck  = false;
+    innerBall.hasSplit  = false;
+    innerBall.stuckTo   = null;
+    innerBall._fromChute= false;
+    // Inherit cube velocity + speed boost
+    var cubeSpd = Math.hypot(obj.vx, obj.vy);
+    var boostMult = speedBoost > 0 ? speedBoost : 1.0;
+    if (cubeSpd > 0.1) {
+      innerBall.vx = (obj.vx / cubeSpd) * cubeSpd * boostMult;
+      innerBall.vy = (obj.vy / cubeSpd) * cubeSpd * boostMult;
+    } else {
+      innerBall.vx = (Math.random()-0.5) * 4;
+      innerBall.vy = -3;
+    }
+    // Gravity well setup
+    if (innerType === 'gravity') {
+      innerBall.gravActive = true;
+      innerBall._slungIds  = [];
+    }
+    // Invincibility timer — can't take damage for N frames
+    innerBall._invincTimer = invincFrames;
+    this.objects.push(innerBall);
+    this.ui.attachObjects(this.objects);
   }
 
   _drawCube(obj) {
@@ -2895,12 +2960,20 @@ class Game {
 
   _createSplat(wx, wy, nx, ny, brick) {
     var sqSet = (window.Settings && window.Settings.splatter) || {};
-    var type    = sqSet.type     || 'dead';
-    var coreR   = sqSet.size     || 20;
+    var type    = sqSet.type     || 'goo';
+    var coreR   = sqSet.size     || 11;
     var numDrips= Math.round(sqSet.drips    || 3);
-    var duration= (sqSet.duration|| 8) * 60;
+    var rawDur  = sqSet.duration !== undefined ? sqSet.duration : 30;
+    var duration= rawDur * 60;  // convert seconds to frames
+    var maxSplats = sqSet.maxSplats !== undefined ? sqSet.maxSplats : 6;
     this.splats = this.splats || [];
-    if (this.splats.length >= 10) this.splats.shift();
+    // Remove oldest if over cap
+    while (this.splats.length >= maxSplats) this.splats.shift();
+
+    // Clamp normal to always face generally downward (ny >= 0 preferred)
+    // If normal points mostly upward (ny < -0.3), flip it so splat coats
+    // the bottom/sides of the brick not the top face
+    if (ny < -0.3) { nx = -nx; ny = -ny; }
 
     var isCircular = brick && (typeof CircularBrick !== 'undefined') && (brick instanceof CircularBrick);
     var brickW   = (!isCircular && brick) ? (brick.w || 80) : 0;
