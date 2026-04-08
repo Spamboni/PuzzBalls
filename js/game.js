@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1546;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1547;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -4733,7 +4733,8 @@ class Game {
   _drawEditor() {
     var ctx = this.ctx, W = this.W, H = this.H;
     var floorY = this.floorY();
-    var padding = 8;
+    var padding = 24;
+    var contentW = W - padding * 2;  // slider/button area width
 
     // ── Panel background ─────────────────────────────────────────────────────
     var panelY = floorY;
@@ -4895,7 +4896,7 @@ class Game {
 
     // ── ROW 1: CLR ALL | DEL | UNDO | REDO | (space) | DONE ─────────────────
     var r1H = 24, r1Y = cY + 4;
-    var btnW1 = Math.floor((W - 16) / 6);
+    var btnW1 = Math.floor((contentW) / 6);
 
     this._editorClearBtn      = btn('CLR ALL', padding,                  r1Y, btnW1, r1H, '#ff4400', false);
     this._editorDelBtn        = btn((this._editorBrickDeleteMode?'✕DEL':'DEL'),
@@ -4916,7 +4917,7 @@ class Game {
     var r2H = 20;
     var clrLabels = ['CLR BRICKS','CLR TUBES','CLR AFFECT','CLR RAMPS','CLR MOTORS'];
     var clrCols   = ['#ff6600','#00ffaa','#ff44cc','#ffcc00','#4488ff'];
-    var clrW = Math.floor((W - 16 - 4*3) / 5);
+    var clrW = Math.floor((contentW - 4*3) / 5);
     this._editorClrBtns = [];
     for (var ci2 = 0; ci2 < clrLabels.length; ci2++) {
       var cbx = padding + ci2 * (clrW + 3);
@@ -4931,7 +4932,7 @@ class Game {
     var tabLabels = ['🧱 BRICKS','🔧 TUBES','⚡ AFFECT','📐 RAMPS','⚙ MOTORS'];
     var tabCols   = ['#00ccff','#00ff88','#ff44cc','#ffcc00','#4488ff'];
     var activeTab = this._editorActiveTab || 'bricks';
-    var tabW2 = Math.floor((W - 16 - 4*2) / 5);
+    var tabW2 = Math.floor((contentW - 4*2) / 5);
     var panelBgCol = 'rgba(0,8,22,0.97)';
 
     // Draw panel top edge line UNDER tabs (so active tab can hide it)
@@ -5095,7 +5096,7 @@ class Game {
 
     } else if (edMode === 'rotate') {
       // Big 3x3 pivot grid — editor rotation pivot
-      var bigPivW = Math.floor((W - 16 - 8) / 3);
+      var bigPivW = Math.floor((contentW - 8) / 3);
       var bigPivH = Math.floor((r5H - 4) / 3) - 2;
       var bigPivCols = ['L','C','R'], bigPivRows = ['T','M','B'];
       var bigPivColors = ['#ffcc44','#44ccff','#ff8844'];
@@ -5189,7 +5190,7 @@ class Game {
 
     // ── BEHAVIOR + PRESET panels (side by side) ───────────────────────────────
     var bpH_base = 88;  // approximate — may grow
-    var bpW = Math.floor((W - 16 - 4) / 2);
+    var bpW = Math.floor((contentW - 4) / 2);
     var bpY = cY;
 
     // Left: behavior panel — STATIC/ROTATE/♪ | MOVEABLE | pivot
@@ -5295,18 +5296,18 @@ class Game {
     this._editorSliders = {};
 
     // ── Panel 1: TRANSFORM ────────────────────────────────────────────────────
-    var ph1 = panelHeader('TRANSFORM', 'transform', padding, cY, W-16, '#00ccff');
+    var ph1 = panelHeader('TRANSFORM', 'transform', padding, cY, contentW, '#00ccff');
     this._editorPanelHeaders = this._editorPanelHeaders || [];
     this._editorPanelHeaders[0] = ph1;
     cY += ph1.h + 2;
 
     if (!ph1.collapsed) {
-      var p1W2 = Math.floor((W-16-4)/2);
+      var p1W2 = Math.floor((contentW-4)/2);
       this._editorSliders.blen = slider('LEN', LENval, 5, 900, padding, cY, p1W2, {rowH:slRH,col:'#00ccff'});
       this._editorSliders.bwid = slider('WID', WIDval, 2, 200, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff'});
       cY += slRH + slGap;
 
-      var rotW2 = Math.floor((W-16)*0.6);
+      var rotW2 = Math.floor((contentW)*0.6);
       this._editorSliders.rot = slider('ROT', ROTval, -180, 180, padding, cY, rotW2, {rowH:slRH,col:'#cc44ff'});
       // pivot grid beside rotation slider
       var rPivX = padding+rotW2+6, rPivY = cY+2;
@@ -5330,12 +5331,12 @@ class Game {
     }
 
     // ── Panel 2: BRICK SETTINGS ───────────────────────────────────────────────
-    var ph2 = panelHeader('BRICK SETTINGS', 'brickset', padding, cY, W-16, '#ffaa00');
+    var ph2 = panelHeader('BRICK SETTINGS', 'brickset', padding, cY, contentW, '#ffaa00');
     this._editorPanelHeaders[1] = ph2;
     cY += ph2.h + 2;
 
     if (!ph2.collapsed) {
-      var p2W = Math.floor((W-16-8)/3);
+      var p2W = Math.floor((contentW-8)/3);
       this._editorSliders.hp    = slider('HP',    HPval,   10, 400, padding,          cY, p2W, {rowH:slRH,col:'#ff4444'});
       this._editorSliders.regen = slider('REGEN', noRegen?0:Math.max(200,REGval), 200, 10000, padding+p2W+4, cY, p2W, {rowH:slRH,col:'#ff8844'});
       this._editorSliders.dens  = slider('DENS',  DENSval, 0.5, 5.0, padding+(p2W+4)*2, cY, p2W, {rowH:slRH,col:'#ffcc44'});
@@ -5349,13 +5350,13 @@ class Game {
     }
 
     // ── Panel 3: BRICK PHYSICS ────────────────────────────────────────────────
-    var ph3 = panelHeader('BRICK PHYSICS', 'brickphys', padding, cY, W-16, '#cc44ff');
+    var ph3 = panelHeader('BRICK PHYSICS', 'brickphys', padding, cY, contentW, '#cc44ff');
     this._editorPanelHeaders[2] = ph3;
     cY += ph3.h + 2;
 
     if (!ph3.collapsed) {
-      var p3W2 = Math.floor((W-16-8)/3);
-      var p3W3 = Math.floor((W-16-4)/2);
+      var p3W2 = Math.floor((contentW-8)/3);
+      var p3W3 = Math.floor((contentW-4)/2);
       var grayed3 = !movActive2;
       this._editorSliders.dist    = slider('DIST',     DISTval,         0, 900, padding,           cY, p3W2, {rowH:slRH,col:'#00ccff',grayed:grayed3});
       this._editorSliders.decel   = slider('DECEL',    1-DECELval,   0.01, 0.5, padding+p3W2+4,    cY, p3W2, {rowH:slRH,col:'#00aaff',grayed:grayed3});
@@ -5364,7 +5365,7 @@ class Game {
       this._editorSliders.rotspd  = slider('RSPIN',    ROTSPDval,     0.0, 1.0, padding,           cY, p3W3, {rowH:slRH,col:'#ff8844',grayed:grayed3});
       this._editorSliders.rotdec  = slider('RDECEL',   1-ROTDECval, 0.05,0.95, padding+p3W3+4,     cY, p3W3, {rowH:slRH,col:'#ff6644',grayed:grayed3});
       cY += slRH + slGap;
-      this._editorSliders.wbounce = slider('BNCE',     WBOUNCEval,    0.0, 1.0, padding,           cY, W-16, {rowH:slRH,col:'#4488ff'});
+      this._editorSliders.wbounce = slider('BNCE',     WBOUNCEval,    0.0, 1.0, padding,           cY, contentW, {rowH:slRH,col:'#4488ff'});
       cY += slRH + slGap;
     }
 
@@ -5372,8 +5373,8 @@ class Game {
     this._editorDefaultAllBtn = null;
     if (this._editorDefaultMode) {
       // RESET ALL button
-      var dabW = Math.floor((W-16)/2), dabH = 26;
-      var dabX = padding + (W-16-dabW)/2;
+      var dabW = Math.floor((contentW)/2), dabH = 26;
+      var dabX = padding + (contentW-dabW)/2;
       ctx.fillStyle = 'rgba(255,100,0,0.3)';
       ctx.beginPath(); ctx.roundRect(dabX, cY+4, dabW, dabH, 4); ctx.fill();
       ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 2;
@@ -5749,7 +5750,8 @@ class Game {
 
   _drawTubeEditor(ctx, panelY) {
     var W = this.W;
-    var padding = 8, btnH = 22, rH = 20, gap = 5;
+    var padding = 24, btnH = 22, rH = 20, gap = 5;
+    var contentW = W - padding * 2;
 
     // ── Row 0: 4-mode toolbar (BLD|SEL|LEN|ROT) + DONE ────────────────────────
     var row0Y = panelY + 4;
@@ -5817,7 +5819,7 @@ class Game {
     // Tube type buttons
     var types = ['straight','elbow90','elbow45','elbow30','elbow15','uturn','funnel'];
     var labels = ['STR','90°','45°','30°','15°','U','FNL'];
-    var tW = Math.floor((W - 16) / types.length) - 1;
+    var tW = Math.floor((contentW) / types.length) - 1;
     var tH = 34;  // taller for easier mobile tapping
     ctx.font = "bold 11px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -5838,7 +5840,7 @@ class Game {
     // Style buttons
     var row2Y = row1BotY + gap;
     var styles = ['glass','window','solid','energy'];
-    var sW = Math.floor((W - 16) / 4);
+    var sW = Math.floor((contentW) / 4);
     ctx.font = "bold 11px 'Share Tech Mono',monospace";
     this._tubeStyleBtns = [];
     for (var si = 0; si < styles.length; si++) {
@@ -5855,7 +5857,7 @@ class Game {
 
     // Sliders: LENGTH | SPEED MOD | ROTATION
     var row3Y = row2Y + rH + gap;
-    var halfW = Math.floor((W - 16) / 2);
+    var halfW = Math.floor((contentW) / 2);
     var lenVal = this._tubeLength || 80;
     var spdVal = this._tubeSpeedMod || 1.0;
     var rotVal = (this._tubeRotation || 0) * 180 / Math.PI;
@@ -5885,7 +5887,7 @@ class Game {
     this._tubeSliderLen = drawTS('LEN', lenVal, 30, 300, padding, row3Y, halfW);
     this._tubeSliderSpd = drawTS('SPD', spdVal, 0.2, 3.0, padding + halfW, row3Y, halfW);
     var row4Y = row3Y + rH + gap;
-    this._tubeSliderRot = drawTS('ROT', rotVal, -180, 180, padding, row4Y, W - 16);
+    this._tubeSliderRot = drawTS('ROT', rotVal, -180, 180, padding, row4Y, contentW);
     // Rotation pivot anchor buttons: LEFT | MID | RIGHT
     var row4bY = row4Y + rH + 3;
     var anchors = ['L','MID','R']; var aW = 40;
@@ -5906,7 +5908,7 @@ class Game {
 
     // Layer buttons
     var layers = ['main','behind','above'];
-    var lW = Math.floor((W - 16) / 3);
+    var lW = Math.floor((contentW) / 3);
     this._tubeLayerBtns = [];
     for (var li = 0; li < layers.length; li++) {
       var lx = padding + li * (lW + 2);
