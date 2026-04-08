@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1535;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1537;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -214,10 +214,13 @@ function applyGravityWell(well, objects) {
         obj.inFlight = true;
         // Cube: spin faster as it approaches gravity well
         if (obj.type === BALL_TYPES.CUBE && obj._cubeRot) {
-          var spinBoost = pull * (range / Math.max(dist, 10)) * 0.08;
-          var maxSpin = 0.15;
+          // Spin all 3 axes, faster the closer to the well
+          var proximityFactor = range / Math.max(dist, 8);
+          var spinBoost = pull * proximityFactor * 0.25;
+          var maxSpin = 0.5;
           obj._cubeRX = Math.max(-maxSpin, Math.min(maxSpin, (obj._cubeRX||0) + (Math.random()-0.5)*spinBoost));
           obj._cubeRY = Math.max(-maxSpin, Math.min(maxSpin, (obj._cubeRY||0) + (Math.random()-0.5)*spinBoost));
+          obj._cubeRZ = Math.max(-maxSpin*0.5, Math.min(maxSpin*0.5, (obj._cubeRZ||0) + (Math.random()-0.5)*spinBoost*0.5));
         }
       }
     }
