@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1557;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1558;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -932,18 +932,6 @@ class TubeManager {
       while (angDiff > Math.PI) angDiff -= Math.PI * 2;
       while (angDiff < -Math.PI) angDiff += Math.PI * 2;
       var ccw = angDiff < 0;
-
-      // ── Body fill wedge ────────────────────────────────────────────
-      ctx.beginPath();
-      ctx.moveTo(ix, iy);
-      ctx.lineTo(wAx, wAy);
-      ctx.arc(arcCx, arcCy, filletR, angStart, angEnd, ccw);
-      ctx.lineTo(ix, iy);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(0,2,10,' + (alpha * 0.55) + ')';
-      ctx.fill();
-      ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
-      ctx.fill();
 
       // ── Wall arc — outer glow ──────────────────────────────────────
       ctx.beginPath();
