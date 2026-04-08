@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1546;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1547;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -212,6 +212,8 @@ function applyGravityWell(well, objects) {
         obj.vx      += nx * pull;
         obj.vy      += ny * pull;
         obj.inFlight = true;
+        // Clear chute flag so ball physics (rotation, collisions) fully activate
+        if (obj._fromChute) obj._fromChute = false;
         // Cube: spin faster as it approaches gravity well
         if (obj.type === BALL_TYPES.CUBE && obj._cubeRot) {
           // Spin accelerates as cube approaches well (S-curve: slow start, ramp up, plateau)
