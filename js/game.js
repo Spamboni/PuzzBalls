@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1545;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1546;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -472,6 +472,7 @@ class Game {
             if (hcb.type===0) { self._undoPush && self._undoPush(); self.bricks=[]; }
             else if (hcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); self._chuteQueue=[]; self._chuteActive=[]; }
             else if (hcb.type===2) { self._undoPush && self._undoPush(); self.tubes.tubes=[]; }
+            else if (hcb.type===3) { self.splats=[]; }
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
           }
         }
@@ -2022,7 +2023,8 @@ class Game {
               var spWX = sp2.brick ? (sp2.brick.x + sp2.offX) : sp2.wx;
               var spWY = sp2.brick ? (sp2.brick.y + sp2.offY) : sp2.wy;
               var spDist = Math.hypot(cHX - spWX, cHY - spWY);
-              if (spDist > sp2.coreR) continue;
+              var _bbZone = (sp2.type === 'goo') ? sp2.coreR * 0.4 : sp2.coreR;
+              if (spDist > _bbZone) continue;
               // Apply effect to whichever ball is not the splatter
               var affBall = (a.type !== BALL_TYPES.SPLATTER) ? a : b;
               this._applySplatEffect(sp2, affBall);
@@ -2148,7 +2150,10 @@ class Game {
             var _swx = _sp.brick.x + _sp.offX * Math.cos(_sbrot) - _sp.offY * Math.sin(_sbrot);
             var _swy = _sp.brick.y + _sp.offX * Math.sin(_sbrot) + _sp.offY * Math.cos(_sbrot);
             var _sdist = Math.hypot(ball.x - _swx, ball.y - _swy);
-            if (_sdist > _sp.coreR + ball.r) continue;
+            // Goo: only stick if ball is actually touching the brick edge (tight zone)
+            // Dead/boost: slightly wider tolerance
+            var _sZone = (_sp.type === 'goo') ? _sp.coreR * 0.5 : _sp.coreR + ball.r;
+            if (_sdist > _sZone + ball.r) continue;
             this._applySplatEffect(_sp, ball);
             break;
           }
@@ -3025,7 +3030,7 @@ class Game {
     var coreR    = sqSet.size      || 11;
     var numDrips = Math.round(sqSet.drips    || 3);
     var rawDur   = sqSet.duration  !== undefined ? sqSet.duration : 30;
-    var duration = rawDur * 60;
+    var duration = rawDur === 0 ? 999999 : rawDur * 60;  // 0=infinite
     var maxSplats= sqSet.maxSplats !== undefined ? sqSet.maxSplats : 6;
     this.splats  = this.splats || [];
     while (this.splats.length >= maxSplats) this.splats.shift();
@@ -3295,46 +3300,46 @@ class Game {
           ctx.lineWidth=1+Math.sin(sti)*0.7; ctx.lineCap='round'; ctx.stroke();
         }
 
-        // Bulbous drips/globules
-        // For top hit: drips hang downward (+normalSign) over the brick face
-        // For bottom hit: drips dangle into free space below
-        var numBulbs = 2 + Math.floor(spread / 16);
-        var brickHalfShort = sp.brickH ? Math.min(sp.brickW, sp.brickH) * 0.5 : 0;
-        for (var bi3 = 0; bi3 < numBulbs; bi3++) {
-          var bx3 = (numBulbs > 1 ? (bi3/(numBulbs-1) - 0.5) : 0) * spread * 1.3;
-          var env3 = Math.pow(Math.max(0, 1 - Math.abs(bx3)/spread), 0.55);
-          if (env3 < 0.12) continue;
-          var bulbSz = (2.5 + env3 * 4.5) * (0.7 + 0.3 * Math.sin(bi3*2.9+seed));
-          // Drip hangs in normalSign direction
-          var bulbStartY = normalSign * (droopOut + 0.5);
-          var bulbEndY   = bulbStartY + normalSign * bulbSz * 1.2;
-          // For top hit: limit how far drip goes into brick face (covers it, doesn't go through)
-          if (hitFromTop) {
-            var maxDrip = brickHalfShort * 2;  // cover full brick width
-            if (Math.abs(bulbEndY) > maxDrip) bulbEndY = normalSign * maxDrip;
-          }
-          ctx.beginPath();
-          ctx.ellipse(bx3, bulbEndY, bulbSz * 0.55, bulbSz * (hitFromTop ? 1.3 : 1.0), 0, 0, Math.PI*2);
-          ctx.fillStyle=rgba(pal.bulb, alpha*0.88*env3);
-          ctx.shadowColor=pal.glow; ctx.shadowBlur=3;
-          ctx.fill(); ctx.shadowBlur=0;
-          // Stem connecting bulb to edge
-          if (bulbSz > 2) {
-            ctx.beginPath();
-            ctx.moveTo(bx3, normalSign * droopOut);
-            ctx.lineTo(bx3, bulbEndY - normalSign * bulbSz * 0.5);
-            ctx.lineWidth = bulbSz * 0.45;
-            ctx.strokeStyle = rgba(pal.core, alpha * 0.7 * env3);
-            ctx.lineCap = 'round'; ctx.stroke();
-          }
-        }
         // Specular dot
         ctx.beginPath();
         ctx.arc(-spread*0.1, -normalSign * maxIn * 0.3, cr * 0.1, 0, Math.PI*2);
         ctx.fillStyle = rgba(pal.hi, alpha * 0.7); ctx.fill();
+
+        // Globule drips — drawn in WORLD space so they always hang downward
+        // We'll draw these after ctx.restore() using world coords
       }
 
       ctx.restore();
+
+      // ── Globule drips in world space (always hang downward) ──────────────
+      if (!sp.isCircular && sp.brickW > 0) {
+        var _numG = 2 + Math.floor(spread / 16);
+        var _brot2 = brot + (_hitShort ? Math.PI/2 : 0);
+        for (var _gi = 0; _gi < _numG; _gi++) {
+          var _gt = _numG > 1 ? (_gi/(_numG-1) - 0.5) : 0;
+          // Position along edge in world space
+          var _gLocalX = _gt * spread * 1.25 + (Math.random()-0.5)*spread*0.15;
+          var _gpx = wx + _gLocalX * Math.cos(_brot2);
+          var _gpy = wy + _gLocalX * Math.sin(_brot2);
+          var _env4 = Math.pow(Math.max(0, 1 - Math.abs(_gLocalX)/spread), 0.5);
+          if (_env4 < 0.1) continue;
+          var _gsz = (2 + _env4 * 4.5) * (0.7 + 0.3*Math.sin(_gi*2.9+seed));
+          // Stem going straight down
+          var _stemY = _gsz * 1.1;
+          ctx.beginPath();
+          ctx.moveTo(_gpx, _gpy);
+          ctx.lineTo(_gpx + (Math.random()-0.5)*_gsz*0.3, _gpy + _stemY);
+          ctx.lineWidth = _gsz * 0.4;
+          ctx.strokeStyle = rgba(pal.core, alpha * 0.65 * _env4);
+          ctx.lineCap = 'round'; ctx.stroke();
+          // Teardrop bulb at bottom
+          ctx.beginPath();
+          ctx.ellipse(_gpx, _gpy + _stemY + _gsz*0.5, _gsz*0.5, _gsz*0.75, 0, 0, Math.PI*2);
+          ctx.fillStyle = rgba(pal.bulb, alpha * 0.85 * _env4);
+          ctx.shadowColor = pal.glow; ctx.shadowBlur = 3;
+          ctx.fill(); ctx.shadowBlur = 0;
+        }
+      }
 
       // Falling drips in world space (for bottom hits = dangle free; top hits = fall over brick)
       for (var di2 = 0; di2 < sp.drips.length; di2++) {
@@ -6306,12 +6311,12 @@ class Game {
   _drawHudClearButtons() {
     var ctx = this.ctx, W = this.W;
     // ── CLR BRICKS / CLR BALLS / CLR TUBES — top right ───────────────────────
-    var btnW = 56, btnH = 20, gap = 4;
-    var totalW = 3 * btnW + 2 * gap;
+    var btnW = 46, btnH = 20, gap = 3;
+    var totalW = 4 * btnW + 3 * gap;
     var startX = W - totalW - 8;
     var btnY2 = 44;
-    var labels2 = ['BRICKS','BALLS','TUBES'];
-    var colors  = ['#ff6600','#ff4466','#00ffaa'];
+    var labels2 = ['BRICKS','BALLS','TUBES','SPLATS'];
+    var colors  = ['#ff6600','#ff4466','#00ffaa','#44bb11'];
     this._hudClearBtns = [];
     for (var ci = 0; ci < 3; ci++) {
       var bx2 = startX + ci * (btnW + gap);
