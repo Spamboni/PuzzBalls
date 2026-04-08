@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1532;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1534;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1844,10 +1844,20 @@ class Game {
         var cz2=Math.cos(rz),sz2=Math.sin(rz);
         var m3=[m2[0]*cz2+m2[3]*sz2,m2[1]*cz2+m2[4]*sz2,m2[2]*cz2+m2[5]*sz2, -m2[0]*sz2+m2[3]*cz2,-m2[1]*sz2+m2[4]*cz2,-m2[2]*sz2+m2[5]*cz2, m2[6],m2[7],m2[8]];
         obj2._cubeRot = m3;
-        // Spin decays very slowly — cube keeps spinning
-        obj2._cubeRX = (obj2._cubeRX||0) * 0.999;
-        obj2._cubeRY = (obj2._cubeRY||0) * 0.999;
-        obj2._cubeRZ = (obj2._cubeRZ||0) * 0.999;
+        // Spin decay — slows when near rest on ground
+        var _flY2 = this.floorY ? this.floorY() : 9999;
+        var _nearFloor = (obj2.y + obj2.r >= _flY2 - 4);
+        var _spd2 = Math.hypot(obj2.vx || 0, obj2.vy || 0);
+        var _spinDecay;
+        if (_nearFloor && _spd2 < 2.0) {
+          // Slowing to rest — spin decays with speed
+          _spinDecay = 0.85 + (_spd2 / 2.0) * 0.14;
+        } else {
+          _spinDecay = 0.999;
+        }
+        obj2._cubeRX = (obj2._cubeRX||0) * _spinDecay;
+        obj2._cubeRY = (obj2._cubeRY||0) * _spinDecay;
+        obj2._cubeRZ = (obj2._cubeRZ||0) * _spinDecay;
       }
 
       // Squiggly: ghost-trajectory approach
@@ -1951,17 +1961,30 @@ class Game {
           }
         }
         // ── Cube ball: on wall hit, randomize spin (with cooldown) ────────────
-        // Cube wall bounce — track previous velocity to detect bounce
+        // Cube wall/floor/ceiling bounce — velocity flip = spin change
         if (obj.type === BALL_TYPES.CUBE && !obj._fromChute) {
           var _pvx = obj._prevVx || 0, _pvy = obj._prevVy || 0;
-          var velFlipX = (obj.vx * _pvx < -0.1);
-          var velFlipY = (obj.vy * _pvy < -0.1);
+          var velFlipX = (obj.vx * _pvx < -0.5);
+          var velFlipY = (obj.vy * _pvy < -0.5);
           if ((velFlipX || velFlipY) && !obj._cubeWallCool) {
             var impMag2 = Math.hypot(_pvx, _pvy);
-            this._cubeOnHit(obj, impMag2 * 0.15);
-            obj._cubeHP = (obj._cubeHP||1) - Math.max(0.15, impMag2*0.03);
+            // Spin change direction based on which axis bounced
+            if (velFlipX) {
+              obj._cubeRY = (Math.random()-0.5) * impMag2 * 0.04;
+              obj._cubeRZ = (Math.random()-0.5) * impMag2 * 0.02;
+            }
+            if (velFlipY) {
+              obj._cubeRX = (Math.random()-0.5) * impMag2 * 0.04;
+              obj._cubeRZ = (Math.random()-0.5) * impMag2 * 0.02;
+              // Floor bounce: also add rolling spin
+              if (obj.vy > 0 && _pvy < 0) {
+                obj._cubeRZ += obj.vx * 0.015;
+              }
+            }
+            this._cubeOnHit(obj, impMag2 * 0.1);
+            obj._cubeHP = (obj._cubeHP||1) - Math.max(0.1, impMag2*0.02);
             if (obj._cubeHP <= 0) this._cubeShatter(obj);
-            obj._cubeWallCool = 8;
+            obj._cubeWallCool = 6;
           }
           obj._prevVx = obj.vx; obj._prevVy = obj.vy;
           if (obj._cubeWallCool > 0) obj._cubeWallCool--;
@@ -1991,10 +2014,10 @@ class Game {
             }
           }
           if (a.type === BALL_TYPES.STICKY && a.stuckTo === '_wall_') {
-            this._tryKnockSticky(a, Math.hypot(b.vx, b.vy));
+            this._tryKnockSticky(a, Math.hypot(b.vx, b.vy), b.type);
           }
           if (b.type === BALL_TYPES.STICKY && b.stuckTo === '_wall_') {
-            this._tryKnockSticky(b, Math.hypot(a.vx, a.vy));
+            this._tryKnockSticky(b, Math.hypot(a.vx, a.vy), a.type);
           }
           // Exploder countdown — only after manually slung
           // Cube hit by any ball — spin + damage
@@ -2473,20 +2496,27 @@ class Game {
   }
 
   // Try to unstick a sticky ball that was hit by another ball
-  _tryKnockSticky(sticky, impactSpeed) {
+  _tryKnockSticky(sticky, impactSpeed, hitterType) {
     if (sticky.type !== BALL_TYPES.STICKY || sticky.stuckTo !== '_wall_') return;
-    var threshold = (window.BallSettings && BallSettings.sticky.stickThreshold) || 6;
-    if (impactSpeed > threshold * 1.5) {
-      // Hard enough — knock it free
+    // Stickiness: 10=easy to knock, 100=impossible
+    var stickiness = (window.BallSettings && BallSettings.sticky && BallSettings.sticky.stickiness !== undefined)
+      ? BallSettings.sticky.stickiness : 50;
+    // Hitter density multiplies knock force
+    var hDensity = (hitterType && window.BallSettings && BallSettings[hitterType])
+      ? (BallSettings[hitterType].density || 1.0) : 1.0;
+    // Knock force = speed * density
+    var knockForce = impactSpeed * hDensity;
+    // Threshold scales with stickiness: at 10 = very easy (threshold~2), at 100 = impossible (threshold~999)
+    var knockThreshold = stickiness >= 100 ? 99999 : (2 + (stickiness / 100) * 28);
+    if (knockForce > knockThreshold) {
       sticky.stuckTo  = null;
       sticky.inFlight = true;
-      sticky.vy = -impactSpeed * 0.4;
-      sticky.vx = (Math.random() - 0.5) * impactSpeed * 0.3;
-      if (window.Sound) Sound.thud(impactSpeed);
+      sticky.vy = -knockForce * 0.35;
+      sticky.vx = (Math.random() - 0.5) * knockForce * 0.25;
+      if (window.Sound) Sound.thud(knockForce);
     } else {
-      // Too soft — wiggle in place
       sticky._wiggleTimer = 12;
-      sticky._wiggleAmt   = 3;
+      sticky._wiggleAmt   = Math.min(6, knockForce);
       if (window.Sound) this._playStickyWiggle();
     }
   }
