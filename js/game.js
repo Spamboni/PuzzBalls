@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1537;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1539;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -319,7 +319,9 @@ class Game {
       obj._cubeShattering = false;
       obj._cubeShards = null;
       var cubeSize = (window.Settings && window.Settings.cube && window.Settings.cube.size) || 1.0;
-      obj.r = Math.round(9 * cubeSize);
+      obj.r = Math.max(3, Math.round(9 * cubeSize));
+      obj.mass = (obj.r / 10) * ((BallSettings.cube && BallSettings.cube.density) || 1.4);
+      obj.y = this.floorY() - obj.r;
     }
     if (type === BALL_TYPES.SQUIGGLY) {
       var sqSet = (window.Settings && window.Settings.squiggly) || {};
@@ -1746,12 +1748,16 @@ class Game {
         Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
-          var touchingFloor  = obj.y + obj.r >= floorY - 1;
-          var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
-          var touchingTop    = obj.y - obj.r <= 1;
-          var touchingChute  = obj.y >= g2.TOP_Y && obj.x + obj.r >= g2.LEFT_X - 1;
-          if ((touchingWall || touchingTop || touchingChute) && !touchingFloor) {
-            this._checkStickyWall(obj);
+          // Knock immunity — can't re-stick for N frames after being knocked off
+          if (obj._knockImmune > 0) { obj._knockImmune--; }
+          else {
+            var touchingFloor  = obj.y + obj.r >= floorY - 1;
+            var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
+            var touchingTop    = obj.y - obj.r <= 1;
+            var touchingChute  = obj.y >= g2.TOP_Y && obj.x + obj.r >= g2.LEFT_X - 1;
+            if ((touchingWall || touchingTop || touchingChute) && !touchingFloor) {
+              this._checkStickyWall(obj);
+            }
           }
         }
       }
@@ -1890,6 +1896,8 @@ class Game {
 
       // Squiggly: ghost-trajectory approach
       // Ghost follows a normal-ball arc. Ball is placed offset from ghost perpendicularly.
+      // Tick down splat cooldown
+      if (obj2._splatCooldown > 0) obj2._splatCooldown--;
       if (obj2.type === BALL_TYPES.SQUIGGLY && obj2.inFlight && !obj2.stuckTo && !obj2._fromChute) {
         var sqT2 = (obj2._sqT || 0) + 1;
         obj2._sqT = sqT2;
@@ -2003,13 +2011,19 @@ class Game {
               if (spDist > sp2.coreR) continue;
               // Apply effect to whichever ball is not the splatter
               var affBall = (a.type !== BALL_TYPES.SPLATTER) ? a : b;
-              if (sp2.type === 'dead') {
-                affBall.vx *= 0.08; affBall.vy *= 0.08;
-              } else if (sp2.type === 'boost') {
-                affBall.vx *= 2.0; affBall.vy *= 2.0;
-              } else if (sp2.type === 'goo') {
-                affBall.stuckTo = '_wall_';
-                affBall.vx = 0; affBall.vy = 0; affBall.inFlight = false;
+              if (!affBall._splatCooldown) {
+                if (sp2.type === 'dead') {
+                  affBall.vx *= 0.08; affBall.vy *= 0.08;
+                  affBall._splatCooldown = 20;
+                } else if (sp2.type === 'boost') {
+                  var _bspd = Math.hypot(affBall.vx, affBall.vy);
+                  if (_bspd > 0.1) { affBall.vx *= 2.2; affBall.vy *= 2.2; }
+                  affBall._splatCooldown = 20;
+                } else if (sp2.type === 'goo') {
+                  affBall.stuckTo = '_wall_';
+                  affBall.vx = 0; affBall.vy = 0; affBall.inFlight = false;
+                  affBall._splatCooldown = 60;
+                }
               }
             }
           }
@@ -2500,24 +2514,41 @@ class Game {
   // Try to unstick a sticky ball that was hit by another ball
   _tryKnockSticky(sticky, impactSpeed, hitterType) {
     if (sticky.type !== BALL_TYPES.STICKY || sticky.stuckTo !== '_wall_') return;
-    // Stickiness: 10=easy to knock, 100=impossible
     var stickiness = (window.BallSettings && BallSettings.sticky && BallSettings.sticky.stickiness !== undefined)
       ? BallSettings.sticky.stickiness : 50;
-    // Hitter density multiplies knock force
     var hDensity = (hitterType && window.BallSettings && BallSettings[hitterType])
       ? (BallSettings[hitterType].density || 1.0) : 1.0;
-    // Knock force = speed * density
     var knockForce = impactSpeed * hDensity;
-    // Threshold scales with stickiness: at 10 = very easy (threshold~2), at 100 = impossible (threshold~999)
     var knockThreshold = stickiness >= 100 ? 99999 : (2 + (stickiness / 100) * 28);
+
     if (knockForce > knockThreshold) {
       sticky.stuckTo  = null;
       sticky.inFlight = true;
-      sticky.vy = -knockForce * 0.35;
-      sticky.vx = (Math.random() - 0.5) * knockForce * 0.25;
-      if (window.Sound) Sound.thud(knockForce);
+
+      // Detect which surface it's stuck to and pop it away from that surface
+      var floorY2 = this.floorY();
+      var g3 = this._chuteGeom();
+      var popAmt = sticky.r * 2.5 + 4;  // enough to clear the wall
+
+      // Pop direction = away from whichever surface it's touching
+      var popVX = 0, popVY = 0;
+      if (sticky.x - sticky.r <= 2)           { sticky.x += popAmt; popVX =  1; } // left wall
+      else if (sticky.x + sticky.r >= g3.LEFT_X - 2) { sticky.x -= popAmt; popVX = -1; } // chute wall
+      else if (sticky.y - sticky.r <= 2)       { sticky.y += popAmt; popVY =  1; } // ceiling
+      else                                      { popVY = -1; }                      // default: up
+
+      // Minimum ejection speed so it actually leaves
+      var minSpeed = 5;
+      var ejectSpeed = Math.max(minSpeed, knockForce * 0.5);
+      sticky.vx = popVX * ejectSpeed * (0.8 + Math.random() * 0.4) + (Math.random()-0.5) * 2;
+      sticky.vy = popVY * ejectSpeed * (0.8 + Math.random() * 0.4) - 1;
+
+      // Immunity: can't re-stick for 45 frames (~0.75 seconds)
+      sticky._knockImmune = 45;
+
+      if (window.Sound) Sound.thud(ejectSpeed);
     } else {
-      sticky._wiggleTimer = 12;
+      sticky._wiggleTimer = 15;
       sticky._wiggleAmt   = Math.min(6, knockForce);
       if (window.Sound) this._playStickyWiggle();
     }
@@ -2884,6 +2915,12 @@ class Game {
       var rx2 = offX * Math.cos(br) - offY * Math.sin(br);
       var ry2 = offX * Math.sin(br) + offY * Math.cos(br);
       offX = rx2; offY = ry2;
+    }
+    // Snap offY to the brick edge (half-height in local space) so splat sits on the surface
+    if (!isCircular && brick && (brickW > 0 || brickH > 0)) {
+      var _halfShort = Math.min(brickW, brickH) * 0.5;
+      var _sign = offY >= 0 ? 1 : -1;
+      offY = _sign * _halfShort;  // snap to edge
     }
 
     // Drips spread along brick length axis
