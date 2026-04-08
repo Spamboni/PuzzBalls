@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 1531;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['presets.js'] = 1532;
 // presets.js — Physics preset save/load system
 // Presets are stored in localStorage under 'puzzballs_presets'
 
@@ -15,7 +15,7 @@ var DEFAULT_PRESET = {
     exploder: { velocity: 1.0, bounciness: 0.8, blastRadius: 120, blastForce: 18 },
     sticky:   { velocity: 1.0, bounciness: 0.1, stickyStrength: 0.85 },
     splitter: { velocity: 1.0, bounciness: 0.9, splitCount: 2 },
-    gravity:  { velocity: 1.0, bounciness: 0.7, gravRange: 140, gravPull: 0.55 },
+    gravity:  { velocity: 1.0, bounciness: 0.7, gravRange: 200, gravPull: 2.0 },
   },
 };
 
