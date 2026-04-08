@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1550;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1551;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -545,25 +545,33 @@ class Game {
             self._redoApply&&self._redoApply(self._redoHistory&&self._redoHistory.pop()); return;
           }
         }
-        // DEL button — tap deletes selected, long-press toggles delete mode
+        // DEL button — tap deletes selected (brick or tube), long-press toggles persistent delete mode
         if (self._editorDelBtn) {
           var db=self._editorDelBtn;
           if (_px>=db.x&&_px<=db.x+db.w&&_py>=db.y&&_py<=db.y+db.h) {
-            if (self._editorSelected && !self._editorBrickDeleteMode) {
-              // Instant delete selected brick
-              self._undoPush();
-              var idx2=self.bricks.indexOf(self._editorSelected);
-              if (idx2>=0) self.bricks.splice(idx2,1);
-              self._editorSelected=null;
-              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
-            } else if (self._editorBrickDeleteMode) {
-              // Tap again to turn off delete mode
+            if (self._editorBrickDeleteMode) {
+              // Already in delete mode — tap to turn off
               self._editorBrickDeleteMode=false;
+              self._tubeDeleteMode=false;
               if(window.Sound&&Sound.uiToggle)Sound.uiToggle(false);
+            } else if (self._editorSelected || self._tubeSelected) {
+              // Has a selection — instant delete it
+              self._undoPush();
+              if (self._editorSelected) {
+                var idx2=self.bricks.indexOf(self._editorSelected);
+                if (idx2>=0) self.bricks.splice(idx2,1);
+                self._editorSelected=null;
+              }
+              if (self._tubeSelected) {
+                self.tubes.remove(self._tubeSelected);
+                self._tubeSelected=null;
+              }
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
             } else {
-              // No selection — start long press to enable delete mode
+              // No selection — long press to enable persistent delete mode
               _startLongPress('del', 500, function() {
                 self._editorBrickDeleteMode=true;
+                self._tubeDeleteMode=true;
                 if(window.Sound&&Sound.uiToggle)Sound.uiToggle(true);
               });
             }
@@ -1127,8 +1135,21 @@ class Game {
             var br2=self.bricks[bdi];
             if (Math.hypot(_px-br2.x,_py-br2.y)<(br2.w||br2.r||30)+12) {
               self._undoPush(); self.bricks.splice(bdi,1);
-              self._editorBrickDeleteMode=false;
+              if (self._editorSelected===br2) self._editorSelected=null;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
+            }
+          }
+          // Also delete tubes in delete mode
+          var _tubes = self.tubes.tubes;
+          for (var tdi=_tubes.length-1; tdi>=0; tdi--) {
+            var _dt=_tubes[tdi], _dp=_dt._path;
+            if (!_dp) continue;
+            for (var dpi=0; dpi<_dp.length; dpi++) {
+              if (Math.hypot(_px-_dp[dpi].x,_py-_dp[dpi].y)<_dt.radius+16) {
+                self._undoPush(); self.tubes.remove(_dt);
+                if (self._tubeSelected===_dt) self._tubeSelected=null;
+                if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
+              }
             }
           }
         }
@@ -5682,8 +5703,8 @@ class Game {
     this.tubes.add(tube);
     this._tubeSelected = tube;
     this._tubeDragging = tube;
-    this._tubeDragOffX = 0;
-    this._tubeDragOffY = 0;
+    this._tubeDragOffX = pos.x - cx;
+    this._tubeDragOffY = pos.y - cy;
     if (window.Sound && Sound.uiTap) Sound.uiTap(0.18);
   }
 
