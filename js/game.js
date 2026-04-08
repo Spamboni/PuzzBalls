@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1534;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1535;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -2770,67 +2770,84 @@ class Game {
     var hpFrac = Math.max(0, Math.min(1, (obj._cubeHP||0) / (obj._cubeMaxHP||4)));
     var crackAlpha = (1 - hpFrac) * 0.6;
 
-    faces.forEach(function(f, fi) {
+    // Orb settings
+    var _cset = (window.Settings && window.Settings.cube) || {};
+    var _orbSz   = _cset.orbSize  !== undefined ? _cset.orbSize  : 0.35; // fraction of s
+    var _orbColHex = _cset.orbColor || '#ff3300';
+    var _oR = parseInt(_orbColHex.slice(1,3),16)||255;
+    var _oG = parseInt(_orbColHex.slice(3,5),16)||51;
+    var _oB = parseInt(_orbColHex.slice(5,7),16)||0;
+    var orbR = s * _orbSz;
+
+    // Precompute face visibility
+    var _faceData = faces.map(function(f) {
       var pts = f.idx.map(function(i){ return corners[i]; });
-      // Visibility: check if face normal points toward viewer
-      var v0=pts[0], v1=pts[1], v2=pts[2];
-      var ex=v1.x-v0.x, ey=v1.y-v0.y;
-      var fx2=v2.x-v0.x, fy2=v2.y-v0.y;
+      var v0=pts[0],v1=pts[1],v2=pts[2];
+      var ex=v1.x-v0.x, ey=v1.y-v0.y, fx2=v2.x-v0.x, fy2=v2.y-v0.y;
       var cross = ex*fy2 - ey*fx2;
       var isFront = cross <= 0;
-      // Back faces: draw very dimly (always visible as faint wireframe)
       var shade = 0.5;
       if (f.nz) shade = f.nz > 0 ? 0.9 : 0.3;
       if (f.ny) shade = f.ny > 0 ? 0.45 : 0.75;
       if (f.nx) shade = 0.6;
-      if (!isFront) shade *= 0.12;  // back faces: very faint
+      return { f:f, pts:pts, isFront:isFront, shade:shade };
+    });
 
+    function drawFace(fd) {
+      var pts=fd.pts, isFront=fd.isFront, shade=fd.shade, f=fd.f;
+      var drawShade = isFront ? shade : shade * 0.12;
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
       for (var pi=1; pi<pts.length; pi++) ctx.lineTo(pts[pi].x, pts[pi].y);
       ctx.closePath();
-
-      // Glass fill — front faces only
       if (isFront) {
-        ctx.fillStyle = 'rgba(0,200,240,' + (shade * 0.08) + ')';
+        ctx.fillStyle = 'rgba(0,200,240,' + (drawShade * 0.08) + ')';
         ctx.fill();
       }
-      // Edges — front bright, back very faint
       ctx.strokeStyle = isFront
-        ? 'rgba(0,220,255,' + (shade * 0.85) + ')'
-        : 'rgba(0,180,220,0.12)';
-      ctx.lineWidth = isFront ? 1.4 : 0.7;
-      if (isFront) { ctx.shadowColor = '#00ffff'; ctx.shadowBlur = shade * 8; }
+        ? 'rgba(0,220,255,' + (drawShade * 0.85) + ')'
+        : 'rgba(0,180,220,0.10)';
+      ctx.lineWidth = isFront ? 1.6 : 0.6;
+      if (isFront) { ctx.shadowColor = '#00ffff'; ctx.shadowBlur = drawShade * 10; }
       ctx.stroke();
       ctx.shadowBlur = 0;
-
-      // Crack overlay when damaged
-      if (crackAlpha > 0.1) {
-        ctx.strokeStyle = 'rgba(255,80,80,' + crackAlpha * shade + ')';
-        ctx.lineWidth = 0.8;
-        ctx.setLineDash([2,3]);
+      if (isFront && crackAlpha > 0.1) {
+        ctx.strokeStyle = 'rgba(255,80,80,' + crackAlpha * drawShade + ')';
+        ctx.lineWidth = 0.8; ctx.setLineDash([2,3]);
         ctx.beginPath();
-        var cx2 = (pts[0].x+pts[2].x)/2, cy2 = (pts[0].y+pts[2].y)/2;
-        ctx.moveTo(pts[0].x, pts[0].y);
-        ctx.lineTo(cx2 + (Math.random()-0.5)*4, cy2);
-        ctx.lineTo(pts[2].x, pts[2].y);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        var cx2=(pts[0].x+pts[2].x)/2, cy2=(pts[0].y+pts[2].y)/2;
+        ctx.moveTo(pts[0].x,pts[0].y);
+        ctx.lineTo(cx2+(Math.random()-0.5)*4, cy2);
+        ctx.lineTo(pts[2].x,pts[2].y);
+        ctx.stroke(); ctx.setLineDash([]);
       }
-    });
+    }
 
-    // Inner glowing red orb
-    var orbR = 3 + Math.sin(obj._cubeRX * 20) * 1;
+    // PASS 1: back faces
+    _faceData.forEach(function(fd) { if (!fd.isFront) drawFace(fd); });
+
+    // PASS 2: orb — sits between back and front faces
     ctx.save();
-    ctx.shadowColor = '#ff2200'; ctx.shadowBlur = 12;
-    var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, orbR*2);
-    grad.addColorStop(0, 'rgba(255,100,50,0.95)');
-    grad.addColorStop(0.5, 'rgba(220,40,0,0.6)');
-    grad.addColorStop(1, 'rgba(180,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(cx, cy, orbR*2, 0, Math.PI*2); ctx.fill();
+    ctx.shadowColor = 'rgba('+_oR+','+_oG+','+_oB+',0.9)';
+    ctx.shadowBlur = orbR * 3;
+    var _og = ctx.createRadialGradient(cx, cy, 0, cx, cy, orbR);
+    _og.addColorStop(0,   'rgba('+Math.min(255,_oR+100)+','+Math.min(255,_oG+80)+','+Math.min(255,_oB+60)+',1.0)');
+    _og.addColorStop(0.4, 'rgba('+_oR+','+_oG+','+_oB+',0.95)');
+    _og.addColorStop(0.8, 'rgba('+Math.max(0,_oR-60)+','+Math.max(0,_oG-20)+','+Math.max(0,_oB-20)+',0.7)');
+    _og.addColorStop(1,   'rgba('+Math.max(0,_oR-80)+',0,0,0)');
+    ctx.fillStyle = _og;
+    ctx.beginPath(); ctx.arc(cx, cy, orbR, 0, Math.PI*2); ctx.fill();
+    // Specular highlight
     ctx.shadowBlur = 0;
+    var _hl = ctx.createRadialGradient(cx-orbR*0.25, cy-orbR*0.3, 0, cx, cy, orbR*0.7);
+    _hl.addColorStop(0, 'rgba(255,255,255,0.5)');
+    _hl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = _hl;
+    ctx.beginPath(); ctx.arc(cx, cy, orbR, 0, Math.PI*2); ctx.fill();
     ctx.restore();
+
+    // PASS 3: front faces — overdraw orb where cube edges are in front
+    _faceData.forEach(function(fd) { if (fd.isFront) drawFace(fd); });
 
     // HP bar — tiny, above cube when damaged
     if (hpFrac < 1 && hpFrac > 0) {
@@ -2846,51 +2863,53 @@ class Game {
   _createSplat(wx, wy, nx, ny, brick) {
     var sqSet = (window.Settings && window.Settings.splatter) || {};
     var type    = sqSet.type     || 'dead';
-    var coreR   = sqSet.size     || 28;
+    var coreR   = sqSet.size     || 20;
     var numDrips= Math.round(sqSet.drips    || 3);
     var duration= (sqSet.duration|| 8) * 60;
     this.splats = this.splats || [];
     if (this.splats.length >= 10) this.splats.shift();
 
+    var isCircular = brick && (typeof CircularBrick !== 'undefined') && (brick instanceof CircularBrick);
+    var brickW   = (!isCircular && brick) ? (brick.w || 80) : 0;
+    var brickH   = (!isCircular && brick) ? (brick.h || 22) : 0;
+    var brickRot = (brick && brick._rotation) || 0;
+    var brickR   = isCircular ? (brick.r || 22) : 0;
+
     var offX = brick ? (wx - brick.x) : 0;
     var offY = brick ? (wy - brick.y) : 0;
-    // Unrotate offset so it's in brick-local space
-    if (brick && brick._rotation) {
-      var br = -(brick._rotation);
+    if (brick && brickRot) {
+      var br = -brickRot;
       var rx2 = offX * Math.cos(br) - offY * Math.sin(br);
       var ry2 = offX * Math.sin(br) + offY * Math.cos(br);
       offX = rx2; offY = ry2;
     }
 
-    // Drips: spread horizontally relative to impact, then fall down
+    // Drips spread along brick length axis
+    var halfLen = isCircular ? brickR * 0.8 : Math.max(brickW, brickH) * 0.5;
     var dripArr = [];
     for (var di = 0; di < numDrips; di++) {
-      var spread = (di / Math.max(1, numDrips-1) - 0.5) * coreR * 2.2;
+      var t = numDrips > 1 ? (di / (numDrips-1) - 0.5) : 0;
+      var lx = Math.cos(brickRot) * t * halfLen * 1.3 + (Math.random()-0.5)*coreR*0.3;
+      var ly = Math.sin(brickRot) * t * halfLen * 1.3 + (Math.random()-0.5)*coreR*0.1;
       dripArr.push({
-        ox: spread + (Math.random()-0.5) * coreR * 0.4,
-        oy: coreR * 0.2,        // start just below impact center
-        vy: 0.8 + Math.random() * 0.8,
-        len: coreR * (0.6 + Math.random() * 0.8),
-        age: 0,
-        maxAge: 90 + Math.random() * 60,
-        r: 2.5 + Math.random() * 2,
+        ox: lx, oy: ly + coreR * 0.15,
+        vy: 0.6 + Math.random() * 0.7,
+        len: coreR * (0.7 + Math.random() * 0.9),
+        age: 0, maxAge: 90 + Math.random() * 60,
+        r: 2 + Math.random() * 2.5,
       });
     }
 
     this.splats.push({
-      wx: wx, wy: wy,
-      offX: offX, offY: offY,
+      wx: wx, wy: wy, offX: offX, offY: offY,
       nx: nx, ny: ny,
       brick: brick || null,
-      type: type,
-      coreR: coreR,
-      outerR: coreR * 2.0,
-      timer: duration,
-      maxTimer: duration,
-      drips: dripArr,
+      isCircular: isCircular,
+      brickW: brickW, brickH: brickH, brickR: brickR, brickRot: brickRot,
+      type: type, coreR: coreR, outerR: coreR * 2.0,
+      timer: duration, maxTimer: duration, drips: dripArr,
     });
 
-    // Wet splat thud sound
     if (window.Sound && Sound.getCtx) {
       var sc3 = Sound.getCtx();
       if (sc3) {
@@ -2928,19 +2947,20 @@ class Game {
   _drawSplats() {
     if (!this.splats || this.splats.length === 0) return;
     var ctx = this.ctx;
-    // Colors per type: [core bright, core mid, glow, outer]
-    var splatPalette = {
-      dead:  { c1:'#cc8833', c2:'#774400', glow:'#ffaa44', outer:'#442200' },
-      boost: { c1:'#ffee00', c2:'#ccaa00', glow:'#ffff44', outer:'#886600' },
-      goo:   { c1:'#88ff44', c2:'#44aa00', glow:'#aaffaa', outer:'#224400' },
+
+    // Color palettes per type: [bright highlight, core, mid, dark shadow, glow]
+    var PAL = {
+      dead:  { h:'#ffcc88', c:'#cc7733', m:'#884422', d:'#331100', g:'#ffaa44', s:'#ff8800' },
+      boost: { h:'#ffff99', c:'#ffee00', m:'#ccaa00', d:'#664400', g:'#ffff44', s:'#ffdd00' },
+      goo:   { h:'#ccff88', c:'#55dd22', m:'#227711', d:'#0a2200', g:'#88ff44', s:'#44cc00' },
     };
 
     for (var si = 0; si < this.splats.length; si++) {
       var sp = this.splats[si];
-      var pal = splatPalette[sp.type] || splatPalette.goo;
-
-      // Get world position — rotate offset with brick
+      var pal = PAL[sp.type] || PAL.goo;
       var brot = (sp.brick && sp.brick._rotation) || 0;
+
+      // World position
       var wx = sp.brick
         ? sp.brick.x + sp.offX * Math.cos(brot) - sp.offY * Math.sin(brot)
         : sp.wx;
@@ -2948,139 +2968,169 @@ class Game {
         ? sp.brick.y + sp.offX * Math.sin(brot) + sp.offY * Math.cos(brot)
         : sp.wy;
 
-      // Fade alpha
       var fadeIn  = Math.min(1, (sp.maxTimer - sp.timer) / 8);
       var fadeOut = Math.min(1, sp.timer / Math.min(sp.maxTimer * 0.3, 40));
       var alpha   = fadeIn * fadeOut * 0.95;
       if (alpha <= 0) continue;
 
-      // Impact normal in world space (rotated with brick)
+      var cr = sp.coreR;
       var inx = sp.nx * Math.cos(brot) - sp.ny * Math.sin(brot);
       var iny = sp.nx * Math.sin(brot) + sp.ny * Math.cos(brot);
 
-      // Spread direction: perpendicular to normal = horizontal spread
-      var tx = -iny, ty = inx;  // tangent (horizontal along surface)
-
-      var cr = sp.coreR;
-
-      ctx.save();
-      ctx.translate(wx, wy);
-      // Rotate canvas so normal points "up" (0,-1)
-      var normAngle = Math.atan2(iny, inx) - Math.atan2(-1, 0);
-      ctx.rotate(normAngle);
-
-      // ── Outer spread — wide flat ellipse, feathered ──────────────────────
-      var spreadW = cr * 2.2, spreadH = cr * 0.7;
-      var r1 = parseInt(pal.outer.slice(1,3),16),
-          g1 = parseInt(pal.outer.slice(3,5),16),
-          b1 = parseInt(pal.outer.slice(5,7),16);
-      ctx.save();
-      ctx.scale(1, 0.35);  // squash vertically = flat ellipse
-      var outerGrad = ctx.createRadialGradient(0, 0, cr * 0.3, 0, 0, spreadW);
-      outerGrad.addColorStop(0,   'rgba('+r1+','+g1+','+b1+','+(alpha*0.7)+')');
-      outerGrad.addColorStop(0.6, 'rgba('+r1+','+g1+','+b1+','+(alpha*0.35)+')');
-      outerGrad.addColorStop(1,   'rgba('+r1+','+g1+','+b1+',0)');
-      // Irregular splat outline
-      ctx.beginPath();
-      var pts = 16;
-      for (var pi = 0; pi < pts; pi++) {
-        var a = (pi / pts) * Math.PI * 2;
-        var wobR = spreadW * (0.65 + 0.35 * Math.sin(pi * 2.7 + si * 1.3));
-        var px = Math.cos(a) * wobR;
-        var py = Math.sin(a) * wobR;
-        pi === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      function hexRGB(h) {
+        return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
       }
-      ctx.closePath();
-      ctx.fillStyle = outerGrad;
-      ctx.fill();
-      ctx.restore();
+      function rgba(h, a) { var c=hexRGB(h); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
 
-      // ── Impact streaks — thin radial lines spreading outward ─────────────
-      var r2 = parseInt(pal.c2.slice(1,3),16),
-          g2 = parseInt(pal.c2.slice(3,5),16),
-          b2 = parseInt(pal.c2.slice(5,7),16);
-      var numStreaks = 5 + (si % 4);
-      for (var sti = 0; sti < numStreaks; sti++) {
-        var stA = (sti / numStreaks) * Math.PI + (si * 0.4);  // mostly horizontal
-        var stLen = cr * (0.8 + 0.6 * Math.sin(sti * 1.9 + si));
-        var stW   = 1.5 + Math.sin(sti * 2.1) * 1;
+      ctx.save();
+
+      if (sp.isCircular && sp.brickR > 0) {
+        // ── CIRCULAR BRICK: arc splat ──────────────────────────────────────
+        var impAngle = Math.atan2(iny, inx);
+        var arcR = sp.brickR;
+        var arcSpread = Math.min(Math.PI * 0.6, cr / arcR * 2.5);
+        var indentR = arcR - Math.min(10, cr * 0.5);
+
+        // Outer goo arc (wide, feathered)
         ctx.beginPath();
-        ctx.moveTo(Math.cos(stA) * cr * 0.2, Math.sin(stA) * cr * 0.1);
-        ctx.lineTo(Math.cos(stA) * stLen, Math.sin(stA) * stLen * 0.4);
-        ctx.strokeStyle = 'rgba('+r2+','+g2+','+b2+','+(alpha*0.6)+')';
-        ctx.lineWidth = stW;
-        ctx.lineCap = 'round';
-        ctx.stroke();
+        ctx.arc(wx - inx * arcR, wy - iny * arcR, arcR + cr * 0.5, impAngle - arcSpread, impAngle + arcSpread);
+        ctx.arc(wx - inx * arcR, wy - iny * arcR, indentR - cr * 0.3, impAngle + arcSpread, impAngle - arcSpread, true);
+        ctx.closePath();
+        ctx.fillStyle = rgba(pal.m, alpha * 0.6);
+        ctx.fill();
+
+        // Core arc
+        var coreSpread = arcSpread * 0.6;
+        ctx.beginPath();
+        ctx.arc(wx - inx * arcR, wy - iny * arcR, arcR + cr * 0.2, impAngle - coreSpread, impAngle + coreSpread);
+        ctx.arc(wx - inx * arcR, wy - iny * arcR, indentR, impAngle + coreSpread, impAngle - coreSpread, true);
+        ctx.closePath();
+        ctx.shadowColor = pal.g; ctx.shadowBlur = 6;
+        ctx.fillStyle = rgba(pal.c, alpha * 0.85);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Highlight streak
+        ctx.beginPath();
+        ctx.arc(wx - inx * arcR, wy - iny * arcR, arcR + cr * 0.1, impAngle - coreSpread*0.4, impAngle + coreSpread*0.4);
+        ctx.arc(wx - inx * arcR, wy - iny * arcR, arcR - cr * 0.05, impAngle + coreSpread*0.4, impAngle - coreSpread*0.4, true);
+        ctx.closePath();
+        ctx.fillStyle = rgba(pal.h, alpha * 0.7);
+        ctx.fill();
+
+      } else {
+        // ── RECTANGULAR BRICK (or wall): oriented splat ────────────────────
+        var halfBW = sp.brickW > sp.brickH ? sp.brickW * 0.5 : sp.brickH * 0.5;
+        var halfBH = sp.brickW > sp.brickH ? sp.brickH * 0.5 : sp.brickW * 0.5;
+        // Length direction = along brick's long axis
+        var normAngle = Math.atan2(iny, inx) - Math.atan2(-1, 0);
+        ctx.translate(wx, wy);
+        ctx.rotate(normAngle);
+
+        // Limit splat height to half brick width
+        var maxH = sp.brick ? Math.min(cr * 0.55, halfBH * 0.5) : cr * 0.55;
+        // Splat width = along brick length, capped at brick length
+        var splatW = sp.brick ? Math.min(cr * 2.0, halfBW * 1.8) : cr * 2.0;
+
+        // ── Layer 1: dark shadow base ────────────────────────────────────
+        ctx.save(); ctx.scale(1, 0.28);
+        ctx.beginPath();
+        for (var ai=0; ai<14; ai++) {
+          var a = (ai/14)*Math.PI*2;
+          var wob = (0.6 + 0.4*Math.sin(ai*2.1+si*1.7));
+          var px = Math.cos(a)*splatW*wob, py = Math.sin(a)*cr*0.55*wob;
+          ai===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = rgba(pal.d, alpha*0.7);
+        ctx.fill();
+        ctx.restore();
+
+        // ── Layer 2: outer goo spread ────────────────────────────────────
+        ctx.save(); ctx.scale(1, 0.22);
+        ctx.beginPath();
+        for (var ai2=0; ai2<12; ai2++) {
+          var a2=(ai2/12)*Math.PI*2;
+          var wob2=(0.65+0.35*Math.sin(ai2*3.1+si));
+          var px2=Math.cos(a2)*splatW*0.85*wob2, py2=Math.sin(a2)*cr*0.5*wob2;
+          ai2===0 ? ctx.moveTo(px2,py2) : ctx.lineTo(px2,py2);
+        }
+        ctx.closePath();
+        var og=ctx.createRadialGradient(0,0,0,0,0,splatW*0.85);
+        og.addColorStop(0,   rgba(pal.m, alpha*0.8));
+        og.addColorStop(0.5, rgba(pal.m, alpha*0.55));
+        og.addColorStop(1,   rgba(pal.d, 0));
+        ctx.fillStyle=og; ctx.fill();
+        ctx.restore();
+
+        // ── Layer 3: core blob ───────────────────────────────────────────
+        ctx.save(); ctx.scale(1, 0.18);
+        ctx.shadowColor=pal.g; ctx.shadowBlur=8;
+        ctx.beginPath();
+        for (var ai3=0; ai3<10; ai3++) {
+          var a3=(ai3/10)*Math.PI*2;
+          var wob3=(0.7+0.3*Math.sin(ai3*3.7+si*2.1));
+          var cw=splatW*0.5*wob3, ch=cr*0.42*wob3;
+          ai3===0 ? ctx.moveTo(Math.cos(a3)*cw, Math.sin(a3)*ch)
+                  : ctx.lineTo(Math.cos(a3)*cw, Math.sin(a3)*ch);
+        }
+        ctx.closePath();
+        var cg=ctx.createRadialGradient(0,0,0,0,0,splatW*0.5);
+        cg.addColorStop(0,   rgba(pal.h, alpha*0.95));
+        cg.addColorStop(0.35,rgba(pal.c, alpha*0.9));
+        cg.addColorStop(0.7, rgba(pal.m, alpha*0.7));
+        cg.addColorStop(1,   rgba(pal.d, alpha*0.3));
+        ctx.fillStyle=cg; ctx.fill();
+        ctx.shadowBlur=0;
+        ctx.restore();
+
+        // ── Layer 4: impact streaks ──────────────────────────────────────
+        var numSt = 4 + (si%3);
+        for (var sti=0; sti<numSt; sti++) {
+          var stA = (sti/numSt - 0.5) * Math.PI * 0.9;
+          var stLen = splatW*(0.5+0.5*Math.sin(sti*1.9+si));
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(stA)*cr*0.1, Math.sin(stA)*cr*0.05);
+          ctx.lineTo(Math.cos(stA)*stLen, Math.sin(stA)*stLen*0.18);
+          ctx.strokeStyle=rgba(pal.s, alpha*0.55);
+          ctx.lineWidth=1.2+Math.sin(sti)*0.8;
+          ctx.lineCap='round'; ctx.stroke();
+        }
+
+        // ── Layer 5: specular highlight dot ─────────────────────────────
+        ctx.beginPath();
+        ctx.arc(-splatW*0.15, -cr*0.03, cr*0.12, 0, Math.PI*2);
+        ctx.fillStyle=rgba(pal.h, alpha*0.8);
+        ctx.fill();
       }
 
-      // ── Core blob — bright center ─────────────────────────────────────────
-      var r3 = parseInt(pal.c1.slice(1,3),16),
-          g3 = parseInt(pal.c1.slice(3,5),16),
-          b3 = parseInt(pal.c1.slice(5,7),16);
-      var gr3 = parseInt(pal.glow.slice(1,3),16),
-          gg3 = parseInt(pal.glow.slice(3,5),16),
-          gb3 = parseInt(pal.glow.slice(5,7),16);
-      ctx.save();
-      ctx.scale(1.6, 0.55);  // wide flat core
-      ctx.shadowColor = pal.glow; ctx.shadowBlur = 8;
-      ctx.beginPath();
-      var cpts = 10;
-      for (var ci2 = 0; ci2 < cpts; ci2++) {
-        var ca = (ci2 / cpts) * Math.PI * 2;
-        var cw = cr * (0.55 + 0.2 * Math.sin(ci2 * 3.1 + si * 2));
-        ci2 === 0 ? ctx.moveTo(Math.cos(ca)*cw, Math.sin(ca)*cw)
-                  : ctx.lineTo(Math.cos(ca)*cw, Math.sin(ca)*cw);
-      }
-      ctx.closePath();
-      var coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, cr * 0.6);
-      coreGrad.addColorStop(0,   'rgba('+gr3+','+gg3+','+gb3+','+(alpha*0.98)+')');
-      coreGrad.addColorStop(0.5, 'rgba('+r3+','+g3+','+b3+','+(alpha*0.85)+')');
-      coreGrad.addColorStop(1,   'rgba('+r2+','+g2+','+b2+','+(alpha*0.5)+')');
-      ctx.fillStyle = coreGrad;
-      ctx.fill();
-      ctx.shadowBlur = 0;
       ctx.restore();
 
-      ctx.restore();  // undo normAngle rotation
-
-      // ── Drips — drawn in world space, gravity always pulls down ──────────
-      if (sp.drips) {
-        for (var di2 = 0; di2 < sp.drips.length; di2++) {
-          var d2 = sp.drips[di2];
-          var dAge = Math.min(1, d2.age / d2.maxAge);
-          var dAlpha = alpha * (1 - dAge * dAge);
-          if (dAlpha <= 0.02) continue;
-
-          // Drip position in world space
-          var dpx = wx + d2.ox;
-          var dpy = wy + d2.oy;
-
-          // Drip stem — tapers toward tip
-          var stemLen = d2.len * dAlpha;
-          if (stemLen > 2) {
-            var stemGrad = ctx.createLinearGradient(dpx, dpy, dpx, dpy + stemLen);
-            stemGrad.addColorStop(0, 'rgba('+r3+','+g3+','+b3+','+(dAlpha*0.9)+')');
-            stemGrad.addColorStop(0.5,'rgba('+r2+','+g2+','+b2+','+(dAlpha*0.6)+')');
-            stemGrad.addColorStop(1, 'rgba('+r2+','+g2+','+b2+',0)');
-            ctx.beginPath();
-            ctx.moveTo(dpx - d2.r*0.5, dpy);
-            ctx.quadraticCurveTo(dpx, dpy + stemLen * 0.6, dpx, dpy + stemLen);
-            ctx.lineWidth = d2.r * (1 - dAge * 0.5);
-            ctx.strokeStyle = stemGrad;
-            ctx.lineCap = 'round';
-            ctx.stroke();
-          }
-
-          // Drip bulb at tip
-          var bulbR = d2.r * (0.6 + 0.4 * Math.sin(d2.age * 0.3)) * dAlpha;
-          if (bulbR > 1) {
-            ctx.shadowColor = pal.glow; ctx.shadowBlur = 4;
-            ctx.beginPath();
-            ctx.arc(dpx, dpy + stemLen, bulbR, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba('+r3+','+g3+','+b3+','+(dAlpha*0.85)+')';
-            ctx.fill();
-            ctx.shadowBlur = 0;
-          }
+      // ── Drips (always fall straight down in world space) ─────────────────
+      for (var di2=0; di2<sp.drips.length; di2++) {
+        var d2=sp.drips[di2];
+        var dAge=Math.min(1, d2.age/d2.maxAge);
+        var dAlpha=alpha*(1-dAge*dAge);
+        if (dAlpha<=0.02) continue;
+        var dpx=wx+d2.ox, dpy=wy+d2.oy;
+        var stemLen=d2.len*dAlpha;
+        if (stemLen>2) {
+          var sg=ctx.createLinearGradient(dpx,dpy,dpx,dpy+stemLen);
+          sg.addColorStop(0, rgba(pal.c, dAlpha*0.9));
+          sg.addColorStop(0.5, rgba(pal.m, dAlpha*0.6));
+          sg.addColorStop(1, rgba(pal.d, 0));
+          ctx.beginPath();
+          ctx.moveTo(dpx-d2.r*0.4, dpy);
+          ctx.quadraticCurveTo(dpx, dpy+stemLen*0.5, dpx, dpy+stemLen);
+          ctx.lineWidth=d2.r*(1-dAge*0.5);
+          ctx.strokeStyle=sg; ctx.lineCap='round'; ctx.stroke();
+        }
+        var bulbR=d2.r*(0.5+0.5*Math.sin(d2.age*0.25))*dAlpha;
+        if (bulbR>1) {
+          ctx.shadowColor=pal.g; ctx.shadowBlur=4;
+          ctx.beginPath(); ctx.arc(dpx, dpy+stemLen, bulbR, 0, Math.PI*2);
+          ctx.fillStyle=rgba(pal.c, dAlpha*0.85); ctx.fill();
+          ctx.shadowBlur=0;
         }
       }
     }
