@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1544;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1545;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -2049,18 +2049,19 @@ class Game {
             if (b._cubeHP <= 0) this._cubeShatter(b);
           }
           if (a.type === BALL_TYPES.SPLATTER && !a._splattered && !a._fromChute) {
+            // Splatter hitting a ball: apply effect directly, create short world-space splat
             var sNX2 = (a.x - b.x), sNY2 = (a.y - b.y);
             var sND = Math.hypot(sNX2, sNY2) || 1;
-            // Surface point: between the two balls
             var _spx2 = (a.x + b.x)/2, _spy2 = (a.y + b.y)/2;
-            this._createSplat(_spx2, _spy2, sNX2/sND, sNY2/sND, b);
+            this._createSplat(_spx2, _spy2, sNX2/sND, sNY2/sND, null);  // null = no brick, world-space
+            this._applySplatEffect(this.splats[this.splats.length-1], b);
             a._splattered = true; a.dead = true;
           }
           if (b.type === BALL_TYPES.SPLATTER && !b._splattered && !b._fromChute) {
             var sNX3 = (b.x - a.x), sNY3 = (b.y - a.y);
             var sND3 = Math.hypot(sNX3, sNY3) || 1;
-            // Note: b hit a ball, not a surface — splat at contact point
-            this._createSplat(a.x, a.y, sNX3/sND3, sNY3/sND3, null);
+            this._createSplat(a.x, a.y, sNX3/sND3, sNY3/sND3, null);  // null = no brick
+            this._applySplatEffect(this.splats[this.splats.length-1], a);
             b._splattered = true; b.dead = true;
           }
           if (a.type === BALL_TYPES.EXPLODER && !a.exploded && !a._fromChute) {
@@ -2333,6 +2334,20 @@ class Game {
                 dball.vy = -1.5;
                 dball.vx = (Math.random() - 0.5) * 2;
               }
+            }
+            // Free any goo-stuck balls attached to this brick's splats
+            if (dball.stuckTo === '_wall_' && dball._gooPermStuck) {
+              if (Math.hypot(dball.x - brick.x, dball.y - brick.y) < (brick.w || 60) + dball.r + 20) {
+                dball.stuckTo = null; dball.inFlight = true;
+                dball._gooPermStuck = false; dball._knockImmune = 0;
+                dball.vy = -2; dball.vx = (Math.random()-0.5) * 3;
+              }
+            }
+          }
+          // Remove splats attached to this brick
+          if (this.splats) {
+            for (var sdi = this.splats.length - 1; sdi >= 0; sdi--) {
+              if (this.splats[sdi].brick === brick) this.splats.splice(sdi, 1);
             }
           }
         }
@@ -3060,20 +3075,20 @@ class Game {
     var dripArr = [];
     for (var di = 0; di < numDrips; di++) {
       var t = numDrips > 1 ? (di / (numDrips - 1) - 0.5) : 0;
-      // Drip x = spread along edge from impact point (offX in local space)
-      // Drip position is in world space
       var localDripX = t * spread * 1.2 + (Math.random()-0.5) * coreR * 0.2;
-      // Rotate local drip x to world space
+      // Rotate drip spread offset to world space along the long axis of the brick
+      // oy is kept 0 — drips always start at the edge world position (wy) and fall down
       var worldDripX = localDripX * Math.cos(brickRot);
       var worldDripY = localDripX * Math.sin(brickRot);
       dripArr.push({
         ox: worldDripX,
-        oy: worldDripY,
+        oy: worldDripY,  // lateral offset along edge in world space (not vertical)
+        startBelow: !hitFromTop,  // true = drip hangs below edge; false = starts at edge
         vy: 0.5 + Math.random() * 0.6,
         len: coreR * (0.8 + Math.random() * 1.0),
         age: 0, maxAge: 100 + Math.random() * 80,
         r: 2.5 + Math.random() * 2.5,
-        hitFromTop: hitFromTop,  // drips go over brick surface
+        hitFromTop: hitFromTop,
       });
     }
 
@@ -3085,7 +3100,10 @@ class Game {
       brickW: brickW, brickH: brickH, brickR: brickR, brickRot: brickRot,
       hitFromTop: hitFromTop, hitFromBottom: hitFromBottom,
       type: type, coreR: coreR, spread: spread,
-      timer: duration, maxTimer: duration, drips: dripArr,
+      // Wall/ball splats fade faster than brick splats
+      timer: brick ? duration : Math.min(duration, 8 * 60),
+      maxTimer: brick ? duration : Math.min(duration, 8 * 60),
+      drips: dripArr,
     });
 
     if (window.Sound && Sound.getCtx) {
@@ -3163,6 +3181,23 @@ class Game {
       ctx.save();
       ctx.translate(wx, wy);
       ctx.rotate(brot);  // align X axis with brick long axis
+
+      // Detect short-edge hit and rotate 90° so splat spreads along that edge
+      var _hitShort = false;
+      if (!sp.isCircular && sp.brickW > 0 && sp.brickH > 0) {
+        var _absLnx = Math.abs(sp.lnx || 0), _absLny = Math.abs(sp.lny || 1);
+        var _bw = sp.brickW, _bh = sp.brickH;
+        // For any brick: short edge hit = normal mostly along long axis direction
+        // Long axis is X in local space. If |lnx| > |lny|, ball hit the end caps.
+        _hitShort = (_absLnx > _absLny);
+        if (_hitShort) {
+          ctx.rotate(Math.PI / 2);
+          // Spread along short edge (the height of the brick)
+          spread = Math.min(cr * 1.4, Math.min(_bw, _bh) * 0.48);
+          // After 90° rotate, lny2 swaps meaning — use lnx sign for normalSign
+          lny2 = -(sp.lnx || 1);  // flip to get correct inward direction
+        }
+      }
 
       // In rotated local space:
       // X = along brick length, Y = away from surface (in direction of normal)
@@ -3307,8 +3342,12 @@ class Game {
         var dAge = Math.min(1, d2.age / d2.maxAge);
         var dAlpha = alpha * (1 - dAge * dAge);
         if (dAlpha <= 0.02) continue;
+        // Drip X = lateral offset along edge, Y = start at edge world position
         var dpx = wx + d2.ox;
-        var dpy = wy + d2.oy;
+        // For top hit: drip starts at wy (top edge) and falls DOWN (positive Y)
+        // For bottom hit: drip starts at wy (bottom edge) and falls DOWN
+        // Always start at the surface edge, always fall downward
+        var dpy = wy;  // wy is already the world edge position
         var stemLen = d2.len * dAlpha;
         if (stemLen > 1.5) {
           var sg = ctx.createLinearGradient(dpx, dpy, dpx, dpy + stemLen);
