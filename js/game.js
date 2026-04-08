@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1554;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1555;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -599,12 +599,21 @@ class Game {
               self._editorTubeMode=(tb2.id==='tubes');
               window._tubeEditorMode=(tb2.id==='tubes');
               self._editorSelected=null;
+              // Clear stale button rects from other tabs
+              if (tb2.id==='tubes') {
+                self._editorModeBtns=null; self._editorTypeBtns=null;
+                self._editorSnapBoxBtns=null; self._editorGridPivRects=null;
+              } else {
+                self._tubeModeBtns=null; self._tubeBtns=null;
+                self._tubeStyleBtns=null; self._tubeLayerBtns=null;
+                self._tubeAnchorBtns=null; self._tubeDelBtn=null;
+              }
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
             }
           }
         }
-        // Tool mode buttons
-        if (self._editorModeBtns) {
+        // Tool mode buttons (bricks only)
+        if (!self._editorTubeMode && self._editorModeBtns) {
           for (var mbi=0; mbi<self._editorModeBtns.length; mbi++) {
             var mb2=self._editorModeBtns[mbi];
             if (_px>=mb2.x&&_px<=mb2.x+mb2.w&&_py>=mb2.y&&_py<=mb2.y+mb2.h) {
@@ -615,8 +624,8 @@ class Game {
             }
           }
         }
-        // Sub-type buttons
-        if (self._editorTypeBtns) {
+        // Sub-type buttons (bricks only)
+        if (!self._editorTubeMode && self._editorTypeBtns) {
           for (var ti4=0; ti4<self._editorTypeBtns.length; ti4++) {
             var tb3=self._editorTypeBtns[ti4];
             if (_px>=tb3.x&&_px<=tb3.x+tb3.w&&_py>=tb3.y&&_py<=tb3.y+tb3.h) {
@@ -644,8 +653,8 @@ class Game {
             }
           }
         }
-        // Grid pivot
-        if (self._editorGridPivRects) {
+        // Grid pivot (bricks only)
+        if (!self._editorTubeMode && self._editorGridPivRects) {
           for (var gpi=0; gpi<self._editorGridPivRects.length; gpi++) {
             var gpr2=self._editorGridPivRects[gpi];
             if (_px>=gpr2.x&&_px<=gpr2.x+gpr2.w&&_py>=gpr2.y&&_py<=gpr2.y+gpr2.h) {
@@ -654,8 +663,8 @@ class Game {
             }
           }
         }
-        // Snap box buttons
-        if (self._editorSnapBoxBtns) {
+        // Snap box buttons (bricks only)
+        if (!self._editorTubeMode && self._editorSnapBoxBtns) {
           for (var snbi=0; snbi<self._editorSnapBoxBtns.length; snbi++) {
             var snb=self._editorSnapBoxBtns[snbi];
             if (_px>=snb.x&&_px<=snb.x+snb.w&&_py>=snb.y&&_py<=snb.y+snb.h) {
