@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1547;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1548;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -234,6 +234,41 @@ class Game {
             });
           }
         }
+      });
+    }
+
+    // Restore active balls from save (if present)
+    if (ld.activeBalls && ld.activeBalls.length) {
+      ld.activeBalls.forEach(function(bd) {
+        var bs = BallSettings[bd.type] || BallSettings.bouncer;
+        var obj = new PhysObj(bd.x, bd.y, bd.r || bs.size, bd.mass || 1.0, bd.color || bs.color, bd.glow || bs.glow, bd.label || bs.label.slice(0,3));
+        obj.type = bd.type;
+        obj.vx = bd.vx || 0; obj.vy = bd.vy || 0;
+        obj.inFlight = bd.inFlight || false;
+        obj.pinned = bd.pinned || false;
+        obj.stuckTo = bd.stuckTo || null;
+        obj.gravActive = bd.gravActive || false;
+        obj._fromChute = bd._fromChute || false;
+        obj.exploded = false; obj.dead = false;
+        obj.hasStuck = false; obj.hasSplit = false;
+        obj._slungIds = [];
+        if (bd.type === BALL_TYPES.CUBE) {
+          obj._cubeRot = bd._cubeRot || [1,0,0,0,1,0,0,0,1];
+          obj._cubeRX = bd._cubeRX || 0; obj._cubeRY = bd._cubeRY || 0; obj._cubeRZ = bd._cubeRZ || 0;
+          obj._cubeHP = bd._cubeHP || 4; obj._cubeMaxHP = bd._cubeMaxHP || 4;
+          obj._cubeShattering = false; obj._cubeShards = null;
+        }
+        if (bd.type === BALL_TYPES.EXPLODER) {
+          obj._explodeTier = bd._explodeTier || 1;
+          obj.bouncesLeft = bd.bouncesLeft || 1;
+        }
+        if (bd.type === BALL_TYPES.SQUIGGLY) {
+          obj._sqAmp = bd._sqAmp || 18; obj._sqFreq = bd._sqFreq || 0.08;
+          obj._sqFade = bd._sqFade || 0; obj._sqDelay = bd._sqDelay || 0;
+          obj._sqWave = bd._sqWave || 'sine'; obj._sqT = 0;
+          obj._ghostVx = 0; obj._ghostVy = 0; obj._ghostX = 0; obj._ghostY = 0;
+        }
+        self.objects.push(obj);
       });
     }
 
@@ -1146,22 +1181,14 @@ class Game {
         if (self._hudSaveLevelBtn) {
           var slb=self._hudSaveLevelBtn;
           if (pos.x>=slb.x&&pos.x<=slb.x+slb.w&&pos.y>=slb.y&&pos.y<=slb.y+slb.h) {
-            // Save current level to localStorage with prompt
-            self._neonPrompt('Save level as:', '', function(lname) {
-            if (lname && lname.trim()) {
-              var levels = JSON.parse(localStorage.getItem('_pb_saved_levels')||'{}');
-              levels[lname.trim()] = self._serializeLevel ? self._serializeLevel() : {};
-              localStorage.setItem('_pb_saved_levels', JSON.stringify(levels));
-              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
-            }
-            });
+            self._saveCustomLevel();
             return;
           }
         }
         if (self._hudLoadLevelBtn) {
           var llb=self._hudLoadLevelBtn;
           if (pos.x>=llb.x&&pos.x<=llb.x+llb.w&&pos.y>=llb.y&&pos.y<=llb.y+llb.h) {
-            // TODO phase 2: show level list overlay
+            self._showLoadLevelOverlay();
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
             return;
           }
@@ -3029,9 +3056,9 @@ class Game {
     var type     = sqSet.type      || 'goo';
     var coreR    = sqSet.size      || 11;
     var numDrips = Math.round(sqSet.drips    || 3);
-    var rawDur   = sqSet.duration  !== undefined ? sqSet.duration : 30;
+    var rawDur   = sqSet.duration  !== undefined ? sqSet.duration : 0;
     var duration = rawDur === 0 ? 999999 : rawDur * 60;  // 0=infinite
-    var maxSplats= sqSet.maxSplats !== undefined ? sqSet.maxSplats : 6;
+    var maxSplats= sqSet.maxSplats !== undefined ? sqSet.maxSplats : 20;
     this.splats  = this.splats || [];
     while (this.splats.length >= maxSplats) this.splats.shift();
 
@@ -5451,45 +5478,126 @@ class Game {
   }
 
   _saveCustomLevel() {
-    var levelName = prompt('Level name:', 'My Level ' + (Date.now() % 10000));
-    if (!levelName) return;
-    var W = this.W, floorY = this.floorY();
-    // Serialize bricks
-    var brickData = this.bricks.map(function(b) {
-      return {
-        type: b instanceof CircularBrick ? 'circular_brick' : 'breakable_brick',
-        x: b.x, y: b.y, w: b.w || null, h: b.h || null, r: b.r || null,
-        rotation: b._rotation || 0,
-        health: b.maxHealth || 100, regenAfter: b.regenAfter || null,
-        _movable: b._movable || false, _density: b._density,
-        _maxTravel: b._maxTravel, _decel: b._decel,
-        _rotSpeed: b._rotSpeed, _rotDecel: b._rotDecel,
-        _wallBounce: b._wallBounce, _invincible: b._invincible || false,
-        _noRegen: b._noRegen || false, _noteConfig: b._noteConfig || null,
-        id: b.id || ('b_' + Math.random().toString(36).slice(2,8))
+    var self = this;
+    var defaultName = 'My Level ' + (Date.now() % 10000);
+    this._neonPrompt('Save level as:', defaultName, function(levelName) {
+      if (!levelName || !levelName.trim()) return;
+      levelName = levelName.trim();
+      var W = self.W, floorY = self.floorY();
+      // Serialize bricks
+      var brickData = self.bricks.map(function(b) {
+        return {
+          type: b instanceof CircularBrick ? 'circular_brick' : 'breakable_brick',
+          x: b.x, y: b.y, w: b.w || null, h: b.h || null, r: b.r || null,
+          rotation: b._rotation || 0,
+          health: b.maxHealth || 100, regenAfter: b.regenAfter || null,
+          _movable: b._movable || false, _density: b._density,
+          _maxTravel: b._maxTravel, _decel: b._decel,
+          _rotSpeed: b._rotSpeed, _rotDecel: b._rotDecel,
+          _wallBounce: b._wallBounce, _invincible: b._invincible || false,
+          _noRegen: b._noRegen || false, _noteConfig: b._noteConfig || null,
+          _pivot: b._pivot || 'CM', _translateOnRotate: b._translateOnRotate,
+          _spinDist: b._spinDist,
+          id: b.id || ('b_' + Math.random().toString(36).slice(2,8))
+        };
+      });
+      // Serialize active balls
+      var ballData = self.objects.map(function(o) {
+        return {
+          type: o.type, x: o.x, y: o.y, r: o.r, mass: o.mass,
+          vx: o.vx || 0, vy: o.vy || 0,
+          color: o.color, glow: o.glow, label: o.label,
+          inFlight: o.inFlight || false, pinned: o.pinned || false,
+          stuckTo: o.stuckTo || null, gravActive: o.gravActive || false,
+          _fromChute: o._fromChute || false,
+          _cubeRot: o._cubeRot || null, _cubeRX: o._cubeRX, _cubeRY: o._cubeRY, _cubeRZ: o._cubeRZ,
+          _cubeHP: o._cubeHP, _cubeMaxHP: o._cubeMaxHP,
+          _explodeTier: o._explodeTier, bouncesLeft: o.bouncesLeft,
+          _sqAmp: o._sqAmp, _sqFreq: o._sqFreq, _sqFade: o._sqFade,
+          _sqDelay: o._sqDelay, _sqWave: o._sqWave,
+        };
+      });
+      // Serialize tubes
+      var tubeData = self.tubes ? self.tubes.toJSON() : [];
+      var levelObj = {
+        id: 'custom_' + Date.now(),
+        name: levelName,
+        custom: true,
+        balls: [{ type: 'bouncer', count: 5 }],
+        obstacles: [],
+        objects: brickData,
+        activeBalls: ballData,
+        tubeData: tubeData,
+        target: { rx: 0.15, ry: 0.10, r: 1, barrierR: 1, barrierThickness: 0, barrierGap: Math.PI, barrierGapAngle: 0 },
+        objectives: [],
       };
+      // Save to localStorage
+      var saved = JSON.parse(localStorage.getItem('puzzballs_custom_levels') || '[]');
+      saved.push(levelObj);
+      localStorage.setItem('puzzballs_custom_levels', JSON.stringify(saved));
+      // Notify menu to refresh
+      if (window._menuRefreshCallback) window._menuRefreshCallback();
+      if (window.Sound && Sound.win) Sound.win();
+      self._neonAlert("Level '" + levelName + "' saved!\\nIt will appear in the main menu.");
     });
-    // Serialize tubes
-    var tubeData = this.tubes ? this.tubes.toJSON() : [];
-    var levelObj = {
-      id: 'custom_' + Date.now(),
-      name: levelName,
-      custom: true,
-      balls: [{ type: 'bouncer', count: 5 }],
-      obstacles: [],
-      objects: brickData,
-      tubeData: tubeData,
-      target: { rx: 0.15, ry: 0.10, r: 1, barrierR: 1, barrierThickness: 0, barrierGap: Math.PI, barrierGapAngle: 0 },
-      objectives: [],
-    };
-    // Save to localStorage
+  }
+
+  _showLoadLevelOverlay() {
+    var self = this;
     var saved = JSON.parse(localStorage.getItem('puzzballs_custom_levels') || '[]');
-    saved.push(levelObj);
-    localStorage.setItem('puzzballs_custom_levels', JSON.stringify(saved));
-    // Notify menu to refresh
-    if (window._menuRefreshCallback) window._menuRefreshCallback();
-    if (window.Sound && Sound.win) Sound.win();
-    alert("Level '" + levelName + '" saved! It will appear in the main menu.');
+    if (!saved.length) {
+      this._neonAlert('No saved levels yet.\nUse SAVE to save the current level.');
+      return;
+    }
+    // Build HTML overlay
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,4,16,0.92);z-index:100;display:flex;flex-direction:column;align-items:center;padding:40px 16px 20px;overflow-y:auto;';
+    var title = document.createElement('div');
+    title.textContent = 'LOAD LEVEL';
+    title.style.cssText = "font-family:'Orbitron',sans-serif;font-size:14px;letter-spacing:4px;color:#00e5ff;margin-bottom:16px;text-shadow:0 0 12px #00e5ff88;";
+    overlay.appendChild(title);
+
+    for (var i = 0; i < saved.length; i++) {
+      (function(idx) {
+        var lv = saved[idx];
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;width:100%;max-width:320px;margin-bottom:8px;gap:6px;';
+
+        var nameBtn = document.createElement('div');
+        nameBtn.textContent = lv.name || ('Level ' + (idx + 1));
+        nameBtn.style.cssText = "flex:1;font-family:'Share Tech Mono',monospace;font-size:11px;color:#00e5ff;background:rgba(0,150,200,0.1);border:1px solid rgba(0,200,255,0.3);border-radius:4px;padding:10px 12px;cursor:pointer;display:flex;align-items:center;";
+        nameBtn.addEventListener('click', function() {
+          document.body.removeChild(overlay);
+          self.loadLevel(lv);
+          if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
+        });
+
+        var delBtn = document.createElement('div');
+        delBtn.textContent = '\u2715';
+        delBtn.style.cssText = "font-size:14px;color:#ff4444;background:rgba(255,50,50,0.1);border:1px solid rgba(255,50,50,0.3);border-radius:4px;padding:10px 12px;cursor:pointer;display:flex;align-items:center;";
+        delBtn.addEventListener('click', function() {
+          saved.splice(idx, 1);
+          localStorage.setItem('puzzballs_custom_levels', JSON.stringify(saved));
+          if (window._menuRefreshCallback) window._menuRefreshCallback();
+          document.body.removeChild(overlay);
+          if (saved.length) self._showLoadLevelOverlay();
+          else self._neonAlert('All levels deleted.');
+        });
+
+        row.appendChild(nameBtn);
+        row.appendChild(delBtn);
+        overlay.appendChild(row);
+      })(i);
+    }
+
+    var cancelBtn = document.createElement('div');
+    cancelBtn.textContent = 'CANCEL';
+    cancelBtn.style.cssText = "margin-top:12px;font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;color:#ff8844;background:rgba(255,100,0,0.1);border:1px solid rgba(255,100,0,0.3);border-radius:4px;padding:10px 24px;cursor:pointer;";
+    cancelBtn.addEventListener('click', function() {
+      document.body.removeChild(overlay);
+    });
+    overlay.appendChild(cancelBtn);
+    document.body.appendChild(overlay);
   }
 
   _tubeEditorOnDown(pos) {
