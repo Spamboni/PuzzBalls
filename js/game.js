@@ -26,7 +26,7 @@ class Game {
     this.levelData     = null;
 
     this.W = window.innerWidth;
-    this.H = window.innerHeight;
+    this.H = canvas.clientHeight || window.innerHeight;
     this.canvas.width  = this.W;
     this.canvas.height = this.H;
 
@@ -82,7 +82,7 @@ class Game {
 
     window.addEventListener('resize', () => {
       this.W = window.innerWidth;
-      this.H = window.innerHeight;
+      this.H = canvas.clientHeight || window.innerHeight;
       this.canvas.width  = this.W;
       this.canvas.height = this.H;
       this.nebulaOffscreen = this._buildNebulaOffscreen();
@@ -3063,7 +3063,7 @@ class Game {
     var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 40;  // shaft starts here; cap drawn above this
+    var TOP_Y    = 140;  // shaft starts here; cap drawn above this
     var DIAG_Y   = TOP_Y;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, DIAG_Y };
   }
@@ -3576,7 +3576,7 @@ class Game {
     // Shrink button height to fit if needed, min 22px
     var btnHFit   = Math.max(22, Math.floor((availH - (numBtns-1)*3) / numBtns));
     var totalH    = numBtns * btnHFit + (numBtns-1) * 3;
-    var btnStartY = delBtnY + btnH + btnGap - 40;
+    var btnStartY = delBtnY + btnH + btnGap;
 
     this._chuteButtonRects = [];
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
