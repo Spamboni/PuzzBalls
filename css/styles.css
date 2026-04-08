@@ -1,4 +1,4 @@
-/* PuzzBalls v1548 */
+/* PuzzBalls v1550 */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -148,6 +148,16 @@ button, input, select { touch-action:manipulation; -webkit-tap-highlight-color:t
   color:#00e5ff; cursor:pointer; display:flex; align-items:center; justify-content:center;
   transition:all 0.15s;
 }
+#btn-save-level, #btn-load-level {
+  font-family:'Share Tech Mono',monospace; font-size:7px; letter-spacing:0.5px;
+  padding:4px 6px; border-radius:4px; background:rgba(0,8,22,0.85);
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+  transition:all 0.15s;
+}
+#btn-save-level { color:#00ff88; border:1px solid rgba(0,255,136,0.4); }
+#btn-load-level { color:#88bbff; border:1px solid rgba(68,136,255,0.4); }
+#btn-save-level:active { background:rgba(0,255,136,0.15); }
+#btn-load-level:active { background:rgba(68,136,255,0.15); }
 #btn-back { border-color:rgba(255,160,0,0.4); color:#ffaa44; }
 #btn-reset { border-color:rgba(255,48,96,0.4); color:#ff3060; }
 #btn-back:active  { background:rgba(255,160,0,0.15); }
@@ -216,7 +226,7 @@ button, input, select { touch-action:manipulation; -webkit-tap-highlight-color:t
 }
 .tab-btn.active { background:rgba(0,180,255,0.18); color:#00e5ff; border-color:rgba(0,200,255,0.5); }
 .tab-pane { display:none; }
-.setting-row { margin-bottom:12px; padding:0 12px; }
+.setting-row { margin-bottom:12px; padding:0 24px; }
 .setting-label { display:flex; justify-content:space-between; font-size:9px; letter-spacing:1.5px; color:#446688; margin-bottom:4px; }
 .setting-val { color:#00e5ff; font-family:'Orbitron',sans-serif; font-size:9px; }
 input[type=range] {
