@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1531;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1532;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -468,7 +468,7 @@ class Game {
           var hcb=self._hudClearBtns[hci];
           if (pos.x>=hcb.x&&pos.x<=hcb.x+hcb.w&&pos.y>=hcb.y&&pos.y<=hcb.y+hcb.h) {
             if (hcb.type===0) { self._undoPush && self._undoPush(); self.bricks=[]; }
-            else if (hcb.type===1) { self._undoPush && self._undoPush(); self.objects.forEach(function(o){o.dead=true;}); }
+            else if (hcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); self._chuteQueue=[]; self._chuteActive=[]; }
             else if (hcb.type===2) { self._undoPush && self._undoPush(); self.tubes.tubes=[]; }
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
           }
@@ -3063,7 +3063,7 @@ class Game {
     var TURN_R   = 30;
     var LEFT_X   = W - CHUTE_W;
     var CENTER_X = W - CHUTE_W / 2;
-    var TOP_Y    = 240;  // shaft starts here; cap drawn above this
+    var TOP_Y    = 40;  // shaft starts here; cap drawn above this
     var DIAG_Y   = TOP_Y;
     return { W, floorY, CHUTE_W, TURN_R, LEFT_X, CENTER_X, TOP_Y, DIAG_Y };
   }
@@ -3576,7 +3576,7 @@ class Game {
     // Shrink button height to fit if needed, min 22px
     var btnHFit   = Math.max(22, Math.floor((availH - (numBtns-1)*3) / numBtns));
     var totalH    = numBtns * btnHFit + (numBtns-1) * 3;
-    var btnStartY = delBtnY + btnH + btnGap;
+    var btnStartY = delBtnY + btnH + btnGap - 40;
 
     this._chuteButtonRects = [];
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
