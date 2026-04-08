@@ -71,7 +71,7 @@ var Menu = (function() {
     var header = _el('div', 'menu-header');
     var _ver = window.PUZZBALLS_FILE_VERSION && window.PUZZBALLS_FILE_VERSION['game.js'];
     var _verStr = _ver ? ('v' + String(_ver).slice(0,2) + '.' + String(_ver).slice(2)) : 'v?';
-    var _BUILD_TIME = '4/8 1:20am';
+    var _BUILD_TIME = '4/8 1:31am';
     header.innerHTML = '<div class="menu-logo">PUZZBALLS</div><div class="menu-tagline">Physics • Puzzles • Mayhem</div><div class="menu-version">' + _verStr + ' · ' + _BUILD_TIME + '</div>';
     _container.appendChild(header);
 
