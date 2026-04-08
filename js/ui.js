@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1534;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1535;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -85,7 +85,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'dead', size:20, drips:3, duration:8 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0 } };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'dead', size:20, drips:3, duration:8 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300' } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1534</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1535</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -529,6 +529,36 @@ class UI {
         if (t.id==='cube') {
           window.Settings.cube = window.Settings.cube || {hp:4,spin:1.0,chaos:0.6,mass:1.4,size:1.0};
           _addSlider(pane,'Size','Settings','cube.size',0.33,2.0,0.05,function(v){return Math.round(v*100)+'%';});
+          _addSlider(pane,'Orb Size','Settings','cube.orbSize',0.05,0.95,0.05,function(v){return Math.round(v*100)+'%';});
+          // Orb color picker
+          var orbColorRow = document.createElement('div');
+          orbColorRow.style.cssText = 'display:flex;gap:4px;margin:4px 0;flex-wrap:wrap;align-items:center;';
+          var orbColors = [{hex:'#ff3300',name:'RED'},{hex:'#ff8800',name:'ORNG'},{hex:'#ffff00',name:'YLW'},{hex:'#00ff88',name:'GRN'},{hex:'#00ccff',name:'CYAN'},{hex:'#aa44ff',name:'PURP'},{hex:'#ffffff',name:'WHT'}];
+          var orbLbl = document.createElement('span');
+          orbLbl.textContent='ORB:'; orbLbl.style.cssText='color:#aaa;font-size:8px;font-family:Share Tech Mono,monospace;margin-right:2px;';
+          orbColorRow.appendChild(orbLbl);
+          orbColors.forEach(function(oc) {
+            var ob = document.createElement('button');
+            ob.style.cssText='width:22px;height:22px;border-radius:50%;border:2px solid '+oc.hex+'55;background:'+oc.hex+'44;cursor:pointer;';
+            var updateOrbBtn = function() {
+              var cur = (window.Settings&&window.Settings.cube&&window.Settings.cube.orbColor)||'#ff3300';
+              ob.style.borderColor = cur===oc.hex ? oc.hex : oc.hex+'44';
+              ob.style.background  = cur===oc.hex ? oc.hex+'99' : oc.hex+'22';
+            };
+            updateOrbBtn();
+            function setOrbColor(e) {
+              e.preventDefault();
+              window.Settings=window.Settings||{}; window.Settings.cube=window.Settings.cube||{};
+              window.Settings.cube.orbColor=oc.hex;
+              document.querySelectorAll('.orb-color-btn').forEach(function(b){ b.style.borderColor=b._orbHex+'44'; b.style.background=b._orbHex+'22'; });
+              ob.style.borderColor=oc.hex; ob.style.background=oc.hex+'99';
+            }
+            ob._orbHex = oc.hex;
+            ob.classList.add('orb-color-btn');
+            ob.addEventListener('click',setOrbColor); ob.addEventListener('touchend',setOrbColor);
+            orbColorRow.appendChild(ob);
+          });
+          pane.appendChild(orbColorRow);
           _addSlider(pane,'HP (hits to shatter)','Settings','cube.hp',1,12,1,function(v){return v+' hits';});
           _addSlider(pane,'Spin Speed','Settings','cube.spin',0.1,8.0,0.1,function(v){return v.toFixed(1)+'x';});
           _addSlider(pane,'Chaos (spin randomness)','Settings','cube.chaos',0,1,0.05,function(v){return Math.round(v*100)+'%';});
