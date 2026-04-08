@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1531;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['balls.js'] = 1532;
 // balls.js — Ball type definitions and behaviors
 
 var BALL_TYPES = {
@@ -64,7 +64,7 @@ var BallSettings = {
   },
   splatter: {
     label: 'SPLATTER', color: '#884400', glow: '#cc6600',
-    r: 13, mass: 1.2, bounceMult: 0.0, gravMult: 1.0, dampMult: 0.0,
+    r: 11, mass: 1.2, bounceMult: 0.0, gravMult: 1.0, dampMult: 0.0,
     size: 13, velocity: 0.9, bounciness: 0.0, density: 1.2,
     groundFriction: 0.0, baseDamage: 0, bounceDecay: 0.0,
   },
@@ -79,7 +79,7 @@ var BallSettings = {
     size: Math.round(16 * _S),
     velocity: 1.0, bounciness: 0.7,
     density: 1.2, groundFriction: 0.86,
-    gravRange: 150, gravPull: 2.0,
+    gravRange: 200, gravPull: 2.0,
     baseDamage: 18,
     bounceDecay: 0.68,
   },
