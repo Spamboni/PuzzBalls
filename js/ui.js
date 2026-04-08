@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1539;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1541;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -85,7 +85,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'dead', size:20, drips:3, duration:8 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300' } };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:30, maxSplats:6 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
@@ -246,7 +246,7 @@ class UI {
         instrRow.style.cssText = 'margin-top:10px;padding:6px 4px;background:rgba(0,30,60,0.5);border-radius:6px;font-size:9px;color:#aaddff;line-height:1.5;';
         instrRow.innerHTML = '<b style="color:#00ffee">⚠ If files show old version:</b><br>' +
           'Android Chrome: tap ⋮ → Settings → Privacy → Clear browsing data → Cached images/files<br><br>' +
-          'Or open the URL then add <b>?v=1539</b> to the end and reload.';
+          'Or open the URL then add <b>?v=1541</b> to the end and reload.';
         pane.appendChild(instrRow);
 
       } else if (t.id === 'bricks') {
@@ -563,6 +563,48 @@ class UI {
           _addSlider(pane,'Spin Speed','Settings','cube.spin',0.1,8.0,0.1,function(v){return v.toFixed(1)+'x';});
           _addSlider(pane,'Chaos (spin randomness)','Settings','cube.chaos',0,1,0.05,function(v){return Math.round(v*100)+'%';});
           _addSlider(pane,'Mass','Settings','cube.mass',0.5,3.0,0.1,function(v){return v.toFixed(1)+'x';});
+          // Inner ball section
+          var ibLabel = document.createElement('div');
+          ibLabel.textContent = '── INNER BALL ──';
+          ibLabel.style.cssText = 'color:#00ccff88;font-size:8px;font-family:Share Tech Mono,monospace;margin:6px 0 2px;text-align:center;';
+          pane.appendChild(ibLabel);
+          _addSlider(pane,'Inner Ball Size','Settings','cube.innerBallSize',0.2,1.2,0.05,function(v){return Math.round(v*100)+'%';});
+          _addSlider(pane,'Speed Boost on Release','Settings','cube.innerSpeedBoost',0,3.0,0.1,function(v){return v===0?'OFF':v.toFixed(1)+'x';});
+          _addSlider(pane,'Invincibility (frames)','Settings','cube.innerInvinc',0,120,5,function(v){return v===0?'OFF':v+'f';});
+          // Inner ball type picker
+          var ibRow = document.createElement('div');
+          ibRow.style.cssText = 'display:flex;gap:3px;margin:4px 0;flex-wrap:wrap;';
+          var ibTypes = [
+            {id:'gravity',label:'GRV',col:'#00ffee'},
+            {id:'bouncer',label:'BNC',col:'#4488ff'},
+            {id:'sticky', label:'STK',col:'#44ff44'},
+            {id:'exploder',label:'EXP',col:'#ff4400'},
+            {id:'squiggly',label:'SQG',col:'#ffcc00'},
+            {id:'splitter',label:'SPL',col:'#ff44ff'},
+          ];
+          ibTypes.forEach(function(ib) {
+            var ibb = document.createElement('button');
+            ibb.textContent = ib.label;
+            ibb.style.cssText = 'flex:1;min-width:36px;padding:4px 2px;font-family:Share Tech Mono,monospace;font-size:9px;border-radius:4px;cursor:pointer;border:1px solid '+ib.col+'44;background:rgba(0,0,0,0.2);color:'+ib.col+'88;';
+            var updateIBBtn = function() {
+              var cur = (window.Settings&&window.Settings.cube&&window.Settings.cube.innerBallType)||'gravity';
+              ibb.style.borderColor = cur===ib.id ? ib.col : ib.col+'33';
+              ibb.style.background  = cur===ib.id ? 'rgba(0,40,60,0.6)' : 'rgba(0,0,0,0.2)';
+              ibb.style.color       = cur===ib.id ? ib.col : ib.col+'66';
+            };
+            updateIBBtn();
+            function setIBType(e) {
+              e.preventDefault();
+              window.Settings=window.Settings||{}; window.Settings.cube=window.Settings.cube||{};
+              window.Settings.cube.innerBallType = ib.id;
+              document.querySelectorAll('.ib-type-btn').forEach(function(b){ b.style.background='rgba(0,0,0,0.2)'; });
+              ibb.style.borderColor=ib.col; ibb.style.background='rgba(0,40,60,0.6)'; ibb.style.color=ib.col;
+            }
+            ibb.classList.add('ib-type-btn');
+            ibb.addEventListener('click',setIBType); ibb.addEventListener('touchend',setIBType);
+            ibRow.appendChild(ibb);
+          });
+          pane.appendChild(ibRow);
         }
         if (t.id==='splatter') {
           // Type picker
@@ -594,10 +636,11 @@ class UI {
             splatRow.appendChild(sb2);
           });
           pane.appendChild(splatRow);
-          window.Settings.splatter = window.Settings.splatter || {type:'dead',size:28,drips:3,duration:8};
-          _addSlider(pane,'Size (core radius)','Settings','splatter.size',10,80,2,function(v){return v+'px';});
+          window.Settings.splatter = window.Settings.splatter || {type:'goo',size:11,drips:3,duration:30,maxSplats:6};
+          _addSlider(pane,'Size (core radius)','Settings','splatter.size',4,60,1,function(v){return v+'px';});
           _addSlider(pane,'Drips','Settings','splatter.drips',0,8,1,function(v){return v;});
-          _addSlider(pane,'Duration (sec)','Settings','splatter.duration',1,30,1,function(v){return v+'s';});
+          _addSlider(pane,'Duration (sec)','Settings','splatter.duration',1,60,1,function(v){return v+'s';});
+          _addSlider(pane,'Max Splats','Settings','splatter.maxSplats',1,20,1,function(v){return v;});
         }
         if (t.id==='gravity')  { _addSlider(pane,'Pull Range',null,null,50,280,5,function(v){return v+'px';},t.id,'gravRange'); _addSlider(pane,'Pull Strength',null,null,0.05,5.0,0.05,function(v){return v.toFixed(2);},t.id,'gravPull'); }
         if (t.id==='squiggly') {
