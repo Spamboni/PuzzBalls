@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1548;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1550;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -6439,27 +6439,6 @@ class Game {
       ctx.fillText(labels2[ci], bx2 + btnW/2, btnY2 + btnH/2);
       this._hudClearBtns.push({ x:bx2, y:btnY2, w:btnW, h:btnH, type:ci });
     }
-    // ── SAVE/LOAD level buttons — top right, left of ⚙ ──────────────────────
-    // ⚙ settings button is at ~W-36. Place SAVE/LOAD just left of it.
-    var slBtnW = 44, slBtnH = 20, slY = 10, slGap = 4;
-    var loadLX  = W - 40 - slBtnW;
-    var saveLX  = loadLX - slBtnW - slGap;
-    ctx.fillStyle = 'rgba(0,8,22,0.85)';
-    ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.fill();
-    ctx.strokeStyle = '#00ff8899'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(saveLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
-    ctx.fillStyle = '#00ff88'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('\u{1F4BE} SAVE', saveLX + slBtnW/2, slY + slBtnH/2);
-    this._hudSaveLevelBtn = { x:saveLX, y:slY, w:slBtnW, h:slBtnH };
-    ctx.fillStyle = 'rgba(0,8,22,0.85)';
-    ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.fill();
-    ctx.strokeStyle = '#4488ff99'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(loadLX, slY, slBtnW, slBtnH, 3); ctx.stroke();
-    ctx.fillStyle = '#88bbff'; ctx.font = "bold 7px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('\u{1F4C2} LOAD', loadLX + slBtnW/2, slY + slBtnH/2);
-    this._hudLoadLevelBtn = { x:loadLX, y:slY, w:slBtnW, h:slBtnH };
   }
 
   _drawSpeedSlider() {
