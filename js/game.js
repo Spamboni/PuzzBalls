@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1556;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1557;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -526,7 +526,8 @@ class Game {
           if (_px>=d.x&&_px<=d.x+d.w&&_py>=d.y&&_py<=d.y+d.h) {
             self._editorMode=false; self._editorTubeMode=false;
             window._tubeEditorMode=false; self._editorSelected=null;
-            self._editorBrickDeleteMode=false;
+            self._tubeSelected=null;
+            self._editorBrickDeleteMode=false; self._tubeDeleteMode=false;
             self._editorScrollY=0;
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.25); return;
           }
