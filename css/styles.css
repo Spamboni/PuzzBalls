@@ -1,3 +1,4 @@
+/* PuzzBalls v1548 */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -215,7 +216,7 @@ button, input, select { touch-action:manipulation; -webkit-tap-highlight-color:t
 }
 .tab-btn.active { background:rgba(0,180,255,0.18); color:#00e5ff; border-color:rgba(0,200,255,0.5); }
 .tab-pane { display:none; }
-.setting-row { margin-bottom:12px; }
+.setting-row { margin-bottom:12px; padding:0 12px; }
 .setting-label { display:flex; justify-content:space-between; font-size:9px; letter-spacing:1.5px; color:#446688; margin-bottom:4px; }
 .setting-val { color:#00e5ff; font-family:'Orbitron',sans-serif; font-size:9px; }
 input[type=range] {
