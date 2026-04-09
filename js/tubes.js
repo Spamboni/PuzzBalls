@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1568;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1569;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -321,8 +321,26 @@ class TubePiece {
         var bsX = mDx + oDx, bsY = mDy + oDy;
         var bsL = Math.hypot(bsX, bsY);
         var mNx = -mDy, mNy = mDx; // my perpendicular
-        if (bsL < 0.001) { bsX = mNx; bsY = mNy; }
-        else { bsX /= bsL; bsY /= bsL; }
+
+        // Bend angle
+        var dotV = mDx * oDx + mDy * oDy;
+        dotV = Math.max(-1, Math.min(1, dotV));
+        var bendAngle = Math.acos(dotV);
+
+        // Nearly straight connection (< ~10°) — equal minimal trim, no inside/outside
+        if (bendAngle < 0.18 || bsL < 0.001) {
+          var eqTrim = 2;
+          if (isStart) {
+            eA = eA.slice(eqTrim);
+            eB = eB.slice(eqTrim);
+          } else {
+            eA = eA.slice(0, eA.length - eqTrim);
+            eB = eB.slice(0, eB.length - eqTrim);
+          }
+          return { a: eA, b: eB };
+        }
+
+        bsX /= bsL; bsY /= bsL;
 
         // Joint point
         var jxx = myPts[myIdx].x, jyy = myPts[myIdx].y;
@@ -335,11 +353,6 @@ class TubePiece {
         var projA = (ptA.x - jxx) * bsX + (ptA.y - jyy) * bsY;
         var projB = (ptB.x - jxx) * bsX + (ptB.y - jyy) * bsY;
         var edgeAisInside = projA < projB;
-
-        // Bend angle
-        var dotV = mDx * oDx + mDy * oDy;
-        dotV = Math.max(-1, Math.min(1, dotV));
-        var bendAngle = Math.acos(dotV);
 
         // Inside trim: proportional to angle. At 90° trim ~tubeR distance, at 45° half that
         var insideDist = tR * (bendAngle / (Math.PI / 2));
@@ -927,6 +940,9 @@ class TubeManager {
     var dot = dAx * dBx + dAy * dBy;
     dot = Math.max(-1, Math.min(1, dot));
     var angle = Math.acos(dot);  // 0 = parallel same dir, PI = opposite
+
+    // Nearly straight connection — no visible bend, skip joint drawing
+    if (angle < 0.18) return;
 
     // Cross product: determines which side is inside the bend
     // cross > 0: bend goes CCW → "left" side (perp CCW from dA) is inside
