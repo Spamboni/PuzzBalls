@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1573;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1574;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -1050,16 +1050,8 @@ class TubeManager {
     var outsideCP = _bezierCP(outsideA, outsideB);
     var insideCP  = _bezierCP(insideA, insideB);
 
-    // ── Body fill between the two arcs ──────────────────────────────────
-    // Only tube-color fill (no dark underlay) so balls remain visible through joints
-    ctx.beginPath();
-    ctx.moveTo(insideA.x, insideA.y);
-    ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
-    ctx.lineTo(outsideB.x, outsideB.y);
-    ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
-    ctx.fill();
+    // ── No body fill at joints — tube bodies handle their own fill ─────
+    // Just draw the fillet wall arcs below
 
     // ── Draw wall curves with all visual layers ─────────────────────────
     var _strokeCurve = function(p0, cp, p1, isTop) {
