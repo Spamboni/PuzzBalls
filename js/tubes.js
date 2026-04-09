@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1569;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1570;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -939,74 +939,84 @@ class TubeManager {
     // ── Angle between tubes ─────────────────────────────────────────────
     var dot = dAx * dBx + dAy * dBy;
     dot = Math.max(-1, Math.min(1, dot));
-    var angle = Math.acos(dot);  // 0 = parallel same dir, PI = opposite
+    var angle = Math.acos(dot);
 
-    // Nearly straight connection — no visible bend, skip joint drawing
+    // Nearly straight — no fillet needed
     if (angle < 0.18) return;
 
-    // Cross product: determines which side is inside the bend
-    // cross > 0: bend goes CCW → "left" side (perp CCW from dA) is inside
-    // cross < 0: bend goes CW  → "right" side is inside
-    var cross = dAx * dBy - dAy * dBx;
-
     // Perpendiculars to each tube centerline (90° CCW)
-    var nAx = -dAy, nAy = dAx;  // perp to tube A
-    var nBx = -dBy, nBy = dBx;  // perp to tube B
+    var nAx = -dAy, nAy = dAx;
+    var nBx = -dBy, nBy = dBx;
 
-    // ── 4 wall endpoints at the pivot ────────────────────────────────────
-    var aPlus  = { x: jx + nAx * rA, y: jy + nAy * rA };
-    var aMinus = { x: jx - nAx * rA, y: jy - nAy * rA };
-    var bPlus  = { x: jx + nBx * rB, y: jy + nBy * rB };
-    var bMinus = { x: jx - nBx * rB, y: jy - nBy * rB };
+    // ── Get actual trimmed wall endpoints from each tube ─────────────────
+    // Each tube has edgeA (-r offset) and edgeB (+r offset).
+    // The trimmed end is at the start (if connectedA) or end (if connectedB).
+    var eA_tubeA = tubeA._offsetPath(ptsA, -rA);
+    var eB_tubeA = tubeA._offsetPath(ptsA,  rA);
+    var eA_tubeB = tubeB._offsetPath(ptsB, -rB);
+    var eB_tubeB = tubeB._offsetPath(ptsB,  rB);
 
-    // ── Pair walls using the bisector of the two tube directions ─────────
-    // The bisector splits the joint into the acute (inside) and obtuse (outside)
-    // halves. Wall points on the same side of the bisector get paired together.
+    // The trimmed wall endpoint on tube A at this joint
+    var wA_eA, wA_eB;  // tube A's two wall endpoints at joint side
+    if (sideA === 'A') {
+      // Joint is at the start of tube A — trimmed edges start further in
+      // Use point a few in from the start to approximate the trimmed end
+      var tIdx = Math.min(3, eA_tubeA.length - 1);
+      wA_eA = eA_tubeA[tIdx];
+      wA_eB = eB_tubeA[tIdx];
+    } else {
+      var tIdx = Math.max(0, eA_tubeA.length - 4);
+      wA_eA = eA_tubeA[tIdx];
+      wA_eB = eB_tubeA[tIdx];
+    }
+
+    var wB_eA, wB_eB;  // tube B's two wall endpoints at joint side
+    if (sideB === 'A') {
+      var tIdx2 = Math.min(3, eA_tubeB.length - 1);
+      wB_eA = eA_tubeB[tIdx2];
+      wB_eB = eB_tubeB[tIdx2];
+    } else {
+      var tIdx2 = Math.max(0, eA_tubeB.length - 4);
+      wB_eA = eA_tubeB[tIdx2];
+      wB_eB = eB_tubeB[tIdx2];
+    }
+
+    // ── Pair wall endpoints using bisector ───────────────────────────────
     var bisX = dAx + dBx, bisY = dAy + dBy;
     var bisLen = Math.hypot(bisX, bisY);
-    if (bisLen < 0.001) {
-      // Tubes point in opposite directions (U-turn) — use perpendicular to dA
-      bisX = nAx; bisY = nAy;
-    } else {
-      bisX /= bisLen; bisY /= bisLen;
-    }
+    if (bisLen < 0.001) { bisX = nAx; bisY = nAy; }
+    else { bisX /= bisLen; bisY /= bisLen; }
 
-    // Perpendicular to bisector — this is our dividing line
     var bisPerpX = -bisY, bisPerpY = bisX;
 
-    // Project each wall point onto the bisector-perpendicular to determine side
-    // Positive projection = one side, negative = the other
-    var aPlusSide  = (aPlus.x - jx) * bisPerpX + (aPlus.y - jy) * bisPerpY;
-    var aMinusSide = (aMinus.x - jx) * bisPerpX + (aMinus.y - jy) * bisPerpY;
-    var bPlusSide  = (bPlus.x - jx) * bisPerpX + (bPlus.y - jy) * bisPerpY;
-    var bMinusSide = (bMinus.x - jx) * bisPerpX + (bMinus.y - jy) * bisPerpY;
+    // Project tube A's wall endpoints onto bisector-perpendicular
+    var wA_eA_side = (wA_eA.x - jx) * bisPerpX + (wA_eA.y - jy) * bisPerpY;
+    var wA_eB_side = (wA_eB.x - jx) * bisPerpX + (wA_eB.y - jy) * bisPerpY;
+    // Project tube B's wall endpoints
+    var wB_eA_side = (wB_eA.x - jx) * bisPerpX + (wB_eA.y - jy) * bisPerpY;
+    var wB_eB_side = (wB_eB.x - jx) * bisPerpX + (wB_eB.y - jy) * bisPerpY;
 
-    // Pair: aPlus goes with whichever b-point is on the same side
-    var pair1A, pair1B, pair2A, pair2B;
-    if (aPlusSide * bPlusSide >= 0) {
-      // aPlus and bPlus on same side
-      pair1A = aPlus;  pair1B = bPlus;
-      pair2A = aMinus; pair2B = bMinus;
+    // Pair: match tube A and tube B endpoints that are on the same side
+    var pair1_A, pair1_B, pair2_A, pair2_B;
+    // Try eA↔eA + eB↔eB vs eA↔eB + eB↔eA
+    if (wA_eA_side * wB_eA_side >= 0) {
+      pair1_A = wA_eA; pair1_B = wB_eA;
+      pair2_A = wA_eB; pair2_B = wB_eB;
     } else {
-      // aPlus and bMinus on same side
-      pair1A = aPlus;  pair1B = bMinus;
-      pair2A = aMinus; pair2B = bPlus;
+      pair1_A = wA_eA; pair1_B = wB_eB;
+      pair2_A = wA_eB; pair2_B = wB_eA;
     }
 
-    // Which pair is inside (acute angle side)?
-    // The inside pair is on the side AWAY from the bisector direction
-    // (bisector points INTO the tubes, so inside of bend is OPPOSITE to bisector)
-    var pair1Proj = (pair1A.x - jx) * bisX + (pair1A.y - jy) * bisY;
-    var pair2Proj = (pair2A.x - jx) * bisX + (pair2A.y - jy) * bisY;
-
+    // Inside = opposite bisector direction
+    var p1proj = (pair1_A.x - jx) * bisX + (pair1_A.y - jy) * bisY;
+    var p2proj = (pair2_A.x - jx) * bisX + (pair2_A.y - jy) * bisY;
     var insideA, insideB, outsideA, outsideB;
-    if (pair1Proj < pair2Proj) {
-      // pair1 is on the side opposite to bisector = inside
-      insideA = pair1A; insideB = pair1B;
-      outsideA = pair2A; outsideB = pair2B;
+    if (p1proj < p2proj) {
+      insideA = pair1_A; insideB = pair1_B;
+      outsideA = pair2_A; outsideB = pair2_B;
     } else {
-      insideA = pair2A; insideB = pair2B;
-      outsideA = pair1A; outsideB = pair1B;
+      insideA = pair2_A; insideB = pair2_B;
+      outsideA = pair1_A; outsideB = pair1_B;
     }
 
     // ── Visual setup ────────────────────────────────────────────────────
@@ -1019,24 +1029,18 @@ class TubeManager {
     if (style === 'energy') style = tubeB.style !== 'energy' ? tubeB.style : 'glass';
     var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
 
-    // ── Bezier control point via tangent line intersection ───────────────
-    // For each pair of wall endpoints, extend the wall tangent lines
-    // (going away from the tube, i.e. in -dA and -dB direction) and find
-    // where they cross. That intersection = quadratic Bezier control point,
-    // which automatically makes the curve tangent to both walls.
-    var _bezierCP = function(p0, p1) {
-      // p0 is on tube A side, wall extends in direction -dA
-      // p1 is on tube B side, wall extends in direction -dB
-      // Solve: p0 + t*(-dA) = p1 + s*(-dB)
+    // ── Bezier control point: tangent line intersection ──────────────────
+    // The wall at each endpoint continues in the tube's centerline direction.
+    // Extending AWAY from each tube (-dA from tube A's endpoint, -dB from tube B's)
+    // and intersecting gives a control point that makes the Bezier tangent to both walls.
+    var _bezierCP = function(pA, pB) {
       var det = (-dAx) * (-dBy) - (-dAy) * (-dBx);
       if (Math.abs(det) < 1e-6) {
-        // Parallel — midpoint
-        return { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+        return { x: (pA.x + pB.x) / 2, y: (pA.y + pB.y) / 2 };
       }
-      var t = ((p1.x - p0.x) * (-dBy) - (p1.y - p0.y) * (-dBx)) / det;
-      var cpx = p0.x + t * (-dAx);
-      var cpy = p0.y + t * (-dAy);
-      // Clamp so it doesn't fly off at extreme angles
+      var t = ((pB.x - pA.x) * (-dBy) - (pB.y - pA.y) * (-dBx)) / det;
+      var cpx = pA.x + t * (-dAx);
+      var cpy = pA.y + t * (-dAy);
       var maxD = r * 5;
       var d = Math.hypot(cpx - jx, cpy - jy);
       if (d > maxD) { cpx = jx + (cpx - jx) * maxD / d; cpy = jy + (cpy - jy) * maxD / d; }
