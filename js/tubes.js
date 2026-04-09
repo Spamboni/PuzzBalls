@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1575;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1576;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -790,6 +790,40 @@ class TubeManager {
     else               tubeA.connectedB = { tube: tubeB, side: sideB };
     if (sideB === 'A') tubeB.connectedA = { tube: tubeA, side: sideA };
     else               tubeB.connectedB = { tube: tubeA, side: sideA };
+  }
+
+  // Get all tubes connected in a chain starting from the given tube
+  getConnectedGroup(startTube) {
+    var group = [];
+    var visited = {};
+    var queue = [startTube];
+    while (queue.length > 0) {
+      var t = queue.shift();
+      if (visited[t.id]) continue;
+      visited[t.id] = true;
+      group.push(t);
+      if (t.connectedA && !visited[t.connectedA.tube.id]) queue.push(t.connectedA.tube);
+      if (t.connectedB && !visited[t.connectedB.tube.id]) queue.push(t.connectedB.tube);
+    }
+    return group;
+  }
+
+  // Find a joint point near the given position. Returns { x, y, tubes: [tubeA, tubeB] } or null
+  findJointAt(px, py, threshold) {
+    threshold = threshold || 20;
+    for (var ti = 0; ti < this.tubes.length; ti++) {
+      var tube = this.tubes[ti];
+      var sides = ['connectedA', 'connectedB'];
+      for (var si = 0; si < sides.length; si++) {
+        var conn = tube[sides[si]];
+        if (!conn) continue;
+        var sock = sides[si] === 'connectedA' ? tube.socketA() : tube.socketB();
+        if (Math.hypot(px - sock.x, py - sock.y) < threshold) {
+          return { x: sock.x, y: sock.y, tube: tube };
+        }
+      }
+    }
+    return null;
   }
 
   // Disconnect a tube from all its connections
