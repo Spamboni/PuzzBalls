@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1578;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1579;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -102,7 +102,7 @@ class Game {
       // Show error on canvas immediately
       var ctx = this.ctx;
       if (ctx) {
-        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,this.W,this.H);
+        ctx.fillStyle = '#030a18'; ctx.fillRect(0,0,this.W,this.H);
         ctx.fillStyle = '#ff4444'; ctx.font = "bold 13px 'Share Tech Mono',monospace";
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('LOAD ERROR:', this.W/2, this.H/2 - 30);
@@ -2544,7 +2544,7 @@ class Game {
       console.error('PuzzBalls _loop error:', err);
       var ctx = this.ctx;
       if (ctx) {
-        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,this.W,this.H);
+        ctx.fillStyle = '#030a18'; ctx.fillRect(0,0,this.W,this.H);
         ctx.fillStyle = '#ff4444'; ctx.font = "12px 'Share Tech Mono',monospace";
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('ERROR: ' + err.message, this.W/2, this.H/2 - 16);
@@ -2885,7 +2885,7 @@ class Game {
       }
     }
     Physics.spawnSparks(this.sparks, obj.x, obj.y, '#00ffff', 20);
-    Physics.spawnSparks(this.sparks, obj.x, obj.y, '#ffffff', 12);
+    Physics.spawnSparks(this.sparks, obj.x, obj.y, '#030a18', 12);
 
     // ── Spawn inner ball ──────────────────────────────────────────────────
     var cset2 = (window.Settings && window.Settings.cube) || {};
@@ -4157,7 +4157,7 @@ class Game {
     this.ui.setScore(this.score);
     this.target.hit = true; this.target.flash = 1;
     Physics.spawnSparks(this.sparks, this.target.x, this.target.y, '#00ff88', 60);
-    Physics.spawnSparks(this.sparks, this.target.x, this.target.y, '#ffffff', 30);
+    Physics.spawnSparks(this.sparks, this.target.x, this.target.y, '#030a18', 30);
     this.ui.showWin('LEVEL COMPLETE!', bonus > 0 ? '+' + bonus + ' EFFICIENCY BONUS' : '');
     if (window.Sound) Sound.win();
     var self = this;
@@ -4169,11 +4169,10 @@ class Game {
   _draw() {
     var ctx = this.ctx, W = this.W, H = this.H, floorY = this.floorY();
     var vSY = this._editorMode ? (this._editorScrollY || 0) : 0;
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
     if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
-    // DEBUG: skip nebula/grid/stars for white background
-    // if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
-    // this._drawGrid(); this._drawStars();
+    if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
+    this._drawGrid(); this._drawStars();
 
     for (var g = 0; g < this.objects.length; g++) {
       if (this.objects[g].type === BALL_TYPES.GRAVITY && this.objects[g].gravActive) this._drawGravityRange(this.objects[g]);
@@ -6171,7 +6170,7 @@ class Game {
       ctx.beginPath(); ctx.roundRect(nx, inY, nW, 22, 3); ctx.fill();
       ctx.strokeStyle = nActive ? '#cc44ff' : (isBlack ? '#334466' : '#223355'); ctx.lineWidth = nActive ? 1.5 : 0.8;
       ctx.beginPath(); ctx.roundRect(nx, inY, nW, 22, 3); ctx.stroke();
-      ctx.fillStyle = nActive ? '#ffffff' : (isBlack ? '#aabbdd' : '#7799cc');
+      ctx.fillStyle = nActive ? '#030a18' : (isBlack ? '#aabbdd' : '#7799cc');
       ctx.font = "bold 7px 'Share Tech Mono',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(dispN[ni], nx + nW/2, inY + 11);
       this._notePopupNoteRects.push({ x: nx, y: inY, w: nW, h: 22, val: notes[ni] });
@@ -6523,7 +6522,7 @@ class Game {
     ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.arc(bThX, btrackY, 8, 0, Math.PI * 2);
     ctx.fillStyle = '#ffaa22'; ctx.shadowColor = '#ffaa22'; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = '#030a18'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.fillStyle = 'rgba(255,160,0,0.55)'; ctx.font = "bold 8px 'Share Tech Mono', monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText('BRICKS ' + Math.round(this.brickSpeedMult * 100) + '%', sx + sliderW / 2, bsy - 1);
@@ -6556,7 +6555,7 @@ class Game {
     ctx.beginPath(); ctx.arc(thumbX, trackY, 9, 0, Math.PI * 2);
     ctx.fillStyle = '#00ccff'; ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 12;
     ctx.fill(); ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#030a18'; ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // Labels
@@ -6595,7 +6594,7 @@ class Game {
     ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.arc(tThX, ttrackY, 7, 0, Math.PI * 2);
     ctx.fillStyle = tColor; ctx.shadowColor = tColor; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.strokeStyle = '#030a18'; ctx.lineWidth = 1.2; ctx.stroke();
     ctx.fillStyle = tColor + 'cc'; ctx.font = "bold 8px 'Share Tech Mono', monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText('TUBES ' + Math.round(tubeMult * 100) + '%', sx + sliderW / 2, tsy - 1);
@@ -6618,7 +6617,7 @@ class Game {
     ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.arc(zThX, ztrackY, 7, 0, Math.PI * 2);
     ctx.fillStyle = '#00cc99'; ctx.shadowColor = '#00cc99'; ctx.shadowBlur = 8; ctx.fill(); ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.strokeStyle = '#030a18'; ctx.lineWidth = 1.2; ctx.stroke();
     ctx.fillStyle = 'rgba(0,200,150,0.50)'; ctx.font = "bold 7px 'Share Tech Mono', monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText('ZONE ' + zoneH3 + 'px', sx + sliderW / 2, zsy - 1);
@@ -6728,7 +6727,7 @@ class Game {
 
   _drawGrid() {
     var ctx = this.ctx, W = this.W, H = this.H;
-    ctx.strokeStyle = '#ffffff04'; ctx.lineWidth = 1;
+    ctx.strokeStyle = '#030a1804'; ctx.lineWidth = 1;
     for (var x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
     for (var y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
   }
