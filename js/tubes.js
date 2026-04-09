@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1574;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1575;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -354,10 +354,12 @@ class TubePiece {
         var projB = (ptB.x - jxx) * bsX + (ptB.y - jyy) * bsY;
         var edgeAisInside = projA < projB;
 
-        // Inside trim: proportional to angle. At 90° trim ~tubeR distance, at 45° half that
+        // Inside trim: proportional to angle. At 90° trim ~tubeR distance
         var insideDist = tR * (bendAngle / (Math.PI / 2));
         insideDist = Math.max(2, Math.min(insideDist, tR * 2.5));
-        var outsideDist = tR * 0.15; // minimal outside trim
+        // Outside also trims but less — enough to prevent body fill overlap
+        var outsideDist = insideDist * 0.5;
+        outsideDist = Math.max(2, outsideDist);
 
         // Convert distance to point count
         var _d2c = function(edge, fromStart, dist) {
