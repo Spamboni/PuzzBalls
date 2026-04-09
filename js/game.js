@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1568;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1569;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1495,7 +1495,7 @@ class Game {
       if (self._tubeDragging) {
         var snapResult = self.tubes.checkSnap(self._tubeDragging);
         if (snapResult && snapResult.dist < self.tubes.SNAP_DIST) {
-          self.tubes.applySnap(self._tubeDragging, snapResult, true);
+          self.tubes.applySnap(self._tubeDragging, snapResult, false);
           // Weld sound — metallic click
           if (window.Sound && Sound.getCtx) {
             var sc = Sound.getCtx();
