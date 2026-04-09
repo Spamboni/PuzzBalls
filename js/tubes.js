@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1562;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1563;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -297,15 +297,91 @@ class TubePiece {
       var edgeA = this._offsetPath(pts, -tubeR);   // "top" edge
       var edgeB = this._offsetPath(pts,  tubeR);   // "bottom" edge
 
-      // Trim edges at connected sockets to prevent wall overlap at joints
-      var trimPts = 3;
-      if (this.connectedA && edgeA.length > trimPts * 2 + 2) {
-        edgeA = edgeA.slice(trimPts);
-        edgeB = edgeB.slice(trimPts);
+      // ── Per-wall trim at connected sockets ─────────────────────────────────
+      // Inside wall (acute angle side) gets trimmed back based on joint angle
+      // Outside wall (obtuse angle side) gets minimal trim
+      // edgeA = -tubeR offset (one side), edgeB = +tubeR offset (other side)
+      var _trimForConnection = function(pts2, edgeTop, edgeBot, connSlot, isStart) {
+        if (!connSlot) return { top: edgeTop, bot: edgeBot };
+        var other = connSlot.tube, otherSide = connSlot.side;
+        var otherPts = other._path;
+        if (!otherPts || otherPts.length < 2) return { top: edgeTop, bot: edgeBot };
+
+        // Centerline directions INTO each tube from the joint
+        var myIdx = isStart ? 0 : pts2.length - 1;
+        var myIn  = isStart ? Math.min(4, pts2.length - 1) : Math.max(pts2.length - 5, 0);
+        var mDx = pts2[myIn].x - pts2[myIdx].x, mDy = pts2[myIn].y - pts2[myIdx].y;
+        var mL = Math.hypot(mDx, mDy) || 1; mDx /= mL; mDy /= mL;
+
+        var oIdx = otherSide === 'A' ? 0 : otherPts.length - 1;
+        var oIn  = otherSide === 'A' ? Math.min(4, otherPts.length - 1) : Math.max(otherPts.length - 5, 0);
+        var oDx = otherPts[oIn].x - otherPts[oIdx].x, oDy = otherPts[oIn].y - otherPts[oIdx].y;
+        var oL = Math.hypot(oDx, oDy) || 1; oDx /= oL; oDy /= oL;
+
+        // Cross product tells us which side the bend goes
+        // cross > 0: other tube bends CCW from this tube → edgeA (-tubeR side) is inside
+        // cross < 0: other tube bends CW → edgeB (+tubeR side) is inside
+        var crossVal = mDx * oDy - mDy * oDx;
+
+        // Angle between tubes
+        var dotVal = mDx * oDx + mDy * oDy;
+        dotVal = Math.max(-1, Math.min(1, dotVal));
+        var angle = Math.acos(dotVal); // 0 = same direction, PI = opposite
+
+        // Trim amount for inside wall: more angle = more trim
+        // At 90° (PI/2), trim ~tubeR worth of path distance
+        // Scale linearly with angle
+        var insideTrimDist = tubeR * (angle / (Math.PI / 2));
+        insideTrimDist = Math.max(2, Math.min(insideTrimDist, tubeR * 2.5));
+
+        // Convert distance to point count
+        var _distToCount = function(edge2, fromStart, dist) {
+          var cum = 0, count = 0;
+          if (fromStart) {
+            for (var k = 1; k < edge2.length - 2 && cum < dist; k++) {
+              cum += Math.hypot(edge2[k].x - edge2[k-1].x, edge2[k].y - edge2[k-1].y);
+              count++;
+            }
+          } else {
+            for (var k = edge2.length - 2; k > 1 && cum < dist; k--) {
+              cum += Math.hypot(edge2[k+1].x - edge2[k].x, edge2[k+1].y - edge2[k].y);
+              count++;
+            }
+          }
+          return Math.max(1, count);
+        };
+
+        var insideCount = _distToCount(edgeTop, isStart, insideTrimDist);
+        var outsideCount = 1; // minimal trim for outside wall
+
+        var topIsInside, botIsInside;
+        if (crossVal > 0) {
+          // edgeA (top, -tubeR) is inside the bend
+          topIsInside = true; botIsInside = false;
+        } else {
+          topIsInside = false; botIsInside = true;
+        }
+
+        var topTrim = topIsInside ? insideCount : outsideCount;
+        var botTrim = botIsInside ? insideCount : outsideCount;
+
+        if (isStart) {
+          edgeTop = edgeTop.slice(topTrim);
+          edgeBot = edgeBot.slice(botTrim);
+        } else {
+          edgeTop = edgeTop.slice(0, edgeTop.length - topTrim);
+          edgeBot = edgeBot.slice(0, edgeBot.length - botTrim);
+        }
+        return { top: edgeTop, bot: edgeBot };
+      };
+
+      if (this.connectedA) {
+        var r1 = _trimForConnection(pts, edgeA, edgeB, this.connectedA, true);
+        edgeA = r1.top; edgeB = r1.bot;
       }
-      if (this.connectedB && edgeA.length > trimPts * 2 + 2) {
-        edgeA = edgeA.slice(0, edgeA.length - trimPts);
-        edgeB = edgeB.slice(0, edgeB.length - trimPts);
+      if (this.connectedB) {
+        var r2 = _trimForConnection(pts, edgeA, edgeB, this.connectedB, false);
+        edgeA = r2.top; edgeB = r2.bot;
       }
 
       // ── Tube body fill ────────────────────────────────────────────────────────
@@ -824,56 +900,55 @@ class TubeManager {
     var rA = tubeA.radius, rB = tubeB.radius;
     var r = Math.min(rA, rB);
 
+    // Joint pivot point (where the two sockets meet)
     var idxA = sideA === 'A' ? 0 : ptsA.length - 1;
     var idxB = sideB === 'A' ? 0 : ptsB.length - 1;
     var jx = (ptsA[idxA].x + ptsB[idxB].x) / 2;
     var jy = (ptsA[idxA].y + ptsB[idxB].y) / 2;
 
-    // Tangent directions pointing INTO each tube from the joint
-    var inA = sideA === 'A' ? Math.min(3, ptsA.length - 1) : Math.max(ptsA.length - 4, 0);
-    var inB = sideB === 'A' ? Math.min(3, ptsB.length - 1) : Math.max(ptsB.length - 4, 0);
+    // ── Centerline directions pointing INTO each tube ────────────────────
+    var inA = sideA === 'A' ? Math.min(4, ptsA.length - 1) : Math.max(ptsA.length - 5, 0);
+    var inB = sideB === 'A' ? Math.min(4, ptsB.length - 1) : Math.max(ptsB.length - 5, 0);
     var dAx = ptsA[inA].x - ptsA[idxA].x, dAy = ptsA[inA].y - ptsA[idxA].y;
     var dBx = ptsB[inB].x - ptsB[idxB].x, dBy = ptsB[inB].y - ptsB[idxB].y;
-    var lenAd = Math.hypot(dAx, dAy) || 1, lenBd = Math.hypot(dBx, dBy) || 1;
-    dAx /= lenAd; dAy /= lenAd; dBx /= lenBd; dBy /= lenBd;
+    var lenA = Math.hypot(dAx, dAy) || 1, lenB = Math.hypot(dBx, dBy) || 1;
+    dAx /= lenA; dAy /= lenA; dBx /= lenB; dBy /= lenB;
 
-    // Perpendicular to tube A (90° CCW): nA = (-dAy, dAx)
-    var nAx = -dAy, nAy = dAx;
-    var nBx = -dBy, nBy = dBx;
+    // ── Angle between tubes ─────────────────────────────────────────────
+    var dot = dAx * dBx + dAy * dBy;
+    dot = Math.max(-1, Math.min(1, dot));
+    var angle = Math.acos(dot);  // 0 = parallel same dir, PI = opposite
 
-    // Use cross product of dA × dB to determine which side is concave (inside bend)
-    // cross > 0: bend turns left (CCW) — +nA side is inside
-    // cross < 0: bend turns right (CW) — -nA side is inside
+    // Cross product: determines which side is inside the bend
+    // cross > 0: bend goes CCW → "left" side (perp CCW from dA) is inside
+    // cross < 0: bend goes CW  → "right" side is inside
     var cross = dAx * dBy - dAy * dBx;
 
-    // Wall endpoints at the joint: +n side and -n side for each tube
-    var aPlusN  = { x: jx + nAx * rA, y: jy + nAy * rA };
-    var aMinusN = { x: jx - nAx * rA, y: jy - nAy * rA };
-    var bPlusN  = { x: jx + nBx * rB, y: jy + nBy * rB };
-    var bMinusN = { x: jx - nBx * rB, y: jy - nBy * rB };
+    // Perpendiculars to each tube centerline (90° CCW)
+    var nAx = -dAy, nAy = dAx;  // perp to tube A
+    var nBx = -dBy, nBy = dBx;  // perp to tube B
 
-    // Pair walls: same-sign normals go together (+n with +n, -n with -n)
-    // Then label based on cross product
-    var pairPlus, pairMinus;
-    // Check which pairing brings same-sign normals together
-    var dPP = Math.hypot(aPlusN.x-bPlusN.x, aPlusN.y-bPlusN.y);
-    var dPM = Math.hypot(aPlusN.x-bMinusN.x, aPlusN.y-bMinusN.y);
-    if (dPP <= dPM) {
-      pairPlus  = [aPlusN, bPlusN];
-      pairMinus = [aMinusN, bMinusN];
-    } else {
-      pairPlus  = [aPlusN, bMinusN];
-      pairMinus = [aMinusN, bPlusN];
-    }
+    // ── 4 wall endpoints at the pivot ────────────────────────────────────
+    // "Left" = +n direction, "Right" = -n direction
+    // Which is inside depends on cross product sign
+    var aLeft  = { x: jx + nAx * rA, y: jy + nAy * rA };
+    var aRight = { x: jx - nAx * rA, y: jy - nAy * rA };
+    var bLeft  = { x: jx + nBx * rB, y: jy + nBy * rB };
+    var bRight = { x: jx - nBx * rB, y: jy - nBy * rB };
 
-    var concavePair, convexPair;
+    // Inside wall: the side where the acute angle is
+    var insideA, insideB, outsideA, outsideB;
     if (cross > 0) {
-      // +nA side is inside the bend
-      concavePair = pairPlus; convexPair = pairMinus;
+      // Left side is inside the bend
+      insideA = aLeft;   insideB = bLeft;
+      outsideA = aRight; outsideB = bRight;
     } else {
-      concavePair = pairMinus; convexPair = pairPlus;
+      // Right side is inside the bend
+      insideA = aRight;  insideB = bRight;
+      outsideA = aLeft;  outsideB = bLeft;
     }
 
+    // ── Visual setup ────────────────────────────────────────────────────
     var color = tubeA._tubeColor();
     var cr = parseInt(color.slice(1,3),16)||0;
     var cg = parseInt(color.slice(3,5),16)||0;
@@ -883,50 +958,49 @@ class TubeManager {
     if (style === 'energy') style = tubeB.style !== 'energy' ? tubeB.style : 'glass';
     var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
 
-    // ── Bezier control point: intersection of wall tangent lines ─────────
-    // At each wall endpoint, the wall continues in the tube's direction (dA or dB).
-    // The tangent line AWAY from the tube extends in -dA or -dB direction.
-    // For convex (outer): lines in -dA/-dB from wall endpoints converge outside
-    // For concave (inner): lines in -dA/-dB from wall endpoints converge inside
-    // Both cases: CP = intersection of (p0 going -dA) and (p1 going -dB)
-    var _findCP = function(p0, p1) {
-      // p0 + t*(-dA) = p1 + s*(-dB)
+    // ── Bezier control point via tangent line intersection ───────────────
+    // For each pair of wall endpoints, extend the wall tangent lines
+    // (going away from the tube, i.e. in -dA and -dB direction) and find
+    // where they cross. That intersection = quadratic Bezier control point,
+    // which automatically makes the curve tangent to both walls.
+    var _bezierCP = function(p0, p1) {
+      // p0 is on tube A side, wall extends in direction -dA
+      // p1 is on tube B side, wall extends in direction -dB
+      // Solve: p0 + t*(-dA) = p1 + s*(-dB)
       var det = (-dAx) * (-dBy) - (-dAy) * (-dBx);
       if (Math.abs(det) < 1e-6) {
+        // Parallel — midpoint
         return { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
       }
       var t = ((p1.x - p0.x) * (-dBy) - (p1.y - p0.y) * (-dBx)) / det;
       var cpx = p0.x + t * (-dAx);
       var cpy = p0.y + t * (-dAy);
-      // Sanity clamp — keep CP within reasonable range of joint
-      var maxDist = r * 5;
-      var cpDist = Math.hypot(cpx - jx, cpy - jy);
-      if (cpDist > maxDist) {
-        cpx = jx + (cpx - jx) * (maxDist / cpDist);
-        cpy = jy + (cpy - jy) * (maxDist / cpDist);
-      }
+      // Clamp so it doesn't fly off at extreme angles
+      var maxD = r * 5;
+      var d = Math.hypot(cpx - jx, cpy - jy);
+      if (d > maxD) { cpx = jx + (cpx - jx) * maxD / d; cpy = jy + (cpy - jy) * maxD / d; }
       return { x: cpx, y: cpy };
     };
 
-    var convexCP  = _findCP(convexPair[0], convexPair[1]);
-    var concaveCP = _findCP(concavePair[0], concavePair[1]);
+    var outsideCP = _bezierCP(outsideA, outsideB);
+    var insideCP  = _bezierCP(insideA, insideB);
 
-    // ── Body fill: closed shape using Bezier curves ─────────────────────
+    // ── Body fill between the two arcs ──────────────────────────────────
     ctx.beginPath();
-    ctx.moveTo(concavePair[0].x, concavePair[0].y);
-    ctx.quadraticCurveTo(concaveCP.x, concaveCP.y, concavePair[1].x, concavePair[1].y);
-    ctx.lineTo(convexPair[1].x, convexPair[1].y);
-    ctx.quadraticCurveTo(convexCP.x, convexCP.y, convexPair[0].x, convexPair[0].y);
+    ctx.moveTo(insideA.x, insideA.y);
+    ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
+    ctx.lineTo(outsideB.x, outsideB.y);
+    ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
     ctx.closePath();
     ctx.fillStyle = 'rgba(0,2,10,' + (alpha * 0.55) + ')';
     ctx.fill();
     ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
     ctx.fill();
 
-    // ── Helper: draw a wall curve with all visual layers ─────────────────
-    var _drawWallCurve = function(p0, cp, p1, isTop) {
+    // ── Draw wall curves with all visual layers ─────────────────────────
+    var _strokeCurve = function(p0, cp, p1, isTop) {
       var gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
-      if (gap < 1) return;
+      if (gap < 0.5) return;
 
       // Outer glow
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
@@ -937,7 +1011,7 @@ class TubeManager {
       ctx.shadowBlur = 10; ctx.lineCap = 'round';
       ctx.stroke(); ctx.shadowBlur = 0;
 
-      // Main wall stroke
+      // Main wall
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
       ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
       ctx.lineWidth = style === 'solid' ? 5 : 4;
@@ -946,7 +1020,7 @@ class TubeManager {
       ctx.shadowBlur = 6;
       ctx.stroke(); ctx.shadowBlur = 0;
 
-      // Highlight on top wall (gravity-aligned)
+      // Highlight on top wall
       if (isTop) {
         ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
         ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
@@ -956,12 +1030,12 @@ class TubeManager {
       }
     };
 
-    // Determine which wall is on top (lower Y = higher on screen)
-    var convexMidY = (convexPair[0].y + convexPair[1].y) / 2;
-    var concaveMidY = (concavePair[0].y + concavePair[1].y) / 2;
+    // Top wall = whichever has lower Y midpoint (higher on screen)
+    var outMidY = (outsideA.y + outsideB.y) / 2;
+    var inMidY  = (insideA.y + insideB.y) / 2;
 
-    _drawWallCurve(convexPair[0], convexCP, convexPair[1], convexMidY < concaveMidY);
-    _drawWallCurve(concavePair[0], concaveCP, concavePair[1], concaveMidY < convexMidY);
+    _strokeCurve(outsideA, outsideCP, outsideB, outMidY < inMidY);
+    _strokeCurve(insideA, insideCP, insideB, inMidY < outMidY);
 
     // ── Gloss through joint ──────────────────────────────────────────────
     if (style === 'glass' || style === 'window') {
