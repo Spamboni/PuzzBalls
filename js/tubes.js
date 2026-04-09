@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1563;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1564;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -318,20 +318,41 @@ class TubePiece {
         var oDx = otherPts[oIn].x - otherPts[oIdx].x, oDy = otherPts[oIn].y - otherPts[oIdx].y;
         var oL = Math.hypot(oDx, oDy) || 1; oDx /= oL; oDy /= oL;
 
-        // Cross product tells us which side the bend goes
-        // cross > 0: other tube bends CCW from this tube → edgeA (-tubeR side) is inside
-        // cross < 0: other tube bends CW → edgeB (+tubeR side) is inside
-        var crossVal = mDx * oDy - mDy * oDx;
-
         // Angle between tubes
         var dotVal = mDx * oDx + mDy * oDy;
         dotVal = Math.max(-1, Math.min(1, dotVal));
-        var angle = Math.acos(dotVal); // 0 = same direction, PI = opposite
+        var bendAngle = Math.acos(dotVal);
+
+        // Bisector of the two tube directions
+        var bx = mDx + oDx, by = mDy + oDy;
+        var bl = Math.hypot(bx, by);
+        if (bl < 0.001) { bx = -mDy; by = mDx; } // U-turn fallback
+        else { bx /= bl; by /= bl; }
+
+        // My perpendicular (same as edgeA is -tubeR offset = -n side, edgeB is +n side)
+        var myNx = -mDy, myNy = mDx; // 90° CCW perp to my centerline
+
+        // Joint point
+        var jxx = pts2[myIdx].x, jyy = pts2[myIdx].y;
+
+        // Where edgeA (-n side) and edgeB (+n side) endpoints are at the joint
+        var topPt, botPt;
+        if (isStart) {
+          topPt = { x: jxx - myNx * tubeR, y: jyy - myNy * tubeR };  // edgeA = -n
+          botPt = { x: jxx + myNx * tubeR, y: jyy + myNy * tubeR };  // edgeB = +n
+        } else {
+          topPt = { x: jxx - myNx * tubeR, y: jyy - myNy * tubeR };
+          botPt = { x: jxx + myNx * tubeR, y: jyy + myNy * tubeR };
+        }
+
+        // Project onto bisector to determine which is inside
+        // Inside = opposite to bisector direction (bisector points into tubes)
+        var topProj = (topPt.x - jxx) * bx + (topPt.y - jyy) * by;
+        var botProj = (botPt.x - jxx) * bx + (botPt.y - jyy) * by;
+        var topIsInside = topProj < botProj;
 
         // Trim amount for inside wall: more angle = more trim
-        // At 90° (PI/2), trim ~tubeR worth of path distance
-        // Scale linearly with angle
-        var insideTrimDist = tubeR * (angle / (Math.PI / 2));
+        var insideTrimDist = tubeR * (bendAngle / (Math.PI / 2));
         insideTrimDist = Math.max(2, Math.min(insideTrimDist, tubeR * 2.5));
 
         // Convert distance to point count
@@ -352,18 +373,10 @@ class TubePiece {
         };
 
         var insideCount = _distToCount(edgeTop, isStart, insideTrimDist);
-        var outsideCount = 1; // minimal trim for outside wall
-
-        var topIsInside, botIsInside;
-        if (crossVal > 0) {
-          // edgeA (top, -tubeR) is inside the bend
-          topIsInside = true; botIsInside = false;
-        } else {
-          topIsInside = false; botIsInside = true;
-        }
+        var outsideCount = 1;
 
         var topTrim = topIsInside ? insideCount : outsideCount;
-        var botTrim = botIsInside ? insideCount : outsideCount;
+        var botTrim = topIsInside ? outsideCount : insideCount;
 
         if (isStart) {
           edgeTop = edgeTop.slice(topTrim);
@@ -929,23 +942,59 @@ class TubeManager {
     var nBx = -dBy, nBy = dBx;  // perp to tube B
 
     // ── 4 wall endpoints at the pivot ────────────────────────────────────
-    // "Left" = +n direction, "Right" = -n direction
-    // Which is inside depends on cross product sign
-    var aLeft  = { x: jx + nAx * rA, y: jy + nAy * rA };
-    var aRight = { x: jx - nAx * rA, y: jy - nAy * rA };
-    var bLeft  = { x: jx + nBx * rB, y: jy + nBy * rB };
-    var bRight = { x: jx - nBx * rB, y: jy - nBy * rB };
+    var aPlus  = { x: jx + nAx * rA, y: jy + nAy * rA };
+    var aMinus = { x: jx - nAx * rA, y: jy - nAy * rA };
+    var bPlus  = { x: jx + nBx * rB, y: jy + nBy * rB };
+    var bMinus = { x: jx - nBx * rB, y: jy - nBy * rB };
 
-    // Inside wall: the side where the acute angle is
-    var insideA, insideB, outsideA, outsideB;
-    if (cross > 0) {
-      // Left side is inside the bend
-      insideA = aLeft;   insideB = bLeft;
-      outsideA = aRight; outsideB = bRight;
+    // ── Pair walls using the bisector of the two tube directions ─────────
+    // The bisector splits the joint into the acute (inside) and obtuse (outside)
+    // halves. Wall points on the same side of the bisector get paired together.
+    var bisX = dAx + dBx, bisY = dAy + dBy;
+    var bisLen = Math.hypot(bisX, bisY);
+    if (bisLen < 0.001) {
+      // Tubes point in opposite directions (U-turn) — use perpendicular to dA
+      bisX = nAx; bisY = nAy;
     } else {
-      // Right side is inside the bend
-      insideA = aRight;  insideB = bRight;
-      outsideA = aLeft;  outsideB = bLeft;
+      bisX /= bisLen; bisY /= bisLen;
+    }
+
+    // Perpendicular to bisector — this is our dividing line
+    var bisPerpX = -bisY, bisPerpY = bisX;
+
+    // Project each wall point onto the bisector-perpendicular to determine side
+    // Positive projection = one side, negative = the other
+    var aPlusSide  = (aPlus.x - jx) * bisPerpX + (aPlus.y - jy) * bisPerpY;
+    var aMinusSide = (aMinus.x - jx) * bisPerpX + (aMinus.y - jy) * bisPerpY;
+    var bPlusSide  = (bPlus.x - jx) * bisPerpX + (bPlus.y - jy) * bisPerpY;
+    var bMinusSide = (bMinus.x - jx) * bisPerpX + (bMinus.y - jy) * bisPerpY;
+
+    // Pair: aPlus goes with whichever b-point is on the same side
+    var pair1A, pair1B, pair2A, pair2B;
+    if (aPlusSide * bPlusSide >= 0) {
+      // aPlus and bPlus on same side
+      pair1A = aPlus;  pair1B = bPlus;
+      pair2A = aMinus; pair2B = bMinus;
+    } else {
+      // aPlus and bMinus on same side
+      pair1A = aPlus;  pair1B = bMinus;
+      pair2A = aMinus; pair2B = bPlus;
+    }
+
+    // Which pair is inside (acute angle side)?
+    // The inside pair is on the side AWAY from the bisector direction
+    // (bisector points INTO the tubes, so inside of bend is OPPOSITE to bisector)
+    var pair1Proj = (pair1A.x - jx) * bisX + (pair1A.y - jy) * bisY;
+    var pair2Proj = (pair2A.x - jx) * bisX + (pair2A.y - jy) * bisY;
+
+    var insideA, insideB, outsideA, outsideB;
+    if (pair1Proj < pair2Proj) {
+      // pair1 is on the side opposite to bisector = inside
+      insideA = pair1A; insideB = pair1B;
+      outsideA = pair2A; outsideB = pair2B;
+    } else {
+      insideA = pair2A; insideB = pair2B;
+      outsideA = pair1A; outsideB = pair1B;
     }
 
     // ── Visual setup ────────────────────────────────────────────────────
