@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1570;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1571;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -948,38 +948,15 @@ class TubeManager {
     var nAx = -dAy, nAy = dAx;
     var nBx = -dBy, nBy = dBx;
 
-    // ── Get actual trimmed wall endpoints from each tube ─────────────────
-    // Each tube has edgeA (-r offset) and edgeB (+r offset).
-    // The trimmed end is at the start (if connectedA) or end (if connectedB).
-    var eA_tubeA = tubeA._offsetPath(ptsA, -rA);
-    var eB_tubeA = tubeA._offsetPath(ptsA,  rA);
-    var eA_tubeB = tubeB._offsetPath(ptsB, -rB);
-    var eB_tubeB = tubeB._offsetPath(ptsB,  rB);
-
-    // The trimmed wall endpoint on tube A at this joint
-    var wA_eA, wA_eB;  // tube A's two wall endpoints at joint side
-    if (sideA === 'A') {
-      // Joint is at the start of tube A — trimmed edges start further in
-      // Use point a few in from the start to approximate the trimmed end
-      var tIdx = Math.min(3, eA_tubeA.length - 1);
-      wA_eA = eA_tubeA[tIdx];
-      wA_eB = eB_tubeA[tIdx];
-    } else {
-      var tIdx = Math.max(0, eA_tubeA.length - 4);
-      wA_eA = eA_tubeA[tIdx];
-      wA_eB = eB_tubeA[tIdx];
-    }
-
-    var wB_eA, wB_eB;  // tube B's two wall endpoints at joint side
-    if (sideB === 'A') {
-      var tIdx2 = Math.min(3, eA_tubeB.length - 1);
-      wB_eA = eA_tubeB[tIdx2];
-      wB_eB = eB_tubeB[tIdx2];
-    } else {
-      var tIdx2 = Math.max(0, eA_tubeB.length - 4);
-      wB_eA = eA_tubeB[tIdx2];
-      wB_eB = eB_tubeB[tIdx2];
-    }
+    // ── Get wall endpoint positions at the joint ─────────────────────────
+    // Use pivot point offset by perpendicular (exact geometric position),
+    // then push each endpoint slightly INTO its tube so the fillet arcs
+    // overlap the trimmed wall ends — eliminates visible gaps.
+    var pushIn = r * 0.25;  // small overlap into tube body
+    var wA_eA = { x: jx + nAx * rA + dAx * pushIn, y: jy + nAy * rA + dAy * pushIn };
+    var wA_eB = { x: jx - nAx * rA + dAx * pushIn, y: jy - nAy * rA + dAy * pushIn };
+    var wB_eA = { x: jx + nBx * rB + dBx * pushIn, y: jy + nBy * rB + dBy * pushIn };
+    var wB_eB = { x: jx - nBx * rB + dBx * pushIn, y: jy - nBy * rB + dBy * pushIn };
 
     // ── Pair wall endpoints using bisector ───────────────────────────────
     var bisX = dAx + dBx, bisY = dAy + dBy;
@@ -1051,14 +1028,13 @@ class TubeManager {
     var insideCP  = _bezierCP(insideA, insideB);
 
     // ── Body fill between the two arcs ──────────────────────────────────
+    // Only tube-color fill (no dark underlay) so balls remain visible through joints
     ctx.beginPath();
     ctx.moveTo(insideA.x, insideA.y);
     ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
     ctx.lineTo(outsideB.x, outsideB.y);
     ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(0,2,10,' + (alpha * 0.55) + ')';
-    ctx.fill();
     ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
     ctx.fill();
 
@@ -1070,10 +1046,10 @@ class TubeManager {
       // Outer glow
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
       ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
-      ctx.lineWidth = style === 'solid' ? 8 : 7;
-      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.22) + ')';
-      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.5)';
-      ctx.shadowBlur = 10; ctx.lineCap = 'round';
+      ctx.lineWidth = style === 'solid' ? 6 : 5;
+      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.18) + ')';
+      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.4)';
+      ctx.shadowBlur = 7; ctx.lineCap = 'round';
       ctx.stroke(); ctx.shadowBlur = 0;
 
       // Main wall
