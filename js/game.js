@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1576;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1577;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -4169,10 +4169,11 @@ class Game {
   _draw() {
     var ctx = this.ctx, W = this.W, H = this.H, floorY = this.floorY();
     var vSY = this._editorMode ? (this._editorScrollY || 0) : 0;
-    ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
     if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
-    if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
-    this._drawGrid(); this._drawStars();
+    // DEBUG: skip nebula/grid/stars for white background
+    // if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
+    // this._drawGrid(); this._drawStars();
 
     for (var g = 0; g < this.objects.length; g++) {
       if (this.objects[g].type === BALL_TYPES.GRAVITY && this.objects[g].gravActive) this._drawGravityRange(this.objects[g]);
