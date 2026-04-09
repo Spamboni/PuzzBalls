@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1565;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1566;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -1102,6 +1102,7 @@ class Game {
           }
         }
 
+        if (!self._editorTubeMode) {
         for (var sdi=0; sdi<sliderDefs.length; sdi++) {
           var sd2=sliderDefs[sdi];
           var sl2=self._editorSliders&&self._editorSliders[sd2.key];
@@ -1115,6 +1116,7 @@ class Game {
             return;
           }
         }
+        } // end !editorTubeMode guard for brick sliders
         // Tube sliders
         var tubeSliders2 = [
           { sl:self._tubeSliderLen, cb:function(v){self._tubeLength=v;if(self._tubeSelected){self._tubeSelected.length=v;self._tubeSelected.rebuild();}} },
