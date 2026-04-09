@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1564;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1565;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -468,8 +468,14 @@ class TubePiece {
         ctx.stroke(); ctx.shadowBlur = 0;
       });
       // Bright inner highlight on top edge only (gives depth/gloss)
-      ctx.beginPath(); ctx.moveTo(edgeA[0].x, edgeA[0].y);
-      for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
+      // Use whichever edge is higher on screen (lower Y = world-space top)
+      var edgeAavgY = 0, edgeBavgY = 0;
+      for (var hi = 0; hi < edgeA.length; hi++) edgeAavgY += edgeA[hi].y;
+      for (var hi = 0; hi < edgeB.length; hi++) edgeBavgY += edgeB[hi].y;
+      edgeAavgY /= edgeA.length; edgeBavgY /= edgeB.length;
+      var highlightEdge = edgeAavgY < edgeBavgY ? edgeA : edgeB;
+      ctx.beginPath(); ctx.moveTo(highlightEdge[0].x, highlightEdge[0].y);
+      for (var i = 1; i < highlightEdge.length; i++) ctx.lineTo(highlightEdge[i].x, highlightEdge[i].y);
       ctx.lineWidth   = 1.5;
       ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
       ctx.stroke();
