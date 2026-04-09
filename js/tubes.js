@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1578;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1579;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -1086,27 +1086,15 @@ class TubeManager {
     var outsideCP = _bezierCP(outsideA, outsideB);
     var insideCP  = _bezierCP(insideA, insideB);
 
-    // ── Fix overlapping tube body fills at joint ──────────────────────────
-    // Both tubes' body fills overlap here, doubling the semi-transparent tint.
-    // Erase the overlap area, then refill once at the correct alpha.
-    var _jointPath = function() {
-      ctx.beginPath();
-      ctx.moveTo(insideA.x, insideA.y);
-      ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
-      ctx.lineTo(outsideB.x, outsideB.y);
-      ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
-      ctx.closePath();
-    };
-    // Erase the overlapping area
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    _jointPath();
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.fill();
-    ctx.restore();
-    // Refill with single layer of tube body color
-    _jointPath();
-    ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+    // ── Gentle body fill at joint area ─────────────────────────────────
+    // Single thin fill to smooth the transition between tube bodies
+    ctx.beginPath();
+    ctx.moveTo(insideA.x, insideA.y);
+    ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
+    ctx.lineTo(outsideB.x, outsideB.y);
+    ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha * 0.5) + ')';
     ctx.fill();
 
     // ── Draw wall curves with all visual layers ─────────────────────────
