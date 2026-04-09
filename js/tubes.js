@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1579;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1580;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -1086,39 +1086,30 @@ class TubeManager {
     var outsideCP = _bezierCP(outsideA, outsideB);
     var insideCP  = _bezierCP(insideA, insideB);
 
-    // ── Gentle body fill at joint area ─────────────────────────────────
-    // Single thin fill to smooth the transition between tube bodies
-    ctx.beginPath();
-    ctx.moveTo(insideA.x, insideA.y);
-    ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
-    ctx.lineTo(outsideB.x, outsideB.y);
-    ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha * 0.5) + ')';
-    ctx.fill();
+    // ── Gentle body fill at joint area (solid style only) ─────────────
+    if (style === 'solid') {
+      ctx.beginPath();
+      ctx.moveTo(insideA.x, insideA.y);
+      ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
+      ctx.lineTo(outsideB.x, outsideB.y);
+      ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.75) + ')';
+      ctx.fill();
+    }
 
-    // ── Draw wall curves with all visual layers ─────────────────────────
+    // ── Draw wall curves — NO shadow/glow to avoid hiding balls ─────────
     var _strokeCurve = function(p0, cp, p1, isTop) {
       var gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
       if (gap < 0.5) return;
 
-      // Outer glow
+      // Main wall line only — no glow/shadow
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
       ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
-      ctx.lineWidth = style === 'solid' ? 6 : 5;
-      ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.18) + ')';
-      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.4)';
-      ctx.shadowBlur = 7; ctx.lineCap = 'round';
-      ctx.stroke(); ctx.shadowBlur = 0;
-
-      // Main wall
-      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
-      ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
-      ctx.lineWidth = style === 'solid' ? 5 : 4;
+      ctx.lineWidth = style === 'solid' ? 5 : 3;
       ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
-      ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
-      ctx.shadowBlur = 6;
-      ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.lineCap = 'round';
+      ctx.stroke();
 
       // Highlight on top wall
       if (isTop) {
