@@ -653,12 +653,20 @@ async function deploy() {
       if (!entry.dir) files.push({ path: path, entry: entry });
     });
 
-    // Strip leading folder name (e.g. "puzzballs/")
+    // Strip leading wrapper folder ONLY if ALL files share the same first directory
+    // e.g. "puzzballs/js/game.js" + "puzzballs/index.html" → strip "puzzballs/"
+    // but "js/game.js" + "css/styles.css" + "index.html" → no stripping
     var prefix = '';
     if (files.length > 0) {
       var firstPath = files[0].path;
       var slash = firstPath.indexOf('/');
-      if (slash > 0) prefix = firstPath.slice(0, slash + 1);
+      if (slash > 0) {
+        var candidate = firstPath.slice(0, slash + 1);
+        var allMatch = files.every(function(f) {
+          return f.path.startsWith(candidate);
+        });
+        if (allMatch) prefix = candidate;
+      }
     }
 
     // Filter to only deployable files (skip icons unless changed)
@@ -677,7 +685,7 @@ async function deploy() {
     for (var i = 0; i < deployFiles.length; i++) {
       var f = deployFiles[i];
       // Strip prefix to get repo-relative path
-      var repoPath = prefix ? f.path.slice(prefix.length) : f.path;
+      var repoPath = (prefix && f.path.startsWith(prefix)) ? f.path.slice(prefix.length) : f.path;
       if (!repoPath) continue;
 
       setProgress(5 + Math.round((i / deployFiles.length) * 88));
