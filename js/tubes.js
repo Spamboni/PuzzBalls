@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1571;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1572;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -948,15 +948,11 @@ class TubeManager {
     var nAx = -dAy, nAy = dAx;
     var nBx = -dBy, nBy = dBx;
 
-    // ── Get wall endpoint positions at the joint ─────────────────────────
-    // Use pivot point offset by perpendicular (exact geometric position),
-    // then push each endpoint slightly INTO its tube so the fillet arcs
-    // overlap the trimmed wall ends — eliminates visible gaps.
-    var pushIn = r * 0.25;  // small overlap into tube body
-    var wA_eA = { x: jx + nAx * rA + dAx * pushIn, y: jy + nAy * rA + dAy * pushIn };
-    var wA_eB = { x: jx - nAx * rA + dAx * pushIn, y: jy - nAy * rA + dAy * pushIn };
-    var wB_eA = { x: jx + nBx * rB + dBx * pushIn, y: jy + nBy * rB + dBy * pushIn };
-    var wB_eB = { x: jx - nBx * rB + dBx * pushIn, y: jy - nBy * rB + dBy * pushIn };
+    // ── Wall endpoint positions at the joint pivot ────────────────────────
+    var wA_eA = { x: jx + nAx * rA, y: jy + nAy * rA };
+    var wA_eB = { x: jx - nAx * rA, y: jy - nAy * rA };
+    var wB_eA = { x: jx + nBx * rB, y: jy + nBy * rB };
+    var wB_eB = { x: jx - nBx * rB, y: jy - nBy * rB };
 
     // ── Pair wall endpoints using bisector ───────────────────────────────
     var bisX = dAx + dBx, bisY = dAy + dBy;
