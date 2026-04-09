@@ -297,84 +297,95 @@ class TubePiece {
       var edgeA = this._offsetPath(pts, -tubeR);   // "top" edge
       var edgeB = this._offsetPath(pts,  tubeR);   // "bottom" edge
 
-      // Asymmetric trim at connected sockets using bisector-based inside/outside detection
-      // Must match the same logic used in _drawOneJoint for wall pairing
-      var _trimConnected = function(conn, thisTube, side, eA, eB, tubeR2) {
-        if (!conn) return { eA: eA, eB: eB };
-        var other = conn.tube;
-        var otherPath = other._path;
-        if (!otherPath || otherPath.length < 2) return { eA: eA, eB: eB };
+      // ── Per-wall trim at connected sockets ─────────────────────────────────
+      // Uses the same bisector math as _drawOneJoint to determine inside/outside.
+      // Inside wall (acute angle side) trimmed more at sharper angles.
+      // Outside wall gets minimal trim (1 point).
+      var _trimConn = function(myPts, eA, eB, conn, isStart, tR) {
+        var other = conn.tube, oSide = conn.side;
+        var oPts = other._path;
+        if (!oPts || oPts.length < 2) return { a: eA, b: eB };
 
-        var thisPath = thisTube._path;
-        var thisIdx = side === 'A' ? 0 : thisPath.length - 1;
-        var thisIn  = side === 'A' ? Math.min(4, thisPath.length - 1) : Math.max(thisPath.length - 5, 0);
-        var otherSide = conn.side;
-        var otherIdx = otherSide === 'A' ? 0 : otherPath.length - 1;
-        var otherIn  = otherSide === 'A' ? Math.min(4, otherPath.length - 1) : Math.max(otherPath.length - 5, 0);
+        // Centerline directions INTO each tube (same as _drawOneJoint)
+        var myIdx = isStart ? 0 : myPts.length - 1;
+        var myIn  = isStart ? Math.min(4, myPts.length - 1) : Math.max(myPts.length - 5, 0);
+        var mDx = myPts[myIn].x - myPts[myIdx].x, mDy = myPts[myIn].y - myPts[myIdx].y;
+        var mL = Math.hypot(mDx, mDy) || 1; mDx /= mL; mDy /= mL;
 
-        // Direction vectors into each tube
-        var dTx = thisPath[thisIn].x - thisPath[thisIdx].x;
-        var dTy = thisPath[thisIn].y - thisPath[thisIdx].y;
-        var dOx = otherPath[otherIn].x - otherPath[otherIdx].x;
-        var dOy = otherPath[otherIn].y - otherPath[otherIdx].y;
-        var lT = Math.hypot(dTx, dTy) || 1, lO = Math.hypot(dOx, dOy) || 1;
-        dTx /= lT; dTy /= lT; dOx /= lO; dOy /= lO;
+        var oIdx = oSide === 'A' ? 0 : oPts.length - 1;
+        var oIn  = oSide === 'A' ? Math.min(4, oPts.length - 1) : Math.max(oPts.length - 5, 0);
+        var oDx = oPts[oIn].x - oPts[oIdx].x, oDy = oPts[oIn].y - oPts[oIdx].y;
+        var oL = Math.hypot(oDx, oDy) || 1; oDx /= oL; oDy /= oL;
 
-        // Bisector
-        var bisX = dTx + dOx, bisY = dTy + dOy;
-        var bisL = Math.hypot(bisX, bisY);
-        if (bisL < 0.001) { bisX = -dTy; bisY = dTx; }
-        else { bisX /= bisL; bisY /= bisL; }
+        // Bisector of the two tube directions
+        var bsX = mDx + oDx, bsY = mDy + oDy;
+        var bsL = Math.hypot(bsX, bsY);
+        var mNx = -mDy, mNy = mDx; // my perpendicular
+        if (bsL < 0.001) { bsX = mNx; bsY = mNy; }
+        else { bsX /= bsL; bsY /= bsL; }
 
-        // Joint center
-        var jx2 = (thisPath[thisIdx].x + otherPath[otherIdx].x) / 2;
-        var jy2 = (thisPath[thisIdx].y + otherPath[otherIdx].y) / 2;
+        // Joint point
+        var jxx = myPts[myIdx].x, jyy = myPts[myIdx].y;
 
-        // Perpendicular to this tube's centerline
-        var nTx = -dTy, nTy = dTx;
+        // edgeA is at -tubeR perpendicular, edgeB is at +tubeR perpendicular
+        var ptA = { x: jxx - mNx * tR, y: jyy - mNy * tR }; // edgeA endpoint at joint
+        var ptB = { x: jxx + mNx * tR, y: jyy + mNy * tR }; // edgeB endpoint at joint
 
-        // edgeA is offset by -tubeR (in -n direction), edgeB by +tubeR (in +n direction)
-        // Determine which edge is on the inside of the bend
-        // Project the perpendicular offset direction onto the bisector
-        var edgeAProjBis = nTx * bisX + nTy * bisY;  // +n dot bisector
-        // Inside = opposite to bisector direction, so negative projection = inside
-        // edgeA uses -n offset, edgeB uses +n offset
-        // edgeA is on inside if -n is opposite to bisector, i.e., +n dot bisector > 0
-        var edgeAIsInside = edgeAProjBis > 0;  // edgeA(-n) is inside when +n points toward bisector
+        // Project onto bisector — lower projection = inside (opposite bisector dir)
+        var projA = (ptA.x - jxx) * bsX + (ptA.y - jyy) * bsY;
+        var projB = (ptB.x - jxx) * bsX + (ptB.y - jyy) * bsY;
+        var edgeAisInside = projA < projB;
 
-        // Bend angle: angle between tube directions
-        var bendDot = dTx * dOx + dTy * dOy;
-        bendDot = Math.max(-1, Math.min(1, bendDot));
-        var bendAngle = Math.acos(bendDot);  // 0=parallel, PI=opposite
+        // Bend angle
+        var dotV = mDx * oDx + mDy * oDy;
+        dotV = Math.max(-1, Math.min(1, dotV));
+        var bendAngle = Math.acos(dotV);
 
-        // Trim amounts: inside gets more at sharper angles
-        var insideTrim = Math.max(2, Math.round(2 + (Math.PI - bendAngle) * 2.5));
-        var outsideTrim = 2;
-        var minLen = 6;
+        // Inside trim: proportional to angle. At 90° trim ~tubeR distance, at 45° half that
+        var insideDist = tR * (bendAngle / (Math.PI / 2));
+        insideDist = Math.max(2, Math.min(insideDist, tR * 2.5));
+        var outsideDist = tR * 0.15; // minimal outside trim
 
-        var trimA, trimB;
-        if (edgeAIsInside) {
-          trimA = insideTrim; trimB = outsideTrim;
+        // Convert distance to point count
+        var _d2c = function(edge, fromStart, dist) {
+          var cum = 0, cnt = 0;
+          if (fromStart) {
+            for (var k = 1; k < edge.length - 2 && cum < dist; k++) {
+              cum += Math.hypot(edge[k].x - edge[k-1].x, edge[k].y - edge[k-1].y);
+              cnt++;
+            }
+          } else {
+            for (var k = edge.length - 2; k > 1 && cum < dist; k--) {
+              cum += Math.hypot(edge[k+1].x - edge[k].x, edge[k+1].y - edge[k].y);
+              cnt++;
+            }
+          }
+          return Math.max(1, cnt);
+        };
+
+        var inCount  = _d2c(eA, isStart, insideDist);
+        var outCount = _d2c(eA, isStart, outsideDist);
+        var trimA = edgeAisInside ? inCount : outCount;
+        var trimB = edgeAisInside ? outCount : inCount;
+
+        if (isStart) {
+          eA = eA.slice(trimA);
+          eB = eB.slice(trimB);
         } else {
-          trimA = outsideTrim; trimB = insideTrim;
+          eA = eA.slice(0, eA.length - trimA);
+          eB = eB.slice(0, eB.length - trimB);
         }
-
-        // Apply trim from the correct end
-        if (side === 'A') {
-          if (eA.length > trimA + minLen) eA = eA.slice(trimA);
-          if (eB.length > trimB + minLen) eB = eB.slice(trimB);
-        } else {
-          if (eA.length > trimA + minLen) eA = eA.slice(0, eA.length - trimA);
-          if (eB.length > trimB + minLen) eB = eB.slice(0, eB.length - trimB);
-        }
-        return { eA: eA, eB: eB };
+        return { a: eA, b: eB };
       };
 
-      var trimResult;
-      trimResult = _trimConnected(this.connectedA, this, 'A', edgeA, edgeB, tubeR);
-      edgeA = trimResult.eA; edgeB = trimResult.eB;
-      trimResult = _trimConnected(this.connectedB, this, 'B', edgeA, edgeB, tubeR);
-      edgeA = trimResult.eA; edgeB = trimResult.eB;
+      if (this.connectedA && edgeA.length > 8) {
+        var tr1 = _trimConn(pts, edgeA, edgeB, this.connectedA, true, tubeR);
+        edgeA = tr1.a; edgeB = tr1.b;
+      }
+      if (this.connectedB && edgeA.length > 8) {
+        var tr2 = _trimConn(pts, edgeA, edgeB, this.connectedB, false, tubeR);
+        edgeA = tr2.a; edgeB = tr2.b;
+      }
 
       // ── Tube body fill ────────────────────────────────────────────────────────
       // Build closed polygon from edgeA forward + edgeB backward
@@ -641,11 +652,10 @@ class TubeManager {
   add(tube) { this.tubes.push(tube); }
 
   remove(tube) {
-    // Disconnect any connections and rebuild affected tubes
-    var self = this;
+    // Disconnect any connections
     this.tubes.forEach(function(t) {
-      if (t.connectedA && t.connectedA.tube === tube) { t.connectedA = null; t.rebuild(); }
-      if (t.connectedB && t.connectedB.tube === tube) { t.connectedB = null; t.rebuild(); }
+      if (t.connectedA === tube) t.connectedA = null;
+      if (t.connectedB === tube) t.connectedB = null;
     });
     this.tubes = this.tubes.filter(function(t) { return t !== tube; });
     if (tube._ball) { tube._ball._inTube = null; tube._ball.pinned = false; }
