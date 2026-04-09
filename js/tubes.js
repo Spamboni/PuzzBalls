@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1565;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1566;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -297,104 +297,15 @@ class TubePiece {
       var edgeA = this._offsetPath(pts, -tubeR);   // "top" edge
       var edgeB = this._offsetPath(pts,  tubeR);   // "bottom" edge
 
-      // ── Per-wall trim at connected sockets ─────────────────────────────────
-      // Inside wall (acute angle side) gets trimmed back based on joint angle
-      // Outside wall (obtuse angle side) gets minimal trim
-      // edgeA = -tubeR offset (one side), edgeB = +tubeR offset (other side)
-      var _trimForConnection = function(pts2, edgeTop, edgeBot, connSlot, isStart) {
-        if (!connSlot) return { top: edgeTop, bot: edgeBot };
-        var other = connSlot.tube, otherSide = connSlot.side;
-        var otherPts = other._path;
-        if (!otherPts || otherPts.length < 2) return { top: edgeTop, bot: edgeBot };
-
-        // Centerline directions INTO each tube from the joint
-        var myIdx = isStart ? 0 : pts2.length - 1;
-        var myIn  = isStart ? Math.min(4, pts2.length - 1) : Math.max(pts2.length - 5, 0);
-        var mDx = pts2[myIn].x - pts2[myIdx].x, mDy = pts2[myIn].y - pts2[myIdx].y;
-        var mL = Math.hypot(mDx, mDy) || 1; mDx /= mL; mDy /= mL;
-
-        var oIdx = otherSide === 'A' ? 0 : otherPts.length - 1;
-        var oIn  = otherSide === 'A' ? Math.min(4, otherPts.length - 1) : Math.max(otherPts.length - 5, 0);
-        var oDx = otherPts[oIn].x - otherPts[oIdx].x, oDy = otherPts[oIn].y - otherPts[oIdx].y;
-        var oL = Math.hypot(oDx, oDy) || 1; oDx /= oL; oDy /= oL;
-
-        // Angle between tubes
-        var dotVal = mDx * oDx + mDy * oDy;
-        dotVal = Math.max(-1, Math.min(1, dotVal));
-        var bendAngle = Math.acos(dotVal);
-
-        // Bisector of the two tube directions
-        var bx = mDx + oDx, by = mDy + oDy;
-        var bl = Math.hypot(bx, by);
-        if (bl < 0.001) { bx = -mDy; by = mDx; } // U-turn fallback
-        else { bx /= bl; by /= bl; }
-
-        // My perpendicular (same as edgeA is -tubeR offset = -n side, edgeB is +n side)
-        var myNx = -mDy, myNy = mDx; // 90° CCW perp to my centerline
-
-        // Joint point
-        var jxx = pts2[myIdx].x, jyy = pts2[myIdx].y;
-
-        // Where edgeA (-n side) and edgeB (+n side) endpoints are at the joint
-        var topPt, botPt;
-        if (isStart) {
-          topPt = { x: jxx - myNx * tubeR, y: jyy - myNy * tubeR };  // edgeA = -n
-          botPt = { x: jxx + myNx * tubeR, y: jyy + myNy * tubeR };  // edgeB = +n
-        } else {
-          topPt = { x: jxx - myNx * tubeR, y: jyy - myNy * tubeR };
-          botPt = { x: jxx + myNx * tubeR, y: jyy + myNy * tubeR };
-        }
-
-        // Project onto bisector to determine which is inside
-        // Inside = opposite to bisector direction (bisector points into tubes)
-        var topProj = (topPt.x - jxx) * bx + (topPt.y - jyy) * by;
-        var botProj = (botPt.x - jxx) * bx + (botPt.y - jyy) * by;
-        var topIsInside = topProj < botProj;
-
-        // Trim amount for inside wall: more angle = more trim
-        var insideTrimDist = tubeR * (bendAngle / (Math.PI / 2));
-        insideTrimDist = Math.max(2, Math.min(insideTrimDist, tubeR * 2.5));
-
-        // Convert distance to point count
-        var _distToCount = function(edge2, fromStart, dist) {
-          var cum = 0, count = 0;
-          if (fromStart) {
-            for (var k = 1; k < edge2.length - 2 && cum < dist; k++) {
-              cum += Math.hypot(edge2[k].x - edge2[k-1].x, edge2[k].y - edge2[k-1].y);
-              count++;
-            }
-          } else {
-            for (var k = edge2.length - 2; k > 1 && cum < dist; k--) {
-              cum += Math.hypot(edge2[k+1].x - edge2[k].x, edge2[k+1].y - edge2[k].y);
-              count++;
-            }
-          }
-          return Math.max(1, count);
-        };
-
-        var insideCount = _distToCount(edgeTop, isStart, insideTrimDist);
-        var outsideCount = 1;
-
-        var topTrim = topIsInside ? insideCount : outsideCount;
-        var botTrim = topIsInside ? outsideCount : insideCount;
-
-        if (isStart) {
-          edgeTop = edgeTop.slice(topTrim);
-          edgeBot = edgeBot.slice(botTrim);
-        } else {
-          edgeTop = edgeTop.slice(0, edgeTop.length - topTrim);
-          edgeBot = edgeBot.slice(0, edgeBot.length - botTrim);
-        }
-        return { top: edgeTop, bot: edgeBot };
-      };
-
-      if (this.connectedA) {
-        var r1 = _trimForConnection(pts, edgeA, edgeB, this.connectedA, true);
-        edgeA = r1.top; edgeB = r1.bot;
+      // Trim edges equally at connected sockets to prevent wall overlap
+      var trimPts = 2;
+      if (this.connectedA && edgeA.length > trimPts * 2 + 2) {
+        edgeA = edgeA.slice(trimPts);
+        edgeB = edgeB.slice(trimPts);
       }
-      if (this.connectedB) {
-        var r2 = _trimForConnection(pts, edgeA, edgeB, this.connectedB, false);
-        edgeA = r2.top; edgeB = r2.bot;
+      if (this.connectedB && edgeA.length > trimPts * 2 + 2) {
+        edgeA = edgeA.slice(0, edgeA.length - trimPts);
+        edgeB = edgeB.slice(0, edgeB.length - trimPts);
       }
 
       // ── Tube body fill ────────────────────────────────────────────────────────
