@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1575;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1576;
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -102,7 +102,7 @@ class Game {
       // Show error on canvas immediately
       var ctx = this.ctx;
       if (ctx) {
-        ctx.fillStyle = '#030a18'; ctx.fillRect(0,0,this.W,this.H);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,this.W,this.H);
         ctx.fillStyle = '#ff4444'; ctx.font = "bold 13px 'Share Tech Mono',monospace";
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('LOAD ERROR:', this.W/2, this.H/2 - 30);
@@ -526,6 +526,7 @@ class Game {
           if (_px>=d.x&&_px<=d.x+d.w&&_py>=d.y&&_py<=d.y+d.h) {
             self._editorMode=false; self._editorTubeMode=false;
             window._tubeEditorMode=false; self._editorSelected=null;
+            self._tubeSelected=null;
             self._editorBrickDeleteMode=false;
             self._editorScrollY=0;
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.25); return;
@@ -1381,6 +1382,18 @@ class Game {
           return;
         }
       }
+      // Group drag: move all connected tubes together
+      if (self._tubeGroupDrag) {
+        var gd = self._tubeGroupDrag;
+        var dx2 = pos.x - gd.startX;
+        var dy2 = pos.y - gd.startY;
+        for (var gi = 0; gi < gd.group.length; gi++) {
+          gd.group[gi].x = gd.origins[gi].x + dx2;
+          gd.group[gi].y = gd.origins[gi].y + dy2;
+          gd.group[gi].rebuild();
+        }
+        return;
+      }
       if (self._tubeDragging) {
         var td = self._tubeDragging;
         var conn = td.connectedA || td.connectedB;
@@ -1492,6 +1505,9 @@ class Game {
       self._draggingZoneSlider = false;
       self._draggingTubeSlider = false;
       // Release tube drag — apply snap if close enough
+      if (self._tubeGroupDrag) {
+        self._tubeGroupDrag = null;
+      }
       if (self._tubeDragging) {
         var snapResult = self.tubes.checkSnap(self._tubeDragging);
         if (snapResult && snapResult.dist < self.tubes.SNAP_DIST) {
@@ -2528,7 +2544,7 @@ class Game {
       console.error('PuzzBalls _loop error:', err);
       var ctx = this.ctx;
       if (ctx) {
-        ctx.fillStyle = '#030a18'; ctx.fillRect(0,0,this.W,this.H);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,this.W,this.H);
         ctx.fillStyle = '#ff4444'; ctx.font = "12px 'Share Tech Mono',monospace";
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('ERROR: ' + err.message, this.W/2, this.H/2 - 16);
@@ -5683,7 +5699,20 @@ class Game {
         this._tubeDragging = null;
         return;
       }
-      // Build/select: normal drag
+      // Build/select: check if tap is near a joint — if so, group drag
+      var joint = this.tubes.findJointAt(pos.x, pos.y, hitTube.radius + 8);
+      if (joint && (hitTube.connectedA || hitTube.connectedB)) {
+        var group = this.tubes.getConnectedGroup(hitTube);
+        this._tubeGroupDrag = {
+          group: group,
+          startX: pos.x, startY: pos.y,
+          origins: group.map(function(t) { return { x: t.x, y: t.y }; })
+        };
+        this._tubeDragging = null;
+        return;
+      }
+      // Normal drag
+      this._tubeGroupDrag = null;
       this._tubeDragging = hitTube;
       this._tubeDragOffX = pos.x - hitTube.x;
       this._tubeDragOffY = pos.y - hitTube.y;
