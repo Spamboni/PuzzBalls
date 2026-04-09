@@ -1,0 +1,24 @@
+{
+  "name": "PuzzBalls",
+  "short_name": "PuzzBalls",
+  "description": "Physics puzzle game — sling, bounce, and solve",
+  "start_url": "./index.html?v=1546",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#030A18",
+  "theme_color": "#030A18",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
