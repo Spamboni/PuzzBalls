@@ -1,5 +1,5 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_BUILD_TIMESTAMP = '04/09/2026 v1568';
-window.PUZZBALLS_FILE_VERSION['menu.js'] = 1568;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_BUILD_TIMESTAMP = '04/09/2026 v1569';
+window.PUZZBALLS_FILE_VERSION['menu.js'] = 1569;
 // menu.js — Main menu / level selector screen
 
 var LEVEL_CATALOG = [
