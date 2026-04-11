@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1587;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1588;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -421,8 +421,9 @@ class TubePiece {
         for (var i = edgeB.length - 1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
         ctx.closePath();
         var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
-      ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
-      ctx.fill();
+        ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+        ctx.fill();
+      }
 
       // ── Ball inside tube — drawn UNDER walls/highlights for 3D depth ─────────
       if (this._ball && style !== 'solid') {
