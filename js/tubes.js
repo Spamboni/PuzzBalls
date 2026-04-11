@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1592;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1593;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -934,57 +934,41 @@ class TubeManager {
 
     // Absolute rotation: initial rotation + how much the arm has turned
     var rawRotation = pivotState.initRotation + (newAngle - pivotState.initArmAngle);
-
-    // Clamp so bend angle between this tube and its partner stays <= 90 degrees.
-    // Beyond 90 degrees the fill/wall geometry breaks down visually.
     var _clampedAngle = newAngle;
-    var conn = tube.connectedA || tube.connectedB;
-    if (conn) {
-      var partnerTube = conn.tube;
-      var partnerPts = partnerTube._path;
-      if (partnerPts && partnerPts.length >= 2) {
-        var oSide = conn.side;
-        // Partner's outward direction at the joint
-        var oIdx = oSide === 'A' ? 0 : partnerPts.length - 1;
-        var oIn  = oSide === 'A' ? Math.min(4, partnerPts.length-1) : Math.max(partnerPts.length-5, 0);
-        var oDx = partnerPts[oIdx].x - partnerPts[oIn].x;
-        var oDy = partnerPts[oIdx].y - partnerPts[oIn].y;
-        var oL = Math.hypot(oDx, oDy) || 1; oDx /= oL; oDy /= oL;
-        var partnerOutAngle = Math.atan2(oDy, oDx);
 
-        // This tube's inward direction at the joint end
-        var myPts = tube._path;
-        var mySide = tube.connectedA ? 'A' : 'B';
-        if (myPts && myPts.length >= 2) {
-          var mIdx = mySide === 'A' ? 0 : myPts.length - 1;
-          var mIn  = mySide === 'A' ? Math.min(4, myPts.length-1) : Math.max(myPts.length-5, 0);
-          var mDx = myPts[mIn].x - myPts[mIdx].x, mDy = myPts[mIn].y - myPts[mIdx].y;
-          // What angle would this tube be at the new rotation?
-          // The tube rotation drives the path, so rawRotation IS the tube angle.
-          // Inward direction at socket A = rotation direction; at socket B = opposite.
-          var myInAngle = mySide === 'A' ? rawRotation : rawRotation + Math.PI;
-          // Bend angle = angle between partner outward and my inward
-          var bendDiff = myInAngle - partnerOutAngle;
-          // Normalize to -PI..PI
-          bendDiff = ((bendDiff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-          var maxBend = Math.PI * 0.5; // 90 degrees
-          if (Math.abs(bendDiff) > maxBend) {
-            // Clamp: adjust rawRotation so bendDiff = ±maxBend
-            var clampedBend = bendDiff > 0 ? maxBend : -maxBend;
-            var rotationAdjust = clampedBend - bendDiff;
-            rawRotation += rotationAdjust;
-            _clampedAngle = newAngle + rotationAdjust;
-          }
-        }
-      }
-    }
-
+    // Apply candidate rotation and rebuild so socket angles are accurate
     tube.rotation = rawRotation;
-
-    // Move center to maintain fixed arm length from pivot (using clamped angle)
     tube.x = pivotX + Math.cos(_clampedAngle) * armLen;
     tube.y = pivotY + Math.sin(_clampedAngle) * armLen;
     tube.rebuild();
+
+    // Now clamp using actual socket angles (accurate for all tube types incl elbows)
+    var conn = tube.connectedA || tube.connectedB;
+    if (conn) {
+      var mySide = tube.connectedA ? 'A' : 'B';
+      var mySock = mySide === 'A' ? tube.socketA() : tube.socketB();
+      // My socket faces outward; inward = outward + PI
+      var myInAngle = mySock.angle + Math.PI;
+
+      var partnerSock = conn.side === 'A' ? conn.tube.socketA() : conn.tube.socketB();
+      var partnerOutAngle = partnerSock.angle;
+
+      // Bend = angle between partner outward and my inward (how much we deviate from straight)
+      var bendDiff = myInAngle - partnerOutAngle;
+      bendDiff = ((bendDiff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+
+      var maxBend = Math.PI * 0.5; // 90 degrees
+      if (Math.abs(bendDiff) > maxBend) {
+        var excess = Math.abs(bendDiff) - maxBend;
+        var sign = bendDiff > 0 ? -1 : 1; // push back toward limit
+        rawRotation += sign * excess;
+        _clampedAngle += sign * excess;
+        tube.rotation = rawRotation;
+        tube.x = pivotX + Math.cos(_clampedAngle) * armLen;
+        tube.y = pivotY + Math.sin(_clampedAngle) * armLen;
+        tube.rebuild();
+      }
+    }
     return true;
   }
 
@@ -1243,17 +1227,55 @@ class TubeManager {
     _strokeCurve(outsideA, outsideCP, outsideB, outMidY < inMidY);
     _strokeCurve(insideA, insideCP, insideB, inMidY < outMidY);
 
-    // ── Gloss through joint ──────────────────────────────────────────────
+    // ── Gloss through joint — gravity-aligned to match tube gloss stripes ──
+    // Each tube's gloss stripe is the centerline shifted straight up by tubeR*0.48.
+    // Connect the two tubes' gloss stripe endpoints at the joint with a Bezier,
+    // using the same control point method as the wall fillets.
     if (style === 'glass' || style === 'window') {
       var glossUp = r * 0.48;
-      var gp0 = { x: jx - dAx * r * 0.3, y: jy - dAy * r * 0.3 - glossUp };
-      var gp1 = { x: jx - dBx * r * 0.3, y: jy - dBy * r * 0.3 - glossUp };
-      var gcp = { x: jx, y: jy - glossUp };
+      // Endpoint on tube A's gloss stripe near the joint
+      // The gloss stripe endpoint is: joint point shifted up by glossUp
+      var gp0 = { x: jx, y: jy - glossUp };
+      var gp1 = { x: jx, y: jy - glossUp };
+      // Actually we want points slightly INTO each tube along centerline + up
+      // Use the same wall Bezier CP logic but on the shifted centerline
+      var gExtend = r * 0.4;
+      gp0 = { x: jx - dAx * gExtend, y: jy - dAy * gExtend - glossUp };
+      gp1 = { x: jx - dBx * gExtend, y: jy - dBy * gExtend - glossUp };
+      // Control point: intersection of tangent lines in -dA/-dB directions from gp0/gp1
+      var gDet = (-dAx)*(-dBy) - (-dAy)*(-dBx);
+      var gCp;
+      if (Math.abs(gDet) < 1e-6) {
+        gCp = { x: (gp0.x + gp1.x)/2, y: (gp0.y + gp1.y)/2 };
+      } else {
+        var gt = ((gp1.x - gp0.x)*(-dBy) - (gp1.y - gp0.y)*(-dBx)) / gDet;
+        var gcx = gp0.x + gt*(-dAx), gcy = gp0.y + gt*(-dAy);
+        var maxGD = r * 4;
+        var gd = Math.hypot(gcx - jx, gcy - (jy - glossUp));
+        if (gd > maxGD) { gcx = jx + (gcx-jx)*maxGD/gd; gcy = (jy-glossUp) + (gcy-(jy-glossUp))*maxGD/gd; }
+        gCp = { x: gcx, y: gcy };
+      }
       ctx.beginPath(); ctx.moveTo(gp0.x, gp0.y);
-      ctx.quadraticCurveTo(gcp.x, gcp.y, gp1.x, gp1.y);
+      ctx.quadraticCurveTo(gCp.x, gCp.y, gp1.x, gp1.y);
       ctx.lineWidth = style === 'glass' ? r * 0.18 : r * 0.08;
-      ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.30 : 0.14)) + ')';
+      ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.32 : 0.14)) + ')';
       ctx.lineCap = 'round';
+      ctx.stroke();
+      // Thin bright top line
+      var gp0t = { x: jx - dAx*gExtend, y: jy - dAy*gExtend - r*0.62 };
+      var gp1t = { x: jx - dBx*gExtend, y: jy - dBy*gExtend - r*0.62 };
+      var gDet2 = (-dAx)*(-dBy) - (-dAy)*(-dBx);
+      var gCp2;
+      if (Math.abs(gDet2) < 1e-6) {
+        gCp2 = { x: (gp0t.x+gp1t.x)/2, y: (gp0t.y+gp1t.y)/2 };
+      } else {
+        var gt2 = ((gp1t.x-gp0t.x)*(-dBy) - (gp1t.y-gp0t.y)*(-dBx))/gDet2;
+        gCp2 = { x: gp0t.x + gt2*(-dAx), y: gp0t.y + gt2*(-dAy) };
+      }
+      ctx.beginPath(); ctx.moveTo(gp0t.x, gp0t.y);
+      ctx.quadraticCurveTo(gCp2.x, gCp2.y, gp1t.x, gp1t.y);
+      ctx.lineWidth = 1.0;
+      ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.45) + ')';
       ctx.stroke();
     }
   }
