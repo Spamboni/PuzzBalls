@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1591;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1592;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -406,6 +406,10 @@ class TubePiece {
         return { a: eA, b: eB };
       };
 
+      // Save untrimmed endpoints for body fill bisector projection
+      var _rawEdgeA0 = edgeA[0], _rawEdgeAEnd = edgeA[edgeA.length-1];
+      var _rawEdgeB0 = edgeB[0], _rawEdgeBEnd = edgeB[edgeB.length-1];
+
       if (this.connectedA && edgeA.length > 8) {
         var tr1 = _trimConn(pts, edgeA, edgeB, this.connectedA, true, tubeR);
         edgeA = tr1.a; edgeB = tr1.b;
@@ -445,9 +449,10 @@ class TubePiece {
             var dist = (pt.x-jx)*bx + (pt.y-jy)*by;
             return { x: pt.x - dist*bx, y: pt.y - dist*by };
           };
+          // Use untrimmed edge endpoints — trimmed ones are pulled back from joint
           return {
-            pA: _proj(isStart ? edgeA[0] : edgeA[edgeA.length-1]),
-            pB: _proj(isStart ? edgeB[0] : edgeB[edgeB.length-1])
+            pA: _proj(isStart ? _rawEdgeA0 : _rawEdgeAEnd),
+            pB: _proj(isStart ? _rawEdgeB0 : _rawEdgeBEnd)
           };
         };
 
@@ -928,11 +933,57 @@ class TubeManager {
     var newAngle = fingerAngle - pivotState.fingerToCenterAngle;
 
     // Absolute rotation: initial rotation + how much the arm has turned
-    tube.rotation = pivotState.initRotation + (newAngle - pivotState.initArmAngle);
+    var rawRotation = pivotState.initRotation + (newAngle - pivotState.initArmAngle);
 
-    // Move center to maintain fixed arm length from pivot
-    tube.x = pivotX + Math.cos(newAngle) * armLen;
-    tube.y = pivotY + Math.sin(newAngle) * armLen;
+    // Clamp so bend angle between this tube and its partner stays <= 90 degrees.
+    // Beyond 90 degrees the fill/wall geometry breaks down visually.
+    var _clampedAngle = newAngle;
+    var conn = tube.connectedA || tube.connectedB;
+    if (conn) {
+      var partnerTube = conn.tube;
+      var partnerPts = partnerTube._path;
+      if (partnerPts && partnerPts.length >= 2) {
+        var oSide = conn.side;
+        // Partner's outward direction at the joint
+        var oIdx = oSide === 'A' ? 0 : partnerPts.length - 1;
+        var oIn  = oSide === 'A' ? Math.min(4, partnerPts.length-1) : Math.max(partnerPts.length-5, 0);
+        var oDx = partnerPts[oIdx].x - partnerPts[oIn].x;
+        var oDy = partnerPts[oIdx].y - partnerPts[oIn].y;
+        var oL = Math.hypot(oDx, oDy) || 1; oDx /= oL; oDy /= oL;
+        var partnerOutAngle = Math.atan2(oDy, oDx);
+
+        // This tube's inward direction at the joint end
+        var myPts = tube._path;
+        var mySide = tube.connectedA ? 'A' : 'B';
+        if (myPts && myPts.length >= 2) {
+          var mIdx = mySide === 'A' ? 0 : myPts.length - 1;
+          var mIn  = mySide === 'A' ? Math.min(4, myPts.length-1) : Math.max(myPts.length-5, 0);
+          var mDx = myPts[mIn].x - myPts[mIdx].x, mDy = myPts[mIn].y - myPts[mIdx].y;
+          // What angle would this tube be at the new rotation?
+          // The tube rotation drives the path, so rawRotation IS the tube angle.
+          // Inward direction at socket A = rotation direction; at socket B = opposite.
+          var myInAngle = mySide === 'A' ? rawRotation : rawRotation + Math.PI;
+          // Bend angle = angle between partner outward and my inward
+          var bendDiff = myInAngle - partnerOutAngle;
+          // Normalize to -PI..PI
+          bendDiff = ((bendDiff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+          var maxBend = Math.PI * 0.5; // 90 degrees
+          if (Math.abs(bendDiff) > maxBend) {
+            // Clamp: adjust rawRotation so bendDiff = ±maxBend
+            var clampedBend = bendDiff > 0 ? maxBend : -maxBend;
+            var rotationAdjust = clampedBend - bendDiff;
+            rawRotation += rotationAdjust;
+            _clampedAngle = newAngle + rotationAdjust;
+          }
+        }
+      }
+    }
+
+    tube.rotation = rawRotation;
+
+    // Move center to maintain fixed arm length from pivot (using clamped angle)
+    tube.x = pivotX + Math.cos(_clampedAngle) * armLen;
+    tube.y = pivotY + Math.sin(_clampedAngle) * armLen;
     tube.rebuild();
     return true;
   }
