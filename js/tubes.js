@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1594;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1595;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -406,10 +406,6 @@ class TubePiece {
         return { a: eA, b: eB };
       };
 
-      // Save untrimmed endpoints for body fill bisector projection
-      var _rawEdgeA0 = edgeA[0], _rawEdgeAEnd = edgeA[edgeA.length-1];
-      var _rawEdgeB0 = edgeB[0], _rawEdgeBEnd = edgeB[edgeB.length-1];
-
       if (this.connectedA && edgeA.length > 8) {
         var tr1 = _trimConn(pts, edgeA, edgeB, this.connectedA, true, tubeR);
         edgeA = tr1.a; edgeB = tr1.b;
@@ -430,48 +426,50 @@ class TubePiece {
         // The bisector plane passes through the joint center, perpendicular to
         // the bisector of the two tube directions. Points are moved along the
         // bisector direction until they lie exactly on this plane.
+        // Compute bisector-miter fill corners at a connected joint end.
+        // Each fill polygon corner = socket edge point projected onto the bisector cut line.
+        // The bisector cut line passes through the joint center perpendicular to the
+        // angle bisector of the two tube directions. Projecting ensures both tubes'
+        // fills share the same cut line — zero overlap, zero gap.
         var _bisectorFillEnd = function(conn, isStart) {
           var oPts = conn.tube._path;
           if (!oPts || oPts.length < 2) return null;
           var oSide = conn.side;
+
+          // My inward centerline direction
           var myIdx = isStart ? 0 : _ptsLen - 1;
           var myIn  = isStart ? Math.min(4,_ptsLen-1) : Math.max(_ptsLen-5,0);
           var mDx = pts[myIn].x - pts[myIdx].x, mDy = pts[myIn].y - pts[myIdx].y;
           var mL = Math.hypot(mDx,mDy)||1; mDx/=mL; mDy/=mL;
+          // My perpendicular (90° CCW from inward direction)
+          var mNx = -mDy, mNy = mDx;
+
+          // Partner inward direction
           var oIdx = oSide === 'A' ? 0 : oPts.length-1;
           var oIn  = oSide === 'A' ? Math.min(4,oPts.length-1) : Math.max(oPts.length-5,0);
           var oDx = oPts[oIn].x - oPts[oIdx].x, oDy = oPts[oIn].y - oPts[oIdx].y;
           var oL = Math.hypot(oDx,oDy)||1; oDx/=oL; oDy/=oL;
+
+          // Bisector of both inward directions
           var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
-          if (bl < 0.001) { bx = -mDy; by = mDx; } else { bx/=bl; by/=bl; }
-          // Bisector perpendicular = the cut direction
-          var bpx = -by, bpy = bx;
+          if (bl < 0.001) { bx = mNx; by = mNy; } else { bx/=bl; by/=bl; }
+
+          // Joint center
           var jx = pts[myIdx].x, jy = pts[myIdx].y;
 
-          // For each edge endpoint, find where the tube wall (parallel to centerline mDx/mDy)
-          // intersects the bisector cut plane (perpendicular to bx/by through jx/jy).
-          // This gives clean cut corners regardless of bend angle.
-          var _wallCut = function(pt) {
-            // Ray from pt in direction (mDx, mDy) — the wall runs along the centerline.
-            // Bisector plane: (P - J) · bisector = 0
-            // Parametric: P = pt + t*(mDx,mDy)
-            // Solve: (pt + t*mDir - J) · b = 0  =>  t = (J-pt)·b / (mDir·b)
-            var denom = mDx*bx + mDy*by;
-            if (Math.abs(denom) < 0.001) {
-              // Wall is parallel to bisector plane — just project normally
-              var dist = (pt.x-jx)*bx + (pt.y-jy)*by;
-              return { x: pt.x - dist*bx, y: pt.y - dist*by };
-            }
-            var t = ((jx-pt.x)*bx + (jy-pt.y)*by) / denom;
-            // t should be negative (going toward joint from inside tube, not past it)
-            // Clamp so we don't overshoot past the joint center by more than tubeR
-            t = Math.max(-(tubeR * 3), Math.min(tubeR * 3, t));
-            return { x: pt.x + t*mDx, y: pt.y + t*mDy };
+          // Exact socket edge points: joint center ± perpendicular * tubeR
+          // (not from _offsetPath which may have tangent inaccuracies at endpoints)
+          var ptA = { x: jx - mNx * tubeR, y: jy - mNy * tubeR }; // edgeA = -tubeR offset
+          var ptB = { x: jx + mNx * tubeR, y: jy + mNy * tubeR }; // edgeB = +tubeR offset
+
+          // Project each point onto the bisector cut line (through jx/jy, perp to bisector).
+          // Projection: remove the component along the bisector direction.
+          var _proj = function(pt) {
+            var d = (pt.x - jx)*bx + (pt.y - jy)*by;
+            return { x: pt.x - d*bx, y: pt.y - d*by };
           };
 
-          var rawA = isStart ? _rawEdgeA0 : _rawEdgeAEnd;
-          var rawB = isStart ? _rawEdgeB0 : _rawEdgeBEnd;
-          return { pA: _wallCut(rawA), pB: _wallCut(rawB) };
+          return { pA: _proj(ptA), pB: _proj(ptB) };
         };
 
         var _ext = tubeR * 0.5;
