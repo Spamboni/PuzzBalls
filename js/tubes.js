@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1589;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1590;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -416,12 +416,31 @@ class TubePiece {
       }
 
       // ── Tube body fill ────────────────────────────────────────────────────────
-      // Build closed polygon from edgeA forward + edgeB backward
+      // Build closed polygon from edgeA forward + edgeB backward.
+      // At open (unconnected) ends, extend slightly past the socket so the closePath
+      // line falls outside the cap ellipse and isn't visible as a dark edge.
       if (window.TUBE_DEBUG.bodyFill) {
+        var _ext = tubeR * 0.5; // how far to extend past open ends
+        // Direction vectors at each end of the path
+        var _ptsLen = pts.length;
+        var _dAx = pts[0].x - pts[Math.min(1,_ptsLen-1)].x, _dAy = pts[0].y - pts[Math.min(1,_ptsLen-1)].y;
+        var _dAl = Math.hypot(_dAx,_dAy)||1; _dAx/=_dAl; _dAy/=_dAl;
+        var _dBx = pts[_ptsLen-1].x - pts[Math.max(0,_ptsLen-2)].x, _dBy = pts[_ptsLen-1].y - pts[Math.max(0,_ptsLen-2)].y;
+        var _dBl = Math.hypot(_dBx,_dBy)||1; _dBx/=_dBl; _dBy/=_dBl;
+        // Build fill edge arrays, extending open ends
+        var fillA = edgeA.slice(), fillB = edgeB.slice();
+        if (!this.connectedA) {
+          fillA.unshift({ x: fillA[0].x + _dAx*_ext, y: fillA[0].y + _dAy*_ext });
+          fillB.unshift({ x: fillB[0].x + _dAx*_ext, y: fillB[0].y + _dAy*_ext });
+        }
+        if (!this.connectedB) {
+          fillA.push({ x: fillA[fillA.length-1].x + _dBx*_ext, y: fillA[fillA.length-1].y + _dBy*_ext });
+          fillB.push({ x: fillB[fillB.length-1].x + _dBx*_ext, y: fillB[fillB.length-1].y + _dBy*_ext });
+        }
         ctx.beginPath();
-        ctx.moveTo(edgeA[0].x, edgeA[0].y);
-        for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
-        for (var i = edgeB.length - 1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
+        ctx.moveTo(fillA[0].x, fillA[0].y);
+        for (var i = 1; i < fillA.length; i++) ctx.lineTo(fillA[i].x, fillA[i].y);
+        for (var i = fillB.length - 1; i >= 0; i--) ctx.lineTo(fillB[i].x, fillB[i].y);
         ctx.closePath();
         var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
         ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
@@ -436,13 +455,7 @@ class TubePiece {
         var bGlow0  = bs0.glow  || '#ffffff';
         var bR0 = this._ball.r * 0.85;
         ctx.save();
-        // Clip to tube body so ball is masked by tube edges
-        ctx.beginPath();
-        ctx.moveTo(edgeA[0].x, edgeA[0].y);
-        for (var bi2 = 1; bi2 < edgeA.length; bi2++) ctx.lineTo(edgeA[bi2].x, edgeA[bi2].y);
-        for (var bi2 = edgeB.length-1; bi2 >= 0; bi2--) ctx.lineTo(edgeB[bi2].x, edgeB[bi2].y);
-        ctx.closePath();
-        ctx.clip();
+        // No clip — ball is masked by walls drawn on top; clipping caused visible cutoff at tube ends
         // Soft glow behind ball
         ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, bR0 + 4, 0, Math.PI * 2);
         ctx.fillStyle = bGlow0 + '33';
