@@ -1,4 +1,71 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1582;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1583;
+
+// ── Tube render debug panel ───────────────────────────────────────────────────
+window._tubeDebugPanelOpen = false;
+
+window._buildTubeDebugPanel = function() {
+  var existing = document.getElementById('tube-debug-panel');
+  if (existing) { existing.remove(); window._tubeDebugPanelOpen = false; return; }
+  window._tubeDebugPanelOpen = true;
+
+  var panel = document.createElement('div');
+  panel.id = 'tube-debug-panel';
+  panel.style.cssText = [
+    'position:fixed', 'bottom:80px', 'left:10px', 'z-index:9999',
+    'background:rgba(0,0,0,0.88)', 'border:1px solid #00ffcc',
+    'border-radius:10px', 'padding:10px 14px', 'min-width:190px',
+    'font-family:monospace', 'font-size:13px', 'color:#00ffcc',
+    'box-shadow:0 0 16px #00ffcc44', 'user-select:none'
+  ].join(';');
+
+  var title = document.createElement('div');
+  title.textContent = '🔬 TUBE LAYERS';
+  title.style.cssText = 'font-weight:bold; margin-bottom:8px; color:#ffffff; letter-spacing:2px; font-size:11px;';
+  panel.appendChild(title);
+
+  var flags = [
+    { key: 'bodyFill',    label: 'Body fill (0.06α)' },
+    { key: 'outerGlow',   label: 'Outer glow stroke' },
+    { key: 'mainWall',    label: 'Main wall stroke' },
+    { key: 'highlight',   label: 'Highlight edge' },
+    { key: 'gloss',       label: 'Gloss stripe' },
+    { key: 'jointFillet', label: 'Joint fillet curves' },
+    { key: 'endCaps',     label: 'End caps' },
+  ];
+
+  flags.forEach(function(f) {
+    var row = document.createElement('label');
+    row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer;';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = window.TUBE_DEBUG[f.key];
+    cb.style.cssText = 'width:16px; height:16px; cursor:pointer; accent-color:#00ffcc;';
+    cb.addEventListener('change', function() {
+      window.TUBE_DEBUG[f.key] = cb.checked;
+    });
+    var lbl = document.createElement('span');
+    lbl.textContent = f.label;
+    row.appendChild(cb);
+    row.appendChild(lbl);
+    panel.appendChild(row);
+  });
+
+  // Reset all button
+  var resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset All ON';
+  resetBtn.style.cssText = [
+    'margin-top:8px', 'width:100%', 'padding:5px',
+    'background:#003322', 'color:#00ffcc', 'border:1px solid #00ffcc',
+    'border-radius:6px', 'cursor:pointer', 'font-family:monospace', 'font-size:12px'
+  ].join(';');
+  resetBtn.addEventListener('click', function() {
+    Object.keys(window.TUBE_DEBUG).forEach(function(k) { window.TUBE_DEBUG[k] = true; });
+    panel.querySelectorAll('input[type=checkbox]').forEach(function(cb) { cb.checked = true; });
+  });
+  panel.appendChild(resetBtn);
+
+  document.body.appendChild(panel);
+};
 // game.js — PuzzBalls game controller
 
 var SLING_MIN_OFFSET = 10;
@@ -526,6 +593,8 @@ class Game {
           if (_px>=d.x&&_px<=d.x+d.w&&_py>=d.y&&_py<=d.y+d.h) {
             self._editorMode=false; self._editorTubeMode=false;
             window._tubeEditorMode=false; self._editorSelected=null;
+            var _dbgBtnDone = document.getElementById('tube-debug-btn'); if (_dbgBtnDone) _dbgBtnDone.style.display='none';
+            var _dbgPanelDone = document.getElementById('tube-debug-panel'); if (_dbgPanelDone) _dbgPanelDone.remove();
             self._tubeSelected=null;
             self._editorBrickDeleteMode=false;
             self._editorScrollY=0;
@@ -600,6 +669,30 @@ class Game {
               self._editorTubeMode=(tb2.id==='tubes');
               window._tubeEditorMode=(tb2.id==='tubes');
               self._editorSelected=null;
+              // Show/hide tube debug button
+              var _dbgBtn = document.getElementById('tube-debug-btn');
+              if (tb2.id === 'tubes') {
+                if (!_dbgBtn) {
+                  _dbgBtn = document.createElement('button');
+                  _dbgBtn.id = 'tube-debug-btn';
+                  _dbgBtn.textContent = '\uD83D\uDD2C';
+                  _dbgBtn.title = 'Tube layer debug';
+                  _dbgBtn.style.cssText = [
+                    'position:fixed','bottom:' + (self.H * 0.18 + 48) + 'px','left:6px',
+                    'z-index:9998','width:36px','height:36px','border-radius:50%',
+                    'background:rgba(0,20,40,0.85)','border:1px solid #00ffcc',
+                    'color:#00ffcc','font-size:16px','cursor:pointer',
+                    'box-shadow:0 0 8px #00ffcc55','padding:0'
+                  ].join(';');
+                  _dbgBtn.addEventListener('click', function() { window._buildTubeDebugPanel(); });
+                  document.body.appendChild(_dbgBtn);
+                }
+                _dbgBtn.style.display = 'block';
+              } else {
+                if (_dbgBtn) _dbgBtn.style.display = 'none';
+                var _panel = document.getElementById('tube-debug-panel');
+                if (_panel) _panel.remove();
+              }
               // Clear stale button rects from other tabs
               if (tb2.id==='tubes') {
                 self._editorModeBtns=null; self._editorTypeBtns=null;
