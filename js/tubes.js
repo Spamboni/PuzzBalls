@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1582;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1583;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -1113,17 +1113,7 @@ class TubeManager {
     var outsideCP = _bezierCP(outsideA, outsideB);
     var insideCP  = _bezierCP(insideA, insideB);
 
-    // ── Gentle body fill at joint area (solid style only) ─────────────
-    if (style === 'solid') {
-      ctx.beginPath();
-      ctx.moveTo(insideA.x, insideA.y);
-      ctx.quadraticCurveTo(insideCP.x, insideCP.y, insideB.x, insideB.y);
-      ctx.lineTo(outsideB.x, outsideB.y);
-      ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, outsideA.x, outsideA.y);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.75) + ')';
-      ctx.fill();
-    }
+    // Joint body fill removed — was covering balls passing through joints
 
     // ── Draw wall curves — NO shadow/glow to avoid hiding balls ─────────
     var _strokeCurve = function(p0, cp, p1, isTop) {
