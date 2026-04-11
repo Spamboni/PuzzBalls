@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1584;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1585;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -31,6 +31,7 @@ window._buildTubeDebugPanel = function() {
     { key: 'gloss',       label: 'Gloss stripe' },
     { key: 'jointFillet', label: 'Joint fillet curves' },
     { key: 'endCaps',     label: 'End caps' },
+    { key: 'capDarkFill', label: 'Cap dark interior' },
   ];
 
   flags.forEach(function(f) {
