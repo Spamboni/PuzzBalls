@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1584;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1585;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -954,7 +954,6 @@ class TubeManager {
     ctx.restore();
   }
   _drawJointsTo(ctx, layer) {
-  _drawJoints(ctx, layer) { this._drawJointsTo(ctx, layer); }
     var drawn = {};
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var tubeA = this.tubes[ti];
