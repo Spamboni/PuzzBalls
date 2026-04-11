@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1588;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1589;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -9,6 +9,7 @@ window.TUBE_DEBUG = window.TUBE_DEBUG || {
   gloss:        true,
   jointFillet:  true,
   endCaps:      true,
+  capDarkFill:  true,  // Dark interior ellipse at tube mouth
 };
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
@@ -259,9 +260,11 @@ class TubePiece {
     // The cap is an ellipse — squashed on X axis to simulate perspective
     var rx = tubeR * 0.35, ry = tubeR;
     // Dark interior
-    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,2,10,' + (alpha * (style === 'solid' ? 0.95 : 0.55)) + ')';
-    ctx.fill();
+    if (window.TUBE_DEBUG.capDarkFill) {
+      ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,2,10,' + (alpha * (style === 'solid' ? 0.95 : 0.55)) + ')';
+      ctx.fill();
+    }
     // Outer rim glow
     ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.9) + ')';
