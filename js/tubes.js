@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1585;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1586;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -451,16 +451,19 @@ class TubePiece {
       }
 
       // ── Thick opaque tube walls — drawn OVER ball so they clearly contain it ──
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      // Outer glow (no shadow — shadow at joints stacks and darkens)
+      // lineCap 'butt' ensures wall strokes stop exactly at the trim point and don't
+      // bleed past it into the joint zone, which would stack alpha and create dark artifacts.
+      ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+      // Outer glow — reduced alpha for glass/window to limit stacking at joints
+      var glowAlpha = style === 'glass' ? 0.10 : style === 'window' ? 0.14 : 0.22;
       [edgeA, edgeB].forEach(function(edge) {
         ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
         for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
         ctx.lineWidth   = style === 'solid' ? 8 : 7;
-        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.22) + ')';
+        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * glowAlpha) + ')';
         ctx.stroke();
       });
-      // Main wall — thick, opaque, covers ball outer edge (no shadow — prevents dark artifact at joints)
+      // Main wall — thick, opaque, covers ball outer edge
       [edgeA, edgeB].forEach(function(edge) {
         ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
         for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
@@ -918,40 +921,12 @@ class TubeManager {
 
   // ── Draw (split by layer) ─────────────────────────────────────────────────
   draw(ctx, layer, frame, selectedTube) {
-    // All tube rendering goes through an offscreen canvas to prevent alpha stacking.
-    // Multiple tube walls and body fills overlapping at joints stack their semi-transparent
-    // alphas on the main canvas, creating dark artifacts. By rendering everything to a
-    // fresh transparent offscreen canvas first, source-over compositing within the
-    // offscreen resolves cleanly, then the result is stamped onto the main canvas once.
-    var w = ctx.canvas.width, h = ctx.canvas.height;
-    if (!this._offCanvas || this._offCanvas.width !== w || this._offCanvas.height !== h) {
-      this._offCanvas = document.createElement('canvas');
-      this._offCanvas.width  = w;
-      this._offCanvas.height = h;
-    }
-    var offCtx = this._offCanvas.getContext('2d');
-    offCtx.clearRect(0, 0, w, h);
-
-    // Mirror transform from main ctx (e.g. vertical scroll)
-    var t = ctx.getTransform ? ctx.getTransform() : null;
-    if (t && (t.a !== 1 || t.b !== 0 || t.c !== 0 || t.d !== 1 || t.e !== 0 || t.f !== 0)) {
-      offCtx.setTransform(t.a, t.b, t.c, t.d, t.e, t.f);
-    }
-
-    // Draw all tubes + joints onto the offscreen canvas
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var tube = this.tubes[ti];
       if (tube.layer !== layer) continue;
-      tube.draw(offCtx, frame, tube === selectedTube);
+      tube.draw(ctx, frame, tube === selectedTube);
     }
-    this._drawJointsTo(offCtx, layer);
-
-    // Composite the offscreen result onto the main canvas
-    offCtx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.save();
-    ctx.resetTransform();
-    ctx.drawImage(this._offCanvas, 0, 0);
-    ctx.restore();
+    this._drawJointsTo(ctx, layer);
   }
   _drawJointsTo(ctx, layer) {
     var drawn = {};
