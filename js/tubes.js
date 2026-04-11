@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1583;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1584;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -275,8 +275,7 @@ class TubePiece {
   }
 
   // ── Draw ─────────────────────────────────────────────────────────────────────
-  // drawMode: undefined = full draw, 'bodyOnly' = body fill only, 'noBody' = skip body fill
-  draw(ctx, frame, isEditorSelected, drawMode) {
+  draw(ctx, frame, isEditorSelected) {
     if (!this._path || this._path.length < 2) return;
     ctx.save();
 
@@ -404,20 +403,15 @@ class TubePiece {
       }
 
       // ── Tube body fill ────────────────────────────────────────────────────────
-      // Build closed polygon from edgeA forward + edgeB backward.
-      // Skipped in 'noBody' mode (body was already drawn to offscreen canvas).
-      if (drawMode !== 'noBody') {
-        ctx.beginPath();
-        ctx.moveTo(edgeA[0].x, edgeA[0].y);
-        for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
-        for (var i = edgeB.length - 1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
-        ctx.closePath();
-        var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
-        ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
-        ctx.fill();
-      }
-      // In 'bodyOnly' mode, stop here — no walls, highlights, etc.
-      if (drawMode === 'bodyOnly') { ctx.restore(); return; }
+      // Build closed polygon from edgeA forward + edgeB backward
+      ctx.beginPath();
+      ctx.moveTo(edgeA[0].x, edgeA[0].y);
+      for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
+      for (var i = edgeB.length - 1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
+      ctx.closePath();
+      var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
+      ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+      ctx.fill();
 
       // ── Ball inside tube — drawn UNDER walls/highlights for 3D depth ─────────
       if (this._ball && style !== 'solid') {
@@ -924,41 +918,43 @@ class TubeManager {
 
   // ── Draw (split by layer) ─────────────────────────────────────────────────
   draw(ctx, layer, frame, selectedTube) {
-    // Pass 1: All body fills drawn to an offscreen canvas.
-    // This prevents alpha stacking where body polygons overlap at joints —
-    // the offscreen canvas resolves all fills before compositing once onto main.
+    // All tube rendering goes through an offscreen canvas to prevent alpha stacking.
+    // Multiple tube walls and body fills overlapping at joints stack their semi-transparent
+    // alphas on the main canvas, creating dark artifacts. By rendering everything to a
+    // fresh transparent offscreen canvas first, source-over compositing within the
+    // offscreen resolves cleanly, then the result is stamped onto the main canvas once.
     var w = ctx.canvas.width, h = ctx.canvas.height;
-    if (!this._bodyCanvas || this._bodyCanvas.width !== w || this._bodyCanvas.height !== h) {
-      this._bodyCanvas = document.createElement('canvas');
-      this._bodyCanvas.width  = w;
-      this._bodyCanvas.height = h;
+    if (!this._offCanvas || this._offCanvas.width !== w || this._offCanvas.height !== h) {
+      this._offCanvas = document.createElement('canvas');
+      this._offCanvas.width  = w;
+      this._offCanvas.height = h;
     }
-    var offCtx = this._bodyCanvas.getContext('2d');
+    var offCtx = this._offCanvas.getContext('2d');
     offCtx.clearRect(0, 0, w, h);
-    // Mirror any active transform from main ctx (e.g. vertical scroll offset)
-    var t = ctx.getTransform();
-    offCtx.setTransform(t.a, t.b, t.c, t.d, t.e, t.f);
+
+    // Mirror transform from main ctx (e.g. vertical scroll)
+    var t = ctx.getTransform ? ctx.getTransform() : null;
+    if (t && (t.a !== 1 || t.b !== 0 || t.c !== 0 || t.d !== 1 || t.e !== 0 || t.f !== 0)) {
+      offCtx.setTransform(t.a, t.b, t.c, t.d, t.e, t.f);
+    }
+
+    // Draw all tubes + joints onto the offscreen canvas
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var tube = this.tubes[ti];
       if (tube.layer !== layer) continue;
-      tube.draw(offCtx, frame, false, 'bodyOnly');
+      tube.draw(offCtx, frame, tube === selectedTube);
     }
-    offCtx.setTransform(1, 0, 0, 1, 0, 0); // reset before drawImage
+    this._drawJointsTo(offCtx, layer);
+
+    // Composite the offscreen result onto the main canvas
+    offCtx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.save();
     ctx.resetTransform();
-    ctx.drawImage(this._bodyCanvas, 0, 0);
+    ctx.drawImage(this._offCanvas, 0, 0);
     ctx.restore();
-
-    // Pass 2: Walls, highlights, caps, ball-in-tube — skip body fill
-    for (var ti = 0; ti < this.tubes.length; ti++) {
-      var tube = this.tubes[ti];
-      if (tube.layer !== layer) continue;
-      tube.draw(ctx, frame, tube === selectedTube, 'noBody');
-    }
-    // Seamless joint fillets between connected tubes
-    this._drawJoints(ctx, layer);
   }
-  _drawJoints(ctx, layer) {
+  _drawJointsTo(ctx, layer) {
+  _drawJoints(ctx, layer) { this._drawJointsTo(ctx, layer); }
     var drawn = {};
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var tubeA = this.tubes[ti];
