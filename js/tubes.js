@@ -1,5 +1,15 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1586;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1587;
+// ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
+window.TUBE_DEBUG = window.TUBE_DEBUG || {
+  bodyFill:     true,
+  outerGlow:    true,
+  mainWall:     true,
+  highlight:    true,
+  gloss:        true,
+  jointFillet:  true,
+  endCaps:      true,
+};
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -404,12 +414,13 @@ class TubePiece {
 
       // ── Tube body fill ────────────────────────────────────────────────────────
       // Build closed polygon from edgeA forward + edgeB backward
-      ctx.beginPath();
-      ctx.moveTo(edgeA[0].x, edgeA[0].y);
-      for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
-      for (var i = edgeB.length - 1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
-      ctx.closePath();
-      var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
+      if (window.TUBE_DEBUG.bodyFill) {
+        ctx.beginPath();
+        ctx.moveTo(edgeA[0].x, edgeA[0].y);
+        for (var i = 1; i < edgeA.length; i++) ctx.lineTo(edgeA[i].x, edgeA[i].y);
+        for (var i = edgeB.length - 1; i >= 0; i--) ctx.lineTo(edgeB[i].x, edgeB[i].y);
+        ctx.closePath();
+        var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
       ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
       ctx.fill();
 
@@ -456,21 +467,25 @@ class TubePiece {
       ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
       // Outer glow — reduced alpha for glass/window to limit stacking at joints
       var glowAlpha = style === 'glass' ? 0.10 : style === 'window' ? 0.14 : 0.22;
-      [edgeA, edgeB].forEach(function(edge) {
-        ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
-        for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
-        ctx.lineWidth   = style === 'solid' ? 8 : 7;
-        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * glowAlpha) + ')';
-        ctx.stroke();
-      });
+      if (window.TUBE_DEBUG.outerGlow) {
+        [edgeA, edgeB].forEach(function(edge) {
+          ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+          for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+          ctx.lineWidth   = style === 'solid' ? 8 : 7;
+          ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * glowAlpha) + ')';
+          ctx.stroke();
+        });
+      }
       // Main wall — thick, opaque, covers ball outer edge
-      [edgeA, edgeB].forEach(function(edge) {
-        ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
-        for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
-        ctx.lineWidth   = style === 'solid' ? 5 : 4;
-        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
-        ctx.stroke();
-      });
+      if (window.TUBE_DEBUG.mainWall) {
+        [edgeA, edgeB].forEach(function(edge) {
+          ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
+          for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
+          ctx.lineWidth   = style === 'solid' ? 5 : 4;
+          ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
+          ctx.stroke();
+        });
+      }
       // Bright inner highlight on top edge only (gives depth/gloss)
       // Use whichever edge is higher on screen (lower Y = world-space top)
       var edgeAavgY = 0, edgeBavgY = 0;
@@ -478,16 +493,18 @@ class TubePiece {
       for (var hi = 0; hi < edgeB.length; hi++) edgeBavgY += edgeB[hi].y;
       edgeAavgY /= edgeA.length; edgeBavgY /= edgeB.length;
       var highlightEdge = edgeAavgY < edgeBavgY ? edgeA : edgeB;
-      ctx.beginPath(); ctx.moveTo(highlightEdge[0].x, highlightEdge[0].y);
-      for (var i = 1; i < highlightEdge.length; i++) ctx.lineTo(highlightEdge[i].x, highlightEdge[i].y);
-      ctx.lineWidth   = 1.5;
-      ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
-      ctx.stroke();
+      if (window.TUBE_DEBUG.highlight) {
+        ctx.beginPath(); ctx.moveTo(highlightEdge[0].x, highlightEdge[0].y);
+        for (var i = 1; i < highlightEdge.length; i++) ctx.lineTo(highlightEdge[i].x, highlightEdge[i].y);
+        ctx.lineWidth   = 1.5;
+        ctx.strokeStyle = 'rgba(220,240,255,' + (alpha * (style === 'solid' ? 0.6 : 0.85)) + ')';
+        ctx.stroke();
+      }
 
       // ── Specular gloss stripe (gravity-aligned — always on world-space top) ──
       // Instead of offsetting perpendicular to path, we shift each point straight up
       // by a fraction of tubeR. This makes highlights consistent across connected tubes.
-      if (style === 'glass' || style === 'window') {
+      if (window.TUBE_DEBUG.gloss && (style === 'glass' || style === 'window')) {
         var glossUp = tubeR * 0.48;
         var glossPts = pts.map(function(p) { return { x: p.x, y: p.y - glossUp }; });
         ctx.beginPath(); ctx.moveTo(glossPts[0].x, glossPts[0].y);
@@ -517,12 +534,14 @@ class TubePiece {
       }
 
       // ── End caps (suppressed on connected sockets for seamless joints) ────────
-      var sockA = this.socketA(), sockB = this.socketB();
-      if (!this.connectedA) {
-        this._drawCap(ctx, sockA.x, sockA.y, sockA.angle, tubeR, cr, cg, cb, alpha, style);
-      }
-      if (!this.connectedB) {
-        this._drawCap(ctx, sockB.x, sockB.y, sockB.angle, tubeR, cr, cg, cb, alpha, style);
+      if (window.TUBE_DEBUG.endCaps) {
+        var sockA = this.socketA(), sockB = this.socketB();
+        if (!this.connectedA) {
+          this._drawCap(ctx, sockA.x, sockA.y, sockA.angle, tubeR, cr, cg, cb, alpha, style);
+        }
+        if (!this.connectedB) {
+          this._drawCap(ctx, sockB.x, sockB.y, sockB.angle, tubeR, cr, cg, cb, alpha, style);
+        }
       }
     }
 
@@ -926,7 +945,7 @@ class TubeManager {
       if (tube.layer !== layer) continue;
       tube.draw(ctx, frame, tube === selectedTube);
     }
-    this._drawJointsTo(ctx, layer);
+    if (window.TUBE_DEBUG.jointFillet) this._drawJointsTo(ctx, layer);
   }
   _drawJointsTo(ctx, layer) {
     var drawn = {};
