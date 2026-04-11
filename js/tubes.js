@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1590;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1591;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -415,28 +415,69 @@ class TubePiece {
         edgeA = tr2.a; edgeB = tr2.b;
       }
 
-      // ── Tube body fill ────────────────────────────────────────────────────────
-      // Build closed polygon from edgeA forward + edgeB backward.
-      // At open (unconnected) ends, extend slightly past the socket so the closePath
-      // line falls outside the cap ellipse and isn't visible as a dark edge.
+      // ── Tube body fill ─────────────────────────────────────────────────────────────────────────────────────
+      // At connected ends, snap fill corners to the joint bisector plane so both
+      // tubes meet flush with zero overlap (no opacity doubling).
+      // At open ends, extend past socket so closePath hides behind the end cap.
       if (window.TUBE_DEBUG.bodyFill) {
-        var _ext = tubeR * 0.5; // how far to extend past open ends
-        // Direction vectors at each end of the path
         var _ptsLen = pts.length;
+
+        // Project a point onto the bisector plane at a joint.
+        // The bisector plane passes through the joint center, perpendicular to
+        // the bisector of the two tube directions. Points are moved along the
+        // bisector direction until they lie exactly on this plane.
+        var _bisectorFillEnd = function(conn, isStart) {
+          var oPts = conn.tube._path;
+          if (!oPts || oPts.length < 2) return null;
+          var oSide = conn.side;
+          var myIdx = isStart ? 0 : _ptsLen - 1;
+          var myIn  = isStart ? Math.min(4,_ptsLen-1) : Math.max(_ptsLen-5,0);
+          var mDx = pts[myIn].x - pts[myIdx].x, mDy = pts[myIn].y - pts[myIdx].y;
+          var mL = Math.hypot(mDx,mDy)||1; mDx/=mL; mDy/=mL;
+          var oIdx = oSide === 'A' ? 0 : oPts.length-1;
+          var oIn  = oSide === 'A' ? Math.min(4,oPts.length-1) : Math.max(oPts.length-5,0);
+          var oDx = oPts[oIn].x - oPts[oIdx].x, oDy = oPts[oIn].y - oPts[oIdx].y;
+          var oL = Math.hypot(oDx,oDy)||1; oDx/=oL; oDy/=oL;
+          var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
+          if (bl < 0.001) { bx = -mDy; by = mDx; } else { bx/=bl; by/=bl; }
+          var jx = pts[myIdx].x, jy = pts[myIdx].y;
+          var _proj = function(pt) {
+            var dist = (pt.x-jx)*bx + (pt.y-jy)*by;
+            return { x: pt.x - dist*bx, y: pt.y - dist*by };
+          };
+          return {
+            pA: _proj(isStart ? edgeA[0] : edgeA[edgeA.length-1]),
+            pB: _proj(isStart ? edgeB[0] : edgeB[edgeB.length-1])
+          };
+        };
+
+        var _ext = tubeR * 0.5;
         var _dAx = pts[0].x - pts[Math.min(1,_ptsLen-1)].x, _dAy = pts[0].y - pts[Math.min(1,_ptsLen-1)].y;
         var _dAl = Math.hypot(_dAx,_dAy)||1; _dAx/=_dAl; _dAy/=_dAl;
         var _dBx = pts[_ptsLen-1].x - pts[Math.max(0,_ptsLen-2)].x, _dBy = pts[_ptsLen-1].y - pts[Math.max(0,_ptsLen-2)].y;
         var _dBl = Math.hypot(_dBx,_dBy)||1; _dBx/=_dBl; _dBy/=_dBl;
-        // Build fill edge arrays, extending open ends
+
         var fillA = edgeA.slice(), fillB = edgeB.slice();
-        if (!this.connectedA) {
+
+        if (this.connectedA) {
+          var _bA = _bisectorFillEnd(this.connectedA, true);
+          if (_bA) { fillA[0] = _bA.pA; fillB[0] = _bA.pB; }
+        } else {
           fillA.unshift({ x: fillA[0].x + _dAx*_ext, y: fillA[0].y + _dAy*_ext });
           fillB.unshift({ x: fillB[0].x + _dAx*_ext, y: fillB[0].y + _dAy*_ext });
         }
-        if (!this.connectedB) {
+
+        if (this.connectedB) {
+          var _bB = _bisectorFillEnd(this.connectedB, false);
+          if (_bB) {
+            fillA[fillA.length-1] = _bB.pA;
+            fillB[fillB.length-1] = _bB.pB;
+          }
+        } else {
           fillA.push({ x: fillA[fillA.length-1].x + _dBx*_ext, y: fillA[fillA.length-1].y + _dBy*_ext });
           fillB.push({ x: fillB[fillB.length-1].x + _dBx*_ext, y: fillB[fillB.length-1].y + _dBy*_ext });
         }
+
         ctx.beginPath();
         ctx.moveTo(fillA[0].x, fillA[0].y);
         for (var i = 1; i < fillA.length; i++) ctx.lineTo(fillA[i].x, fillA[i].y);
