@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1593;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1594;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -444,16 +444,34 @@ class TubePiece {
           var oL = Math.hypot(oDx,oDy)||1; oDx/=oL; oDy/=oL;
           var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
           if (bl < 0.001) { bx = -mDy; by = mDx; } else { bx/=bl; by/=bl; }
+          // Bisector perpendicular = the cut direction
+          var bpx = -by, bpy = bx;
           var jx = pts[myIdx].x, jy = pts[myIdx].y;
-          var _proj = function(pt) {
-            var dist = (pt.x-jx)*bx + (pt.y-jy)*by;
-            return { x: pt.x - dist*bx, y: pt.y - dist*by };
+
+          // For each edge endpoint, find where the tube wall (parallel to centerline mDx/mDy)
+          // intersects the bisector cut plane (perpendicular to bx/by through jx/jy).
+          // This gives clean cut corners regardless of bend angle.
+          var _wallCut = function(pt) {
+            // Ray from pt in direction (mDx, mDy) — the wall runs along the centerline.
+            // Bisector plane: (P - J) · bisector = 0
+            // Parametric: P = pt + t*(mDx,mDy)
+            // Solve: (pt + t*mDir - J) · b = 0  =>  t = (J-pt)·b / (mDir·b)
+            var denom = mDx*bx + mDy*by;
+            if (Math.abs(denom) < 0.001) {
+              // Wall is parallel to bisector plane — just project normally
+              var dist = (pt.x-jx)*bx + (pt.y-jy)*by;
+              return { x: pt.x - dist*bx, y: pt.y - dist*by };
+            }
+            var t = ((jx-pt.x)*bx + (jy-pt.y)*by) / denom;
+            // t should be negative (going toward joint from inside tube, not past it)
+            // Clamp so we don't overshoot past the joint center by more than tubeR
+            t = Math.max(-(tubeR * 3), Math.min(tubeR * 3, t));
+            return { x: pt.x + t*mDx, y: pt.y + t*mDy };
           };
-          // Use untrimmed edge endpoints — trimmed ones are pulled back from joint
-          return {
-            pA: _proj(isStart ? _rawEdgeA0 : _rawEdgeAEnd),
-            pB: _proj(isStart ? _rawEdgeB0 : _rawEdgeBEnd)
-          };
+
+          var rawA = isStart ? _rawEdgeA0 : _rawEdgeAEnd;
+          var rawB = isStart ? _rawEdgeB0 : _rawEdgeBEnd;
+          return { pA: _wallCut(rawA), pB: _wallCut(rawB) };
         };
 
         var _ext = tubeR * 0.5;
