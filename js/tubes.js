@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1581;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1582;
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
 // Three visual styles: glass, window, solid
@@ -458,25 +458,21 @@ class TubePiece {
 
       // ── Thick opaque tube walls — drawn OVER ball so they clearly contain it ──
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      // Outer glow
+      // Outer glow (no shadow — shadow at joints stacks and darkens)
       [edgeA, edgeB].forEach(function(edge) {
         ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
         for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
         ctx.lineWidth   = style === 'solid' ? 8 : 7;
         ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * 0.22) + ')';
-        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',0.5)';
-        ctx.shadowBlur  = 10;
-        ctx.stroke(); ctx.shadowBlur = 0;
+        ctx.stroke();
       });
-      // Main wall — thick, opaque, covers ball outer edge
+      // Main wall — thick, opaque, covers ball outer edge (no shadow — prevents dark artifact at joints)
       [edgeA, edgeB].forEach(function(edge) {
         ctx.beginPath(); ctx.moveTo(edge[0].x, edge[0].y);
         for (var i = 1; i < edge.length; i++) ctx.lineTo(edge[i].x, edge[i].y);
         ctx.lineWidth   = style === 'solid' ? 5 : 4;
         ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
-        ctx.shadowColor = 'rgba(' + cr + ',' + cg + ',' + cb + ',1.0)';
-        ctx.shadowBlur  = 6;
-        ctx.stroke(); ctx.shadowBlur = 0;
+        ctx.stroke();
       });
       // Bright inner highlight on top edge only (gives depth/gloss)
       // Use whichever edge is higher on screen (lower Y = world-space top)
