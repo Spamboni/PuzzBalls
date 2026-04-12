@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1606;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1607;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -559,23 +559,46 @@ class TubePiece {
       }
 
       // ── Specular gloss stripe (gravity-aligned — always on world-space top) ──
-      // Instead of offsetting perpendicular to path, we shift each point straight up
-      // by a fraction of tubeR. This makes highlights consistent across connected tubes.
+      // Trimmed at connected ends to match wall trim depth, so the joint gloss
+      // fillet can connect the two tubes' gloss endpoints cleanly.
       if (window.TUBE_DEBUG.gloss && (style === 'glass' || style === 'window')) {
         var glossUp = tubeR * 0.48;
-        var glossPts = pts.map(function(p) { return { x: p.x, y: p.y - glossUp }; });
+        // Build trimmed gloss point arrays matching wall trim depth.
+        // Use trimmed edge length vs full edge length to determine trim count.
+        var _fullLen = this._offsetPath(pts, -tubeR).length;
+        var _trimLen = this._trimmedEdgeA ? this._trimmedEdgeA.length : _fullLen;
+        var _trimStartCount = this.connectedA ? (_fullLen - _trimLen) : 0;
+        var _trimEndCount   = this.connectedB ? (_fullLen - _trimLen) : 0;
+        // Recompute per-end trim if both ends connected (each trim is independent)
+        if (this.connectedA && this.connectedB && this._trimmedEdgeA) {
+          // Approximate: half the total trim on each end
+          _trimStartCount = Math.floor((_fullLen - _trimLen) / 2);
+          _trimEndCount   = _fullLen - _trimLen - _trimStartCount;
+        }
+        var _trimStart = Math.max(0, _trimStartCount);
+        var _trimEnd   = Math.max(0, _trimEndCount);
+        var _glossBasePts = pts.slice(_trimStart, _trimEnd > 0 ? pts.length - _trimEnd : pts.length);
+        if (_glossBasePts.length < 2) _glossBasePts = pts;
+
+        var glossPts = _glossBasePts.map(function(p) { return { x: p.x, y: p.y - glossUp }; });
+        ctx.lineCap = 'butt';
         ctx.beginPath(); ctx.moveTo(glossPts[0].x, glossPts[0].y);
         for (var i = 1; i < glossPts.length; i++) ctx.lineTo(glossPts[i].x, glossPts[i].y);
         ctx.lineWidth   = style === 'glass' ? tubeR * 0.22 : tubeR * 0.10;
         ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.38 : 0.18)) + ')';
         ctx.stroke();
         // Extra thin bright line at very top
-        var glossThinPts = pts.map(function(p) { return { x: p.x, y: p.y - tubeR * 0.62 }; });
+        var glossThinPts = _glossBasePts.map(function(p) { return { x: p.x, y: p.y - tubeR * 0.62 }; });
         ctx.beginPath(); ctx.moveTo(glossThinPts[0].x, glossThinPts[0].y);
         for (var i = 1; i < glossThinPts.length; i++) ctx.lineTo(glossThinPts[i].x, glossThinPts[i].y);
         ctx.lineWidth   = 1.0;
         ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.55) + ')';
         ctx.stroke();
+        // Cache trimmed gloss endpoint for joint fillet to use
+        this._glossEndA = glossPts[0];
+        this._glossEndB = glossPts[glossPts.length - 1];
+        this._glossThinEndA = glossThinPts[0];
+        this._glossThinEndB = glossThinPts[glossThinPts.length - 1];
       }
 
       // ── Window strip (semi-opaque frosted band down center) ───────────────────
@@ -1278,51 +1301,51 @@ class TubeManager {
     _strokeCurve(outsideA, outsideCP, outsideB, outMidY < inMidY);
     _strokeCurve(insideA, insideCP, insideB, inMidY < outMidY);
 
-    // ── Gloss through joint — gravity-aligned to match tube gloss stripes ──
-    // Each tube's gloss stripe is the centerline shifted straight up by tubeR*0.48.
-    // Connect the two tubes' gloss stripe endpoints at the joint with a Bezier,
-    // using the same control point method as the wall fillets.
+    // ── Gloss fillet through joint ─────────────────────────────────────────
+    // Uses cached trimmed endpoints from each tube's gloss stripe draw.
+    // Falls back to fixed-offset points if cache not yet available.
     if (style === 'glass' || style === 'window') {
       var glossUp = r * 0.48;
-      // Endpoint on tube A's gloss stripe near the joint
-      // The gloss stripe endpoint is: joint point shifted up by glossUp
-      var gp0 = { x: jx, y: jy - glossUp };
-      var gp1 = { x: jx, y: jy - glossUp };
-      // Actually we want points slightly INTO each tube along centerline + up
-      // Use the same wall Bezier CP logic but on the shifted centerline
-      var gExtend = r * 0.4;
-      gp0 = { x: jx - dAx * gExtend, y: jy - dAy * gExtend - glossUp };
-      gp1 = { x: jx - dBx * gExtend, y: jy - dBy * gExtend - glossUp };
-      // Control point: intersection of tangent lines in -dA/-dB directions from gp0/gp1
-      var gDet = (-dAx)*(-dBy) - (-dAy)*(-dBx);
-      var gCp;
-      if (Math.abs(gDet) < 1e-6) {
-        gCp = { x: (gp0.x + gp1.x)/2, y: (gp0.y + gp1.y)/2 };
+      var gExtendFallback = r * 0.5;
+
+      // Get trimmed endpoints from each tube — A side or B side depending on which socket is at joint
+      var gp0, gp1, gp0t, gp1t;
+      if (tubeA._glossEndA && tubeA._glossEndB) {
+        gp0  = (sideA === 'A') ? tubeA._glossEndA  : tubeA._glossEndB;
+        gp0t = (sideA === 'A') ? tubeA._glossThinEndA : tubeA._glossThinEndB;
       } else {
-        var gt = ((gp1.x - gp0.x)*(-dBy) - (gp1.y - gp0.y)*(-dBx)) / gDet;
-        var gcx = gp0.x + gt*(-dAx), gcy = gp0.y + gt*(-dAy);
-        var maxGD = r * 4;
-        var gd = Math.hypot(gcx - jx, gcy - (jy - glossUp));
-        if (gd > maxGD) { gcx = jx + (gcx-jx)*maxGD/gd; gcy = (jy-glossUp) + (gcy-(jy-glossUp))*maxGD/gd; }
-        gCp = { x: gcx, y: gcy };
+        gp0  = { x: jx - dAx*gExtendFallback, y: jy - dAy*gExtendFallback - glossUp };
+        gp0t = { x: jx - dAx*gExtendFallback, y: jy - dAy*gExtendFallback - r*0.62 };
       }
+      if (tubeB._glossEndA && tubeB._glossEndB) {
+        gp1  = (sideB === 'A') ? tubeB._glossEndA  : tubeB._glossEndB;
+        gp1t = (sideB === 'A') ? tubeB._glossThinEndA : tubeB._glossThinEndB;
+      } else {
+        gp1  = { x: jx - dBx*gExtendFallback, y: jy - dBy*gExtendFallback - glossUp };
+        gp1t = { x: jx - dBx*gExtendFallback, y: jy - dBy*gExtendFallback - r*0.62 };
+      }
+
+      // Bezier CP: tangent intersection (same method as wall fillets)
+      var _glossCP = function(p0, p1, maxD) {
+        var det = (-dAx)*(-dBy) - (-dAy)*(-dBx);
+        if (Math.abs(det) < 1e-6) return { x: (p0.x+p1.x)/2, y: (p0.y+p1.y)/2 };
+        var t = ((p1.x-p0.x)*(-dBy) - (p1.y-p0.y)*(-dBx)) / det;
+        var cx = p0.x + t*(-dAx), cy = p0.y + t*(-dAy);
+        var d = Math.hypot(cx-jx, cy-jy);
+        if (d > maxD) { cx = jx+(cx-jx)*maxD/d; cy = jy+(cy-jy)*maxD/d; }
+        return { x: cx, y: cy };
+      };
+
+      var gCp  = _glossCP(gp0, gp1, r * 4);
+      var gCp2 = _glossCP(gp0t, gp1t, r * 4);
+
+      ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(gp0.x, gp0.y);
       ctx.quadraticCurveTo(gCp.x, gCp.y, gp1.x, gp1.y);
       ctx.lineWidth = style === 'glass' ? r * 0.18 : r * 0.08;
       ctx.strokeStyle = 'rgba(220,235,255,' + (alpha * (style === 'glass' ? 0.32 : 0.14)) + ')';
-      ctx.lineCap = 'round';
       ctx.stroke();
-      // Thin bright top line
-      var gp0t = { x: jx - dAx*gExtend, y: jy - dAy*gExtend - r*0.62 };
-      var gp1t = { x: jx - dBx*gExtend, y: jy - dBy*gExtend - r*0.62 };
-      var gDet2 = (-dAx)*(-dBy) - (-dAy)*(-dBx);
-      var gCp2;
-      if (Math.abs(gDet2) < 1e-6) {
-        gCp2 = { x: (gp0t.x+gp1t.x)/2, y: (gp0t.y+gp1t.y)/2 };
-      } else {
-        var gt2 = ((gp1t.x-gp0t.x)*(-dBy) - (gp1t.y-gp0t.y)*(-dBx))/gDet2;
-        gCp2 = { x: gp0t.x + gt2*(-dAx), y: gp0t.y + gt2*(-dAy) };
-      }
+
       ctx.beginPath(); ctx.moveTo(gp0t.x, gp0t.y);
       ctx.quadraticCurveTo(gCp2.x, gCp2.y, gp1t.x, gp1t.y);
       ctx.lineWidth = 1.0;
