@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1634;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1635;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -909,6 +909,7 @@ class Game {
           }
         }
         // Row 4 GRID SNAP — long press for grid size + major line freq
+        if (!self._editorTubeMode) {
         if (self._editorSnapGridBtn) {
           var sgb=self._editorSnapGridBtn;
           if (_px>=sgb.x&&_px<=sgb.x+sgb.w&&_py>=sgb.y&&_py<=sgb.y+sgb.h) {
@@ -1101,6 +1102,7 @@ class Game {
             if(window.Sound&&Sound.uiToggle)Sound.uiToggle(false); return;
           }
         }
+        } // end !editorTubeMode guard for brick-only panel handlers
         // Tube mode buttons
         if (self._editorTubeMode && self._tubeModeBtns) {
           for (var tmbI2=0; tmbI2<self._tubeModeBtns.length; tmbI2++) {
