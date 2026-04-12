@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1586;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1587;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -50,6 +50,20 @@ window._buildTubeDebugPanel = function() {
     row.appendChild(lbl);
     panel.appendChild(row);
   });
+
+  // Body fill brightness slider
+  var sliderRow = document.createElement('div');
+  sliderRow.style.cssText = 'margin-top:8px; font-size:11px; color:#aaffcc;';
+  sliderRow.innerHTML = 'Fill brightness';
+  var slider = document.createElement('input');
+  slider.type = 'range'; slider.min = '0'; slider.max = '20'; slider.step = '0.5'; slider.value = '1';
+  slider.style.cssText = 'width:100%; accent-color:#00ffcc; margin-top:2px;';
+  slider.addEventListener('input', function() {
+    window.TUBE_DEBUG.bodyFillMult = parseFloat(slider.value);
+    sliderRow.innerHTML = 'Fill brightness: ' + slider.value + 'x';
+  });
+  sliderRow.appendChild(slider);
+  panel.appendChild(sliderRow);
 
   // Reset all button
   var resetBtn = document.createElement('button');
