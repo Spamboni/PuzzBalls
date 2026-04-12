@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1618;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1621;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -658,37 +658,49 @@ class TubePiece {
       ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.restore();
-      // Trigger snap proximity sound (throttled via flag on tube)
-      if (!this._snapSoundPlayed) {
-        this._snapSoundPlayed = true;
-        if (window.Sound && Sound.getCtx) {
-          var _sc = Sound.getCtx();
-          if (_sc) {
-            var _sg = _sc.createGain(); _sg.connect(_sc.destination);
-            _sg.gain.setValueAtTime(0.04, _sc.currentTime);
-            _sg.gain.exponentialRampToValueAtTime(0.001, _sc.currentTime + 0.35);
-            var _so = _sc.createOscillator(); _so.connect(_sg);
-            _so.type = 'sawtooth';
-            _so.frequency.setValueAtTime(180, _sc.currentTime);
-            _so.frequency.linearRampToValueAtTime(220, _sc.currentTime + 0.08);
-            _so.frequency.exponentialRampToValueAtTime(120, _sc.currentTime + 0.35);
-            _so.start(_sc.currentTime); _so.stop(_sc.currentTime + 0.35);
-          }
-        }
-      }
     } else {
       this._snapSoundPlayed = false;
     }
 
     // ── Editor selection highlight ────────────────────────────────────────────
     if (isEditorSelected && this.type !== 'funnel') {
-      var eAS = this._offsetPath(pts, -tubeR-3), eBS = this._offsetPath(pts, tubeR+3);
+      var eAS = this._offsetPath(pts, -tubeR-2), eBS = this._offsetPath(pts, tubeR+2);
+      // Soft outer glow pass
       ctx.beginPath(); ctx.moveTo(eAS[0].x, eAS[0].y);
       for (var i=1;i<eAS.length;i++) ctx.lineTo(eAS[i].x, eAS[i].y);
       for (var i=eBS.length-1;i>=0;i--) ctx.lineTo(eBS[i].x, eBS[i].y);
       ctx.closePath();
-      ctx.strokeStyle = 'rgba(255,255,100,0.5)'; ctx.lineWidth = 1.5;
-      ctx.shadowColor = '#ffff44'; ctx.shadowBlur = 6;
+      ctx.strokeStyle = 'rgba(255,255,120,0.18)'; ctx.lineWidth = 7;
+      ctx.shadowColor = '#ffff44'; ctx.shadowBlur = 14;
+      ctx.stroke(); ctx.shadowBlur = 0;
+      // Crisp inner outline
+      ctx.beginPath(); ctx.moveTo(eAS[0].x, eAS[0].y);
+      for (var i=1;i<eAS.length;i++) ctx.lineTo(eAS[i].x, eAS[i].y);
+      for (var i=eBS.length-1;i>=0;i--) ctx.lineTo(eBS[i].x, eBS[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(255,255,140,0.75)'; ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#ffff88'; ctx.shadowBlur = 8;
+      ctx.stroke(); ctx.shadowBlur = 0;
+    }
+
+    // ── Group drag highlight ──────────────────────────────────────────────────
+    if (this._groupHighlight && this.type !== 'funnel') {
+      var eAG = this._offsetPath(pts, -tubeR-2), eBG = this._offsetPath(pts, tubeR+2);
+      // Soft outer glow pass
+      ctx.beginPath(); ctx.moveTo(eAG[0].x, eAG[0].y);
+      for (var i=1;i<eAG.length;i++) ctx.lineTo(eAG[i].x, eAG[i].y);
+      for (var i=eBG.length-1;i>=0;i--) ctx.lineTo(eBG[i].x, eBG[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(0,220,255,0.15)'; ctx.lineWidth = 9;
+      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 20;
+      ctx.stroke(); ctx.shadowBlur = 0;
+      // Crisp cyan outline
+      ctx.beginPath(); ctx.moveTo(eAG[0].x, eAG[0].y);
+      for (var i=1;i<eAG.length;i++) ctx.lineTo(eAG[i].x, eAG[i].y);
+      for (var i=eBG.length-1;i>=0;i--) ctx.lineTo(eBG[i].x, eBG[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 10;
       ctx.stroke(); ctx.shadowBlur = 0;
     }
 
@@ -1057,6 +1069,10 @@ class TubeManager {
 
   // ── Snap check ───────────────────────────────────────────────────────────
   checkSnap(dragTube) {
+    // Clear previous stationary highlight if any
+    if (dragTube._snapLastOther && dragTube._snapLastOther !== dragTube) {
+      dragTube._snapLastOther._snapHighlight = null;
+    }
     dragTube._snapHighlight = null;
     var snapDist = this.SNAP_DIST;
     var best = null, bestD = snapDist;
@@ -1074,9 +1090,12 @@ class TubeManager {
       }
     }
     if (best) {
-      dragTube._snapHighlight = best.other;
+      dragTube._snapHighlight = best.other;        // drag tube glows toward stationary socket
+      best.otherTube._snapHighlight = best.drag;   // stationary tube glows toward drag socket
+      dragTube._snapLastOther = best.otherTube;
       return best;
     }
+    dragTube._snapLastOther = null;
     return null;
   }
 
@@ -1093,6 +1112,8 @@ class TubeManager {
     // Lock the connection
     this.connect(dragTube, snapResult.dragSide, snapResult.otherTube, snapResult.otherSide);
     dragTube._snapHighlight = null;
+    snapResult.otherTube._snapHighlight = null;
+    dragTube._snapLastOther = null;
   }
 
   // ── Group snap: check free ends of dragged group vs stationary free ends ──
