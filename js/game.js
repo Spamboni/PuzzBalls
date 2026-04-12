@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1625;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1626;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1766,6 +1766,7 @@ class Game {
             }
           }
         }
+        if (self._tubeDragging) self._tubeDragging._groupHighlight = false;
         self._tubeDragging = null;
         self._tubePivotState = null;
         self._tubeRotateState = null;
@@ -5982,6 +5983,7 @@ class Game {
       // Normal drag / pivot
       this._tubeGroupDrag = null;
       this._tubeDragging = hitTube;
+      hitTube._groupHighlight = true;
       this._tubeDragOffX = pos.x - hitTube.x;
       this._tubeDragOffY = pos.y - hitTube.y;
       this._tubePivotState = tappedFreeEnd
