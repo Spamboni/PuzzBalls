@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>PuzzBalls Deployer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
+
+  :root {
+    --cyan: #00e5ff;
+    --green: #00ff88;
+    --orange: #ff8800;
+    --red: #ff3060;
+    --bg: #030a18;
+    --panel: rgba(0,20,50,0.85);
+    --border: rgba(0,200,255,0.25);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: #cde;
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px 40px;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 15%, rgba(0,200,255,0.6) 0%, transparent 100%),
+      radial-gradient(1px 1px at 75% 30%, rgba(0,200,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 40% 60%, rgba(0,200,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 85% 70%, rgba(0,200,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 10% 80%, rgba(0,200,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 55% 85%, rgba(0,200,255,0.3) 0%, transparent 100%),
+      radial-gradient(2px 2px at 90% 20%, rgba(255,136,0,0.3) 0%, transparent 100%),
+      radial-gradient(2px 2px at 30% 45%, rgba(255,136,0,0.2) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(22px, 7vw, 36px);
+    font-weight: 900;
+    color: var(--cyan);
+    text-shadow: 0 0 20px var(--cyan), 0 0 60px rgba(0,229,255,0.3);
+    letter-spacing: 4px;
+    margin-bottom: 4px;
+    position: relative;
+    z-index: 1;
+  }
+  .subtitle {
+    font-size: 10px;
+    color: rgba(0,200,255,0.5);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 12px;
+    position: relative;
+    z-index: 1;
+    backdrop-filter: blur(10px);
+  }
+  .card-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--cyan);
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 9px;
+    color: rgba(0,200,255,0.5);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+  label:first-of-type { margin-top: 0; }
+
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    background: rgba(0,10,30,0.8);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--cyan);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    outline: none;
+  }
+  input:focus { border-color: var(--cyan); box-shadow: 0 0 10px rgba(0,229,255,0.2); }
+
+  .token-row { display: flex; gap: 6px; }
+  .token-row input { flex: 1; }
+  .eye-btn {
+    background: rgba(0,10,30,0.8);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0 12px;
+    cursor: pointer;
+    font-size: 16px;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--cyan);
+    background: rgba(0,229,255,0.05);
+  }
+  .drop-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .drop-icon { font-size: 28px; margin-bottom: 6px; }
+  .drop-label { font-size: 11px; color: rgba(0,200,255,0.5); }
+  .drop-filename {
+    font-size: 12px; color: var(--green); margin-top: 8px;
+    word-break: break-all;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-deploy {
+    background: linear-gradient(135deg, var(--cyan), var(--green));
+    color: #030a18;
+  }
+  .btn-deploy:disabled {
+    background: rgba(0,200,255,0.15);
+    color: rgba(0,200,255,0.3);
+    cursor: not-allowed;
+  }
+
+  .progress-bar {
+    height: 4px;
+    background: rgba(0,200,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 10px;
+    display: none;
+  }
+  .progress-bar.visible { display: block; }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--green));
+    transition: width 0.3s ease;
+    border-radius: 2px;
+  }
+
+  .log {
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 10px;
+    line-height: 1.6;
+    display: none;
+  }
+  .log.visible { display: block; }
+  .log-line { padding: 1px 0; }
+  .log-ok   { color: var(--green); }
+  .log-err  { color: var(--red); }
+  .log-warn { color: var(--orange); }
+  .log-info { color: var(--cyan); }
+  .log-dim  { color: rgba(0,200,255,0.3); }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    margin-top: 10px;
+    display: none;
+  }
+  .status-badge.visible { display: inline-flex; }
+  .status-badge.success { background: rgba(0,255,136,0.12); border: 1px solid var(--green); color: var(--green); }
+  .status-badge.error   { background: rgba(255,48,96,0.12);  border: 1px solid var(--red);   color: var(--red); }
+  .status-badge.working { background: rgba(0,229,255,0.10); border: 1px solid var(--cyan);  color: var(--cyan); }
+
+  .dot-pulse { animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .stats-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 10px;
+    display: none;
+  }
+  .stats-row.visible { display: flex; }
+  .stat {
+    flex: 1;
+    background: rgba(0,10,30,0.6);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    text-align: center;
+  }
+  .stat-num { font-size: 18px; color: var(--cyan); font-family: 'Orbitron', sans-serif; }
+  .stat-label { font-size: 8px; color: rgba(0,200,255,0.4); letter-spacing: 1px; margin-top: 2px; }
+
+  .saved-token-hint {
+    font-size: 9px;
+    color: rgba(0,255,136,0.5);
+    margin-top: 6px;
+    display: none;
+  }
+
+  .repo-display {
+    font-size: 11px;
+    color: rgba(0,200,255,0.5);
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: rgba(0,10,30,0.5);
+    border-radius: 4px;
+    border-left: 2px solid var(--cyan);
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="logo">PUZZBALLS</div>
+<div class="subtitle">GitHub Deploy Tool</div>
+
+<div class="card">
+  <div class="card-title">&#9881; Configuration</div>
+
+  <label>GitHub Personal Access Token</label>
+  <div class="token-row">
+    <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+    <button class="eye-btn" id="eyeBtn" onclick="toggleToken()">&#128065;</button>
+  </div>
+  <div class="saved-token-hint" id="savedHint">&#10003; Token saved in browser</div>
+
+  <label>Repository (owner/name)</label>
+  <input type="text" id="repoInput" value="Spamboni/PuzzBalls" placeholder="username/reponame">
+
+  <label>Branch</label>
+  <input type="text" id="branchInput" value="main" placeholder="main">
+  <div class="repo-display" id="repoDisplay"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">&#128230; Zip File</div>
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".zip" onchange="onFileSelect(this)">
+    <div class="drop-icon">&#128194;</div>
+    <div class="drop-label">Tap to select puzzballs-v*.zip</div>
+    <div class="drop-filename" id="fileName"></div>
+  </div>
+</div>
+
+<div class="card">
+  <button class="btn btn-deploy" id="deployBtn" onclick="deploy()" disabled>
+    &#128640; DEPLOY TO GITHUB
+  </button>
+  <div class="progress-bar" id="progressBar">
+    <div class="progress-fill" id="progressFill" style="width:0%"></div>
+  </div>
+  <div style="text-align:center">
+    <div class="status-badge" id="statusBadge"></div>
+  </div>
+  <div class="stats-row" id="statsRow">
+    <div class="stat"><div class="stat-num" id="statPushed">0</div><div class="stat-label">PUSHED</div></div>
+    <div class="stat"><div class="stat-num" id="statSkipped">0</div><div class="stat-label">SKIPPED</div></div>
+    <div class="stat"><div class="stat-num" id="statErrors">0</div><div class="stat-label">ERRORS</div></div>
+  </div>
+</div>
+
+<div class="card" id="pagesCard" style="display:none">
+  <div class="card-title">&#127760; GitHub Pages Status</div>
+  <div id="pagesStatus" style="text-align:center;padding:10px 0">
+    <div class="status-badge visible working" id="pagesBadge">
+      <span class="dot-pulse">&#9679;</span> Waiting for GitHub Pages...
+    </div>
+  </div>
+  <div style="margin-top:10px">
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:rgba(0,200,255,0.4);margin-bottom:4px">
+      <span>DEPLOY PROGRESS</span>
+      <span id="pagesElapsed">0s</span>
+    </div>
+    <div class="progress-bar visible" style="margin-top:0">
+      <div class="progress-fill" id="pagesProgress" style="width:0%;transition:width 1s linear;background:linear-gradient(90deg,#ff8800,#00ff88)"></div>
+    </div>
+  </div>
+  <div style="margin-top:12px;text-align:center">
+    <a id="siteLink" href="#" target="_blank" style="
+      display:none;
+      color:#030a18;font-family:Orbitron,sans-serif;font-size:14px;font-weight:700;
+      letter-spacing:2px;text-decoration:none;padding:12px 24px;
+      background:var(--green);border-radius:8px;
+      box-shadow:0 0 20px rgba(0,255,136,0.4);
+    ">&#128640; PLAY PUZZBALLS</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">&#128203; Log</div>
+  <div class="log" id="log"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+var zipFile = null;
+var deploying = false;
+
+window.onload = function() {
+  var saved = localStorage.getItem('pb_token');
+  if (saved) {
+    document.getElementById('tokenInput').value = saved;
+    document.getElementById('savedHint').style.display = 'block';
+  }
+  var savedRepo = localStorage.getItem('pb_repo');
+  if (savedRepo) document.getElementById('repoInput').value = savedRepo;
+  updateRepoDisplay();
+  checkReady();
+};
+
+function toggleToken() {
+  var inp = document.getElementById('tokenInput');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function updateRepoDisplay() {
+  var repo = document.getElementById('repoInput').value.trim();
+  var d = document.getElementById('repoDisplay');
+  if (repo) {
+    d.style.display = 'block';
+    d.textContent = '\u2192 https://github.com/' + repo;
+  }
+}
+
+document.getElementById('tokenInput').addEventListener('input', function() {
+  localStorage.setItem('pb_token', this.value.trim());
+  document.getElementById('savedHint').style.display = this.value ? 'block' : 'none';
+  checkReady();
+});
+document.getElementById('repoInput').addEventListener('input', function() {
+  localStorage.setItem('pb_repo', this.value.trim());
+  updateRepoDisplay();
+  checkReady();
+});
+
+function onFileSelect(input) {
+  if (input.files.length > 0) {
+    zipFile = input.files[0];
+    document.getElementById('fileName').textContent = zipFile.name + ' (' + Math.round(zipFile.size/1024) + ' KB)';
+    checkReady();
+  }
+}
+
+function checkReady() {
+  var token = document.getElementById('tokenInput').value.trim();
+  var repo  = document.getElementById('repoInput').value.trim();
+  document.getElementById('deployBtn').disabled = !(token && repo && zipFile && !deploying);
+}
+
+function log(msg, type) {
+  var el = document.getElementById('log');
+  el.classList.add('visible');
+  var line = document.createElement('div');
+  line.className = 'log-line log-' + (type||'info');
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(text, type) {
+  var b = document.getElementById('statusBadge');
+  b.className = 'status-badge visible ' + type;
+  b.innerHTML = text;
+}
+
+function setProgress(pct) {
+  document.getElementById('progressBar').classList.add('visible');
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+
+async function getFileSHA(token, repo, branch, path) {
+  var r = await fetch('https://api.github.com/repos/' + repo + '/contents/' + path + '?ref=' + branch, {
+    headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) return undefined;
+  var j = await r.json();
+  return j.sha || null;
+}
+
+// Compute Git blob SHA (sha1 of "blob <size>\0<content>")
+// This matches what GitHub stores, so we can skip unchanged files
+async function computeGitBlobSHA(arrayBuffer) {
+  var bytes = new Uint8Array(arrayBuffer);
+  var header = 'blob ' + bytes.length + '\0';
+  var headerBytes = new TextEncoder().encode(header);
+  var combined = new Uint8Array(headerBytes.length + bytes.length);
+  combined.set(headerBytes, 0);
+  combined.set(bytes, headerBytes.length);
+  var hashBuffer = await crypto.subtle.digest('SHA-1', combined);
+  var hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(function(b) { return b.toString(16).padStart(2,'0'); }).join('');
+}
+
+async function pushFile(token, repo, branch, path, content, sha, commitMsg) {
+  var body = {
+    message: commitMsg,
+    content: content,
+    branch: branch,
+  };
+  if (sha) body.sha = sha;
+  var r = await fetch('https://api.github.com/repos/' + repo + '/contents/' + path, {
+    method: 'PUT',
+    headers: {
+      'Authorization': 'token ' + token,
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.github.v3+json'
+    },
+    body: JSON.stringify(body)
+  });
+  return r.ok;
+}
+
+function arrayBufferToBase64(buffer) {
+  var bytes = new Uint8Array(buffer);
+  var b = '';
+  for (var i = 0; i < bytes.byteLength; i++) b += String.fromCharCode(bytes[i]);
+  return btoa(b);
+}
+
+async function deploy() {
+  if (deploying) return;
+  deploying = true;
+  checkReady();
+
+  var token  = document.getElementById('tokenInput').value.trim();
+  var repo   = document.getElementById('repoInput').value.trim();
+  var branch = document.getElementById('branchInput').value.trim() || 'main';
+
+  // Clear log & hide pages card from previous deploy
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('statsRow').classList.remove('visible');
+  document.getElementById('pagesCard').style.display = 'none';
+  setStatus('<span class="dot-pulse">\u25cf</span> Reading zip...', 'working');
+  setProgress(2);
+
+  var pushed = 0, skipped = 0, errors = 0;
+
+  try {
+    // Validate file size
+    if (zipFile.size < 10000) {
+      throw new Error('File too small (' + zipFile.size + ' bytes) \u2014 download may be corrupted. Try downloading the zip again.');
+    }
+
+    // Read zip
+    var zip = await JSZip.loadAsync(zipFile);
+    var files = [];
+    zip.forEach(function(path, entry) {
+      if (!entry.dir) files.push({ path: path, entry: entry });
+    });
+
+    // Strip leading folder if present (e.g. "puzzballs/")
+    var prefix = '';
+    if (files.length > 0) {
+      var firstPath = files[0].path;
+      var slash = firstPath.indexOf('/');
+      if (slash > 0) {
+        var candidate = firstPath.slice(0, slash + 1);
+        var allMatch = files.every(function(f) { return f.path.startsWith(candidate); });
+        if (allMatch) prefix = candidate;
+      }
+    }
+
+    // Filter to only deployable files
+    var deployFiles = files.filter(function(f) {
+      var p = f.path;
+      if (p.includes('__MACOSX') || p.includes('.DS_Store')) return false;
+      return true;
+    });
+
+    log('\ud83d\udce6 Found ' + deployFiles.length + ' files in zip', 'info');
+    log('\ud83c\udf3f Deploying to ' + repo + ' @ ' + branch, 'info');
+    if (prefix) log('\ud83d\udcc1 Stripping folder prefix: ' + prefix, 'dim');
+
+    var commitMsg = 'Deploy ' + zipFile.name.replace('.zip','') + ' via PuzzBalls Deploy Tool';
+
+    for (var i = 0; i < deployFiles.length; i++) {
+      var f = deployFiles[i];
+      var repoPath = prefix ? f.path.slice(prefix.length) : f.path;
+      if (!repoPath) continue;
+
+      setProgress(5 + Math.round((i / deployFiles.length) * 88));
+      setStatus('<span class="dot-pulse">\u25cf</span> ' + (i+1) + '/' + deployFiles.length + ': ' + repoPath.split('/').pop(), 'working');
+
+      try {
+        var buf = await f.entry.async('arraybuffer');
+        var b64 = arrayBufferToBase64(buf);
+
+        // Get current SHA from GitHub
+        var remoteSHA = await getFileSHA(token, repo, branch, repoPath);
+
+        // Compute local Git blob SHA and compare — skip if identical
+        if (remoteSHA) {
+          var localSHA = await computeGitBlobSHA(buf);
+          if (localSHA === remoteSHA) {
+            skipped++;
+            log('  = ' + repoPath + ' (unchanged)', 'dim');
+            continue;
+          }
+        }
+
+        var ok = await pushFile(token, repo, branch, repoPath, b64, remoteSHA, commitMsg);
+        if (ok) {
+          pushed++;
+          log('  \u2713 ' + repoPath, 'ok');
+        } else {
+          errors++;
+          log('  \u2717 ' + repoPath + ' \u2014 push failed', 'err');
+        }
+      } catch(e) {
+        errors++;
+        log('  \u2717 ' + repoPath + ' \u2014 ' + e.message, 'err');
+      }
+
+      // Small delay to avoid rate limiting
+      await new Promise(function(r) { setTimeout(r, 120); });
+    }
+
+    setProgress(100);
+    document.getElementById('statPushed').textContent = pushed;
+    document.getElementById('statSkipped').textContent = skipped;
+    document.getElementById('statErrors').textContent = errors;
+    document.getElementById('statsRow').classList.add('visible');
+
+    if (errors === 0) {
+      setStatus('\u2705 Deploy complete! ' + pushed + ' files pushed', 'success');
+      log('', 'dim');
+      log('\ud83d\ude80 Files pushed! Waiting for GitHub Pages to rebuild...', 'ok');
+      pollPagesDeployment(token, repo);
+    } else {
+      setStatus('\u26a0 Done with ' + errors + ' errors', 'error');
+      log('Check errors above. Try re-deploying \u2014 GitHub sometimes rate-limits.', 'warn');
+    }
+
+  } catch(e) {
+    setStatus('\u274c Error: ' + e.message, 'error');
+    log('Fatal error: ' + e.message, 'err');
+  }
+
+  deploying = false;
+  checkReady();
+}
+
+// =====================================================
+// GitHub Pages deployment status polling (FIXED)
+// Uses /pages/builds/latest which actually works,
+// instead of /pages/deployments which 404s
+// =====================================================
+async function pollPagesDeployment(token, repo) {
+  var card    = document.getElementById('pagesCard');
+  var badge   = document.getElementById('pagesBadge');
+  var bar     = document.getElementById('pagesProgress');
+  var elapsed = document.getElementById('pagesElapsed');
+  var link    = document.getElementById('siteLink');
+  var siteUrl = 'https://' + repo.split('/')[0].toLowerCase() + '.github.io/' + repo.split('/')[1];
+
+  card.style.display = 'block';
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  link.href = siteUrl;
+
+  var startTime = Date.now();
+  var maxWait   = 45000;   // 45 seconds max — Pages is always done by then
+  var pollInterval = 4000; // check every 4 seconds
+
+  function tick() {
+    var ms = Date.now() - startTime;
+    var sec = Math.floor(ms / 1000);
+    elapsed.textContent = sec + 's';
+    // Animate bar 0->90% over 40s, then slow
+    var pct = Math.min(90, (ms / 40000) * 90);
+    bar.style.width = pct + '%';
+  }
+
+  var tickInterval = setInterval(tick, 500);
+
+  // After maxWait, just show the play button regardless
+  var fallbackTimer = setTimeout(function() {
+    done(true, true);
+  }, maxWait);
+
+  async function checkStatus() {
+    try {
+      // METHOD 1: /pages/builds/latest — the correct and reliable endpoint
+      var r = await fetch('https://api.github.com/repos/' + repo + '/pages/builds/latest', {
+        headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+      });
+
+      if (r.ok) {
+        var build = await r.json();
+        var status = build.status; // "queued", "building", "built", "errored"
+
+        badge.className = 'status-badge visible working';
+        badge.innerHTML = '<span class="dot-pulse">\u25cf</span> GitHub Pages: ' + status + '...';
+
+        log('\ud83d\udd0d Pages build status: ' + status, 'dim');
+
+        if (status === 'built') {
+          // Verify it was built AFTER we started deploying
+          var builtAt = build.updated_at ? new Date(build.updated_at).getTime() : 0;
+          if (builtAt > startTime - 10000) {
+            done(true, false);
+            return;
+          }
+          // If the build timestamp is old, it might be a stale result — keep polling
+        }
+
+        if (status === 'errored') {
+          var errMsg = build.error && build.error.message ? build.error.message : 'unknown error';
+          log('\u274c Pages build error: ' + errMsg, 'err');
+          done(false, false);
+          return;
+        }
+      } else if (r.status === 404) {
+        // Token might not have Pages permission — try fallback
+        log('\u26a0 Pages builds API returned 404 (token may need "pages" scope)', 'warn');
+        // Try the simpler /pages endpoint as fallback
+        var r2 = await fetch('https://api.github.com/repos/' + repo + '/pages', {
+          headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+        });
+        if (r2.ok) {
+          var pg = await r2.json();
+          badge.className = 'status-badge visible working';
+          badge.innerHTML = '<span class="dot-pulse">\u25cf</span> Pages status: ' + (pg.status || 'unknown') + '...';
+        }
+      }
+    } catch(e) {
+      // Network error — just keep the spinner going
+      badge.className = 'status-badge visible working';
+      badge.innerHTML = '<span class="dot-pulse">\u25cf</span> Checking...';
+      log('\u26a0 Poll error: ' + e.message, 'dim');
+    }
+
+    // Keep polling if not done yet
+    if (Date.now() - startTime < maxWait) {
+      setTimeout(checkStatus, pollInterval);
+    }
+    // (fallbackTimer handles the timeout case)
+  }
+
+  function done(success, timedOut) {
+    clearInterval(tickInterval);
+    clearTimeout(fallbackTimer);
+    bar.style.transition = 'width 0.5s ease';
+    bar.style.width = '100%';
+
+    var ms = Date.now() - startTime;
+    var sec = Math.floor(ms / 1000);
+    elapsed.textContent = sec + 's';
+
+    if (success) {
+      badge.className = 'status-badge visible success';
+      badge.innerHTML = timedOut
+        ? '\u2705 Live! (~' + sec + 's)'
+        : '\u2705 Live in ' + sec + 's!';
+      link.style.display = 'inline-block';
+      log('\ud83c\udf10 Site live at: ' + siteUrl, 'ok');
+    } else {
+      badge.className = 'status-badge visible error';
+      badge.innerHTML = '\u274c Deploy failed \u2014 check GitHub Actions';
+    }
+  }
+
+  // Start polling after a short initial delay
+  setTimeout(checkStatus, 3000);
+}
+</script>
+</body>
+</html>
