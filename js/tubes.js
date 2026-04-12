@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1628;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1629;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -11,6 +11,10 @@ window.TUBE_DEBUG = window.TUBE_DEBUG || {
   endCaps:      true,
   capDarkFill:  true,  // Dark interior ellipse at tube mouth
   bodyFillMult: 1.0,  // Debug multiplier for body fill alpha (1.0 = normal)
+  selectOutline: true,  // Crisp cyan outline when group-selected
+  selectGlow:    true,  // Shadow glow around selection outline
+  selectJointHL: true,  // Fillet curves highlighted at joints when selected
+  selectGlowMult: 1.0, // Multiplier for selection glow intensity
 };
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
@@ -716,13 +720,21 @@ class TubePiece {
 
     // ── Group drag highlight ──────────────────────────────────────────────────
     if (this._groupHighlight && this.type !== 'funnel') {
-      // Single crisp cyan outline with outward shadow glow
-      this._silhouettePath(ctx, 2);
-      ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
-      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 18;
-      ctx.stroke();
-      // Second shadow pass for stronger glow
-      ctx.stroke(); ctx.shadowBlur = 0;
+      if (window.TUBE_DEBUG.selectOutline) {
+        // Single crisp cyan outline with outward shadow glow
+        this._silhouettePath(ctx, 2);
+        ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        if (window.TUBE_DEBUG.selectGlow) {
+          var glowStr = 18 * (window.TUBE_DEBUG.selectGlowMult || 1.0);
+          ctx.shadowColor = '#00eeff'; ctx.shadowBlur = glowStr;
+          ctx.stroke();
+          // Second shadow pass for stronger glow
+          ctx.stroke(); ctx.shadowBlur = 0;
+        } else {
+          ctx.stroke();
+        }
+      }
     }
 
     ctx.restore();
@@ -1219,7 +1231,7 @@ class TubeManager {
     }
     if (window.TUBE_DEBUG.jointFillet) this._drawJointsTo(ctx, layer);
     // Draw cyan highlight curves at joints where both tubes are group-highlighted
-    this._drawJointHighlights(ctx, layer);
+    if (window.TUBE_DEBUG.selectJointHL) this._drawJointHighlights(ctx, layer);
   }
   _drawJointsTo(ctx, layer) {
     var drawn = {};
@@ -1384,7 +1396,8 @@ class TubeManager {
 
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
-    ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 18;
+    var jGlowStr = window.TUBE_DEBUG.selectGlow ? 18 * (window.TUBE_DEBUG.selectGlowMult || 1.0) : 0;
+    ctx.shadowColor = '#00eeff'; ctx.shadowBlur = jGlowStr;
 
     // Outside curve
     var oGap = Math.hypot(oB.x - oA.x, oB.y - oA.y);
