@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1595;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1596;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -454,16 +454,24 @@ class TubePiece {
           var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
           if (bl < 0.001) { bx = mNx; by = mNy; } else { bx/=bl; by/=bl; }
 
-          // Joint center
-          var jx = pts[myIdx].x, jy = pts[myIdx].y;
+          // Joint center (average of both path endpoints for accuracy)
+          var oJx = oPts[oIdx].x, oJy = oPts[oIdx].y;
+          var jx = (pts[myIdx].x + oJx) * 0.5, jy = (pts[myIdx].y + oJy) * 0.5;
 
           // Exact socket edge points: joint center ± perpendicular * tubeR
-          // (not from _offsetPath which may have tangent inaccuracies at endpoints)
-          var ptA = { x: jx - mNx * tubeR, y: jy - mNy * tubeR }; // edgeA = -tubeR offset
-          var ptB = { x: jx + mNx * tubeR, y: jy + mNy * tubeR }; // edgeB = +tubeR offset
+          var ptA = { x: jx - mNx * tubeR, y: jy - mNy * tubeR };
+          var ptB = { x: jx + mNx * tubeR, y: jy + mNy * tubeR };
+
+          // For near-collinear tubes (angle < ~10°), skip projection — bisector is
+          // nearly parallel to the tube and projection becomes unstable / zero effect.
+          var bendDot = mDx*oDx + mDy*oDy;
+          if (bendDot > 0.98) {
+            // Nearly straight: just use perpendicular cut at joint center
+            return { pA: ptA, pB: ptB };
+          }
 
           // Project each point onto the bisector cut line (through jx/jy, perp to bisector).
-          // Projection: remove the component along the bisector direction.
+          // Removes the component along the bisector direction → miter cut.
           var _proj = function(pt) {
             var d = (pt.x - jx)*bx + (pt.y - jy)*by;
             return { x: pt.x - d*bx, y: pt.y - d*by };
@@ -472,13 +480,18 @@ class TubePiece {
           return { pA: _proj(ptA), pB: _proj(ptB) };
         };
 
+        // Build fill from UNTRIMMED edges — trimmed edges have pulled-back endpoints that
+        // cause the fill to be anchored to the trim position instead of the joint bisector.
+        var _fullEdgeA = this._offsetPath(pts, -tubeR);
+        var _fullEdgeB = this._offsetPath(pts,  tubeR);
+
         var _ext = tubeR * 0.5;
         var _dAx = pts[0].x - pts[Math.min(1,_ptsLen-1)].x, _dAy = pts[0].y - pts[Math.min(1,_ptsLen-1)].y;
         var _dAl = Math.hypot(_dAx,_dAy)||1; _dAx/=_dAl; _dAy/=_dAl;
         var _dBx = pts[_ptsLen-1].x - pts[Math.max(0,_ptsLen-2)].x, _dBy = pts[_ptsLen-1].y - pts[Math.max(0,_ptsLen-2)].y;
         var _dBl = Math.hypot(_dBx,_dBy)||1; _dBx/=_dBl; _dBy/=_dBl;
 
-        var fillA = edgeA.slice(), fillB = edgeB.slice();
+        var fillA = _fullEdgeA.slice(), fillB = _fullEdgeB.slice();
 
         if (this.connectedA) {
           var _bA = _bisectorFillEnd(this.connectedA, true);
