@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1624;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1625;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -254,7 +254,10 @@ class TubePiece {
     return out;
   }
 
-  // ── Build a single closed silhouette path around the tube outline ────────────
+  // ── Silhouette outline for highlight rendering ────────────────────────────────
+  // Free tube: one closed path (wall A → cap B → wall B reversed → cap A).
+  // Connected tube: two open strokes (wall A, wall B), capped only at free ends.
+  // NO cross-lines at connected joints — the fillet fills that gap visually.
   _silhouettePath(ctx, offset) {
     var pts = this._path;
     if (!pts || pts.length < 2) return;
@@ -263,49 +266,52 @@ class TubePiece {
     var eB = this._offsetPath(pts,  r);
     var sockA = this.socketA(), sockB = this.socketB();
     var rx = r * 0.35, ry = r;
-    var CAP_STEPS = 14;
+    var STEPS = 14;
 
-    // Emit half-ellipse points in world space.
-    // Socket angle points outward. In local cap space, eA wall arrives from +Y side,
-    // eB wall from -Y side. Outward half sweeps from +PI/2 → -PI/2 clockwise (anticlockwise=false → false means CW in canvas).
-    // We go from angle PI/2 down to -PI/2 (decreasing), which is the outward bulge.
-    function capPoints(sock) {
-      var out = [];
-      var ca = Math.cos(sock.angle), sa = Math.sin(sock.angle);
-      for (var s = 0; s <= CAP_STEPS; s++) {
-        var t = Math.PI / 2 - (Math.PI * s / CAP_STEPS); // PI/2 → -PI/2
+    function cap(sock) {
+      var out = [], ca = Math.cos(sock.angle), sa = Math.sin(sock.angle);
+      for (var s = 0; s <= STEPS; s++) {
+        var t = Math.PI / 2 - Math.PI * s / STEPS;
         var lx = rx * Math.cos(t), ly = ry * Math.sin(t);
-        out.push({
-          x: sock.x + ca * lx - sa * ly,
-          y: sock.y + sa * lx + ca * ly,
-        });
+        out.push({ x: sock.x + ca*lx - sa*ly, y: sock.y + sa*lx + ca*ly });
       }
       return out;
     }
 
-    ctx.beginPath();
-    ctx.moveTo(eA[0].x, eA[0].y);
-    for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+    var freeA = !this.connectedA, freeB = !this.connectedB;
 
-    // B end
-    if (!this.connectedB) {
-      var capB = capPoints(sockB);
-      for (var i = 0; i < capB.length; i++) ctx.lineTo(capB[i].x, capB[i].y);
+    if (freeA && freeB) {
+      // Single closed loop
+      ctx.beginPath();
+      ctx.moveTo(eA[0].x, eA[0].y);
+      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+      var cB = cap(sockB);
+      for (var i = 0; i < cB.length; i++) ctx.lineTo(cB[i].x, cB[i].y);
+      for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
+      var cA = cap(sockA);
+      for (var i = 0; i < cA.length; i++) ctx.lineTo(cA[i].x, cA[i].y);
+      ctx.closePath();
     } else {
-      ctx.lineTo(eB[eB.length - 1].x, eB[eB.length - 1].y);
+      // Wall A stroke: start at A end, finish at B end
+      ctx.beginPath();
+      ctx.moveTo(eA[0].x, eA[0].y);
+      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+      // Wall B stroke: start at B end, finish at A end (separate subpath via moveTo)
+      ctx.moveTo(eB[eB.length-1].x, eB[eB.length-1].y);
+      for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
+      // Cap at free B end: bridge from eA tip to eB tip
+      if (freeB) {
+        ctx.moveTo(eA[eA.length-1].x, eA[eA.length-1].y);
+        var cB2 = cap(sockB);
+        for (var i = 0; i < cB2.length; i++) ctx.lineTo(cB2[i].x, cB2[i].y);
+      }
+      // Cap at free A end: bridge from eB[0] to eA[0]
+      if (freeA) {
+        ctx.moveTo(eB[0].x, eB[0].y);
+        var cA2 = cap(sockA);
+        for (var i = 0; i < cA2.length; i++) ctx.lineTo(cA2[i].x, cA2[i].y);
+      }
     }
-
-    // Walk eB reversed
-    for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
-
-    // A end
-    if (!this.connectedA) {
-      var capA = capPoints(sockA);
-      for (var i = 0; i < capA.length; i++) ctx.lineTo(capA[i].x, capA[i].y);
-    }
-    // (connected A: closePath will close back to eA[0] automatically)
-
-    ctx.closePath();
   }
 
 
@@ -714,20 +720,6 @@ class TubePiece {
       ctx.restore();
     } else {
       this._snapSoundPlayed = false;
-    }
-
-    // ── Editor selection highlight ────────────────────────────────────────────
-    if (isEditorSelected && this.type !== 'funnel') {
-      // Soft outer glow pass
-      this._silhouettePath(ctx, 3);
-      ctx.strokeStyle = 'rgba(255,255,120,0.18)'; ctx.lineWidth = 7;
-      ctx.shadowColor = '#ffff44'; ctx.shadowBlur = 14;
-      ctx.stroke(); ctx.shadowBlur = 0;
-      // Crisp inner outline
-      this._silhouettePath(ctx, 2);
-      ctx.strokeStyle = 'rgba(255,255,140,0.75)'; ctx.lineWidth = 1.5;
-      ctx.shadowColor = '#ffff88'; ctx.shadowBlur = 8;
-      ctx.stroke(); ctx.shadowBlur = 0;
     }
 
     // ── Group drag highlight ──────────────────────────────────────────────────
