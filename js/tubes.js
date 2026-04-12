@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1632;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1633;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -220,13 +220,14 @@ class TubePiece {
           ball.y += Math.sin(repelAngle) * (threshold - dist + 4);
           return false;
         }
-        // For non-energy tubes: strict cone check — tighter at connected sockets
+        // Block entry at connected sockets — joints are sealed, only open ends accept balls
+        var isConnected = (s === 0 && this.connectedA) || (s === 1 && this.connectedB);
+        if (isConnected) continue;
+        // For non-energy tubes: strict cone check
         var inwardAngle = sock.angle + Math.PI;
         var ballAngle   = Math.atan2(ball.vy, ball.vx);
         var diff = Math.abs(((ballAngle - inwardAngle) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-        // Connected sockets get tighter cone (0.40) to prevent joint eating
-        var isConnected = (s === 0 && this.connectedA) || (s === 1 && this.connectedB);
-        var maxCone = isConnected ? Math.PI * 0.40 : Math.PI * 0.60;
+        var maxCone = Math.PI * 0.60;
         // Also require minimum approach speed
         var approachSpd = Math.hypot(ball.vx, ball.vy);
         if ((diff < maxCone || this.type === 'funnel') && approachSpd > 1.5) {
@@ -548,8 +549,8 @@ class TubePiece {
         // Inner glow
         ctx.beginPath(); ctx.arc(ballPos0.x, ballPos0.y, bR0 * 0.7, 0, Math.PI * 2);
         ctx.fillStyle = bGlow0 + '55'; ctx.fill();
-        // Label
-        var lbl0 = bs0.label ? bs0.label.slice(0,3).toUpperCase() : '';
+        // Label — only shown if ball abbreviations are enabled
+        var lbl0 = (window._showBallAbbr !== false) && bs0.label ? bs0.label.slice(0,3).toUpperCase() : '';
         if (lbl0) {
           ctx.font = 'bold ' + Math.max(6, Math.round(bR0 * 0.85)) + 'px monospace';
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1108,12 +1109,17 @@ class TubeManager {
     for (var ti = 0; ti < this.tubes.length; ti++) {
       var other = this.tubes[ti];
       if (other === dragTube) continue;
-      var otherSocks = [other.socketA(), other.socketB()];
-      for (var di = 0; di < dragSocks.length; di++) {
+      var otherSocks = [];
+      if (!other.connectedA) otherSocks.push({ sock: other.socketA(), side: 'A' });
+      if (!other.connectedB) otherSocks.push({ sock: other.socketB(), side: 'B' });
+      var dragSocksFree = [];
+      if (!dragTube.connectedA) dragSocksFree.push({ sock: dragSocks[0], side: 'A' });
+      if (!dragTube.connectedB) dragSocksFree.push({ sock: dragSocks[1], side: 'B' });
+      for (var di = 0; di < dragSocksFree.length; di++) {
         for (var oi = 0; oi < otherSocks.length; oi++) {
-          var d = Math.hypot(dragSocks[di].x - otherSocks[oi].x, dragSocks[di].y - otherSocks[oi].y);
-          if (d < bestD) { bestD = d; best = { drag: dragSocks[di], other: otherSocks[oi], dist: d,
-            dragSide: di === 0 ? 'A' : 'B', otherSide: oi === 0 ? 'A' : 'B', otherTube: other }; }
+          var d = Math.hypot(dragSocksFree[di].sock.x - otherSocks[oi].sock.x, dragSocksFree[di].sock.y - otherSocks[oi].sock.y);
+          if (d < bestD) { bestD = d; best = { drag: dragSocksFree[di].sock, other: otherSocks[oi].sock, dist: d,
+            dragSide: dragSocksFree[di].side, otherSide: otherSocks[oi].side, otherTube: other }; }
         }
       }
     }
