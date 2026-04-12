@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1605;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1606;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -437,20 +437,26 @@ class TubePiece {
         var fillPts = pts.slice();
         var _ptsLen2 = fillPts.length;
 
-        // Trim start (socket A) to joint center if connected
+        // Trim start (socket A) to joint center if connected.
+        // Extend slightly PAST joint center so round caps overlap and cover the gap.
+        var _fillExtend = tubeR * 0.3;
         if (this.connectedA) {
           var oPtsA = this.connectedA.tube._path;
           var oIdxA = this.connectedA.side === 'A' ? 0 : oPtsA.length - 1;
           var jxA = (fillPts[0].x + oPtsA[oIdxA].x) * 0.5;
           var jyA = (fillPts[0].y + oPtsA[oIdxA].y) * 0.5;
-          // Remove points past the joint center, insert joint center as first point
+          // Remove points past joint center
           while (fillPts.length > 2) {
             var d2 = Math.hypot(fillPts[1].x - jxA, fillPts[1].y - jyA);
             var d0 = Math.hypot(fillPts[0].x - jxA, fillPts[0].y - jyA);
             if (d0 <= d2) break;
             fillPts.shift();
           }
-          fillPts[0] = { x: jxA, y: jyA };
+          // Extend slightly past joint center for overlap coverage
+          var dxA = fillPts[0].x - fillPts[Math.min(1,fillPts.length-1)].x;
+          var dyA = fillPts[0].y - fillPts[Math.min(1,fillPts.length-1)].y;
+          var dLA = Math.hypot(dxA,dyA)||1;
+          fillPts[0] = { x: jxA + (dxA/dLA)*_fillExtend, y: jyA + (dyA/dLA)*_fillExtend };
         }
 
         // Trim end (socket B) to joint center if connected
@@ -466,13 +472,19 @@ class TubePiece {
             if (dLast <= dPrev) break;
             fillPts.pop();
           }
-          fillPts[fillPts.length-1] = { x: jxB, y: jyB };
+          var lastI = fillPts.length - 1;
+          var dxB = fillPts[lastI].x - fillPts[Math.max(0,lastI-1)].x;
+          var dyB = fillPts[lastI].y - fillPts[Math.max(0,lastI-1)].y;
+          var dLB = Math.hypot(dxB,dyB)||1;
+          fillPts[lastI] = { x: jxB + (dxB/dLB)*_fillExtend, y: jyB + (dyB/dLB)*_fillExtend };
         }
 
+        ctx.lineCap = 'round'; // round caps blend smoothly at joints
         ctx.beginPath();
         ctx.moveTo(fillPts[0].x, fillPts[0].y);
         for (var i = 1; i < fillPts.length; i++) ctx.lineTo(fillPts[i].x, fillPts[i].y);
         ctx.stroke();
+        ctx.lineCap = 'butt'; // restore
       }
 
       // ── Ball inside tube — drawn UNDER walls/highlights for 3D depth ─────────
@@ -1224,9 +1236,15 @@ class TubeManager {
       return { x: cpx, y: cpy };
     };
 
-    // Outside curve can extend further; inside curve capped tighter to prevent pinching
+    // Outside curve can extend further; inside curve capped tighter to prevent pinching.
+    // For the inside CP, use the exact socket-geometry inside points (not trimmed endpoints)
+    // since the trimmed endpoints can be pulled too far back, making the curve too short.
     var outsideCP = _bezierCP(outsideA, outsideB, r * 5);
-    var insideCP  = _bezierCP(insideA, insideB, r * 1.5);
+    // Exact inside socket corners: joint center ± perpendicular * r, on inside side
+    // Use exact socket corners for inside CP — trimmed endpoints can be too far back
+    var insideExactA = (s1proj < s2proj) ? sockA_eA : sockA_eB;
+    var insideExactB = (s1proj < s2proj) ? sockB_eA : sockB_eB;
+    var insideCP  = _bezierCP(insideExactA, insideExactB, r * 1.2);
 
     // Joint body fill removed — was covering balls passing through joints
 
