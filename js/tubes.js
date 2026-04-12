@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1633;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1634;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -290,11 +290,11 @@ class TubePiece {
       ctx.beginPath();
       ctx.moveTo(eA[0].x, eA[0].y);
       for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
-      // Cap B: outward-facing semicircle from eA end to eB end
-      ctx.ellipse(sockB.x, sockB.y, capRx, capRy, sockB.angle, -Math.PI/2, Math.PI/2);
+      // Cap B: semicircle from eA end, sweeping outward to eB end
+      ctx.ellipse(sockB.x, sockB.y, capRx, capRy, sockB.angle, Math.PI/2, -Math.PI/2, true);
       for (var i = eB.length - 1; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
-      // Cap A: outward-facing semicircle from eB start to eA start
-      ctx.ellipse(sockA.x, sockA.y, capRx, capRy, sockA.angle, Math.PI/2, -Math.PI/2);
+      // Cap A: semicircle from eB start, sweeping outward to eA start
+      ctx.ellipse(sockA.x, sockA.y, capRx, capRy, sockA.angle, Math.PI/2, -Math.PI/2, true);
       ctx.closePath();
     } else {
       // Wall A subpath
@@ -307,14 +307,12 @@ class TubePiece {
 
       // Free end caps as outward-facing semicircles connecting wall endpoints
       if (freeB) {
-        // Arc from eA's B-end to eB's B-end (outward-facing half)
         ctx.moveTo(eA[eA.length-1].x, eA[eA.length-1].y);
-        ctx.ellipse(sockB.x, sockB.y, capRx, capRy, sockB.angle, -Math.PI/2, Math.PI/2);
+        ctx.ellipse(sockB.x, sockB.y, capRx, capRy, sockB.angle, Math.PI/2, -Math.PI/2, true);
       }
       if (freeA) {
-        // Arc from eB's A-end to eA's A-end (outward-facing half)
         ctx.moveTo(eB[0].x, eB[0].y);
-        ctx.ellipse(sockA.x, sockA.y, capRx, capRy, sockA.angle, Math.PI/2, -Math.PI/2);
+        ctx.ellipse(sockA.x, sockA.y, capRx, capRy, sockA.angle, Math.PI/2, -Math.PI/2, true);
       }
     }
   }
