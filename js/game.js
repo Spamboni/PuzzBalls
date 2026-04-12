@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1628;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1629;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -44,6 +44,9 @@ window._buildTubeDebugPanel = function() {
     { key: 'jointFillet', label: 'Joint fillet curves' },
     { key: 'endCaps',     label: 'End caps' },
     { key: 'capDarkFill', label: 'Cap dark interior' },
+    { key: 'selectOutline', label: '⚡ Select outline' },
+    { key: 'selectGlow',    label: '⚡ Select glow' },
+    { key: 'selectJointHL', label: '⚡ Select joint fillets' },
   ];
 
   flags.forEach(function(f) {
@@ -75,6 +78,21 @@ window._buildTubeDebugPanel = function() {
   panel.appendChild(sliderLabel);
   panel.appendChild(slider);
 
+  // Selection glow brightness slider
+  var glowSliderLabel = document.createElement('div');
+  glowSliderLabel.style.cssText = 'margin-top:8px; font-size:11px; color:#aaffcc;';
+  glowSliderLabel.textContent = 'Select glow: ' + (window.TUBE_DEBUG.selectGlowMult || 1.0).toFixed(1) + 'x';
+  var glowSlider = document.createElement('input');
+  glowSlider.type = 'range'; glowSlider.min = '0'; glowSlider.max = '5'; glowSlider.step = '0.1';
+  glowSlider.value = String(window.TUBE_DEBUG.selectGlowMult || 1.0);
+  glowSlider.style.cssText = 'width:100%; accent-color:#00eeff; margin-top:4px; display:block;';
+  glowSlider.addEventListener('input', function() {
+    window.TUBE_DEBUG.selectGlowMult = parseFloat(glowSlider.value);
+    glowSliderLabel.textContent = 'Select glow: ' + parseFloat(glowSlider.value).toFixed(1) + 'x';
+  });
+  panel.appendChild(glowSliderLabel);
+  panel.appendChild(glowSlider);
+
   // Reset all button
   var resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset All ON';
@@ -87,9 +105,11 @@ window._buildTubeDebugPanel = function() {
     Object.keys(window.TUBE_DEBUG).forEach(function(k) {
       if (typeof window.TUBE_DEBUG[k] === 'boolean') window.TUBE_DEBUG[k] = true;
       if (k === 'bodyFillMult') window.TUBE_DEBUG[k] = 1.0;
+      if (k === 'selectGlowMult') window.TUBE_DEBUG[k] = 1.0;
     });
     panel.querySelectorAll('input[type=checkbox]').forEach(function(cb) { cb.checked = true; });
     slider.value = '1'; sliderLabel.textContent = 'Fill brightness: 1.0x';
+    glowSlider.value = '1'; glowSliderLabel.textContent = 'Select glow: 1.0x';
   });
   panel.appendChild(resetBtn);
 
