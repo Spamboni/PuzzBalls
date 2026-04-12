@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1626;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1628;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -716,15 +716,12 @@ class TubePiece {
 
     // ── Group drag highlight ──────────────────────────────────────────────────
     if (this._groupHighlight && this.type !== 'funnel') {
-      // Soft outer glow pass
-      this._silhouettePath(ctx, 3);
-      ctx.strokeStyle = 'rgba(0,220,255,0.15)'; ctx.lineWidth = 9;
-      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 20;
-      ctx.stroke(); ctx.shadowBlur = 0;
-      // Crisp cyan outline
+      // Single crisp cyan outline with outward shadow glow
       this._silhouettePath(ctx, 2);
       ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
-      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 10;
+      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 18;
+      ctx.stroke();
+      // Second shadow pass for stronger glow
       ctx.stroke(); ctx.shadowBlur = 0;
     }
 
@@ -1370,55 +1367,40 @@ class TubeManager {
       return { x: cpx, y: cpy };
     };
 
-    // Push a wall endpoint outward from centerline by extra pixels
-    var _pushOut = function(pt, sock, nxx, nyy, baseR, extra) {
-      // Direction from joint center to the point (outward from tube center)
+    // Push endpoints outward by small offset to match wall silhouette offset
+    var _pushOut = function(pt, extra) {
       var dx = pt.x - jx, dy = pt.y - jy;
       var d = Math.hypot(dx, dy);
       if (d < 0.1) return pt;
       return { x: pt.x + (dx/d) * extra, y: pt.y + (dy/d) * extra };
     };
 
-    // Two passes: glow (offset=3) then crisp (offset=2), matching per-tube silhouette
-    var passes = [
-      { offset: 3, style: 'rgba(0,220,255,0.15)', width: 9, shadow: 20 },
-      { offset: 2, style: 'rgba(0,238,255,0.7)',  width: 1.5, shadow: 10 }
-    ];
+    var ofs = 2; // match per-tube silhouette offset
+    var oA = _pushOut(outsideA, ofs), oB = _pushOut(outsideB, ofs);
+    var iA = _pushOut(insideA, ofs),  iB = _pushOut(insideB, ofs);
 
-    for (var pi = 0; pi < passes.length; pi++) {
-      var pass = passes[pi];
-      var ofs = pass.offset;
+    var outsideCP = _bezierCP(oA, oB, r * 5);
+    var insideCP  = _bezierCP(iA, iB, r * 1.5);
 
-      // Offset all four endpoints outward
-      var oA = _pushOut(outsideA, null, nAx, nAy, rA, ofs);
-      var oB = _pushOut(outsideB, null, nBx, nBy, rB, ofs);
-      var iA = _pushOut(insideA, null, nAx, nAy, rA, ofs);
-      var iB = _pushOut(insideB, null, nBx, nBy, rB, ofs);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 18;
 
-      var outsideCP = _bezierCP(oA, oB, r * 5);
-      var insideCP  = _bezierCP(iA, iB, r * 1.5);
-
-      ctx.lineCap = 'round';
-
-      // Outside curve
-      var oGap = Math.hypot(oB.x - oA.x, oB.y - oA.y);
-      if (oGap >= 0.5) {
-        ctx.beginPath(); ctx.moveTo(oA.x, oA.y);
-        ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, oB.x, oB.y);
-        ctx.strokeStyle = pass.style; ctx.lineWidth = pass.width;
-        ctx.shadowColor = '#00eeff'; ctx.shadowBlur = pass.shadow;
-        ctx.stroke(); ctx.shadowBlur = 0;
-      }
-      // Inside curve
-      var iGap = Math.hypot(iB.x - iA.x, iB.y - iA.y);
-      if (iGap >= 0.5) {
-        ctx.beginPath(); ctx.moveTo(iA.x, iA.y);
-        ctx.quadraticCurveTo(insideCP.x, insideCP.y, iB.x, iB.y);
-        ctx.strokeStyle = pass.style; ctx.lineWidth = pass.width;
-        ctx.shadowColor = '#00eeff'; ctx.shadowBlur = pass.shadow;
-        ctx.stroke(); ctx.shadowBlur = 0;
-      }
+    // Outside curve
+    var oGap = Math.hypot(oB.x - oA.x, oB.y - oA.y);
+    if (oGap >= 0.5) {
+      ctx.beginPath(); ctx.moveTo(oA.x, oA.y);
+      ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, oB.x, oB.y);
+      ctx.stroke(); ctx.stroke();
     }
+    // Inside curve
+    var iGap = Math.hypot(iB.x - iA.x, iB.y - iA.y);
+    if (iGap >= 0.5) {
+      ctx.beginPath(); ctx.moveTo(iA.x, iA.y);
+      ctx.quadraticCurveTo(insideCP.x, insideCP.y, iB.x, iB.y);
+      ctx.stroke(); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
   }
 
   _drawOneJoint(ctx, tubeA, sideA, tubeB, sideB) {
