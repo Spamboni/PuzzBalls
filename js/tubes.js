@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1629;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1630;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -720,20 +720,20 @@ class TubePiece {
 
     // ── Group drag highlight ──────────────────────────────────────────────────
     if (this._groupHighlight && this.type !== 'funnel') {
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      // Wide soft glow pass — same path, thicker and semi-transparent
+      if (window.TUBE_DEBUG.selectGlow) {
+        var glowAlpha = 0.12 * (window.TUBE_DEBUG.selectGlowMult || 1.0);
+        glowAlpha = Math.min(glowAlpha, 1.0);
+        this._silhouettePath(ctx, 2);
+        ctx.strokeStyle = 'rgba(0,238,255,' + glowAlpha + ')'; ctx.lineWidth = 12;
+        ctx.stroke();
+      }
+      // Crisp cyan outline on top
       if (window.TUBE_DEBUG.selectOutline) {
-        // Single crisp cyan outline with outward shadow glow
         this._silhouettePath(ctx, 2);
         ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
-        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-        if (window.TUBE_DEBUG.selectGlow) {
-          var glowStr = 18 * (window.TUBE_DEBUG.selectGlowMult || 1.0);
-          ctx.shadowColor = '#00eeff'; ctx.shadowBlur = glowStr;
-          ctx.stroke();
-          // Second shadow pass for stronger glow
-          ctx.stroke(); ctx.shadowBlur = 0;
-        } else {
-          ctx.stroke();
-        }
+        ctx.stroke();
       }
     }
 
@@ -1394,26 +1394,29 @@ class TubeManager {
     var outsideCP = _bezierCP(oA, oB, r * 5);
     var insideCP  = _bezierCP(iA, iB, r * 1.5);
 
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
-    var jGlowStr = window.TUBE_DEBUG.selectGlow ? 18 * (window.TUBE_DEBUG.selectGlowMult || 1.0) : 0;
-    ctx.shadowColor = '#00eeff'; ctx.shadowBlur = jGlowStr;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
-    // Outside curve
-    var oGap = Math.hypot(oB.x - oA.x, oB.y - oA.y);
-    if (oGap >= 0.5) {
-      ctx.beginPath(); ctx.moveTo(oA.x, oA.y);
-      ctx.quadraticCurveTo(outsideCP.x, outsideCP.y, oB.x, oB.y);
-      ctx.stroke(); ctx.stroke();
-    }
-    // Inside curve
-    var iGap = Math.hypot(iB.x - iA.x, iB.y - iA.y);
-    if (iGap >= 0.5) {
-      ctx.beginPath(); ctx.moveTo(iA.x, iA.y);
-      ctx.quadraticCurveTo(insideCP.x, insideCP.y, iB.x, iB.y);
-      ctx.stroke(); ctx.stroke();
-    }
-    ctx.shadowBlur = 0;
+    var _drawCurve = function(p0, cp, p1) {
+      var gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      if (gap < 0.5) return;
+      // Wide glow pass
+      if (window.TUBE_DEBUG.selectGlow) {
+        var glowAlpha = 0.12 * (window.TUBE_DEBUG.selectGlowMult || 1.0);
+        glowAlpha = Math.min(glowAlpha, 1.0);
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
+        ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
+        ctx.strokeStyle = 'rgba(0,238,255,' + glowAlpha + ')'; ctx.lineWidth = 12;
+        ctx.stroke();
+      }
+      // Crisp line
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
+      ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
+      ctx.stroke();
+    };
+
+    _drawCurve(outsideA, outsideCP, outsideB);
+    _drawCurve(insideA, insideCP, insideB);
   }
 
   _drawOneJoint(ctx, tubeA, sideA, tubeB, sideB) {
