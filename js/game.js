@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1635;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1636;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -2077,9 +2077,16 @@ class Game {
       }
       if (!obj.pinned) {
         var bs = BallSettings[obj.type] || BallSettings.bouncer;
-        // Run multiple sub-steps at reduced scale for slow-mo accuracy
-        var steps = sm < 0.3 ? 1 : 1;
-        Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * sm, bounceMult: bs.bounciness, speedMult: sm });
+        // Dynamic sub-stepping: split fast-moving balls into smaller steps to prevent tunneling
+        var ballSpeed = Math.hypot(obj.vx, obj.vy) * sm;
+        var maxSubSteps = (window.Settings && window.Settings.maxSubSteps) || 3;
+        var subSteps = Math.min(maxSubSteps, Math.max(1, Math.ceil(ballSpeed / (obj.r * 0.8))));
+        var subSm = sm / subSteps;
+        // Store position before this frame's movement for swept collision detection
+        obj._prevX = obj.x; obj._prevY = obj.y;
+        for (var _ss = 0; _ss < subSteps; _ss++) {
+          Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * subSm, bounceMult: bs.bounciness, speedMult: subSm });
+        }
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
           // Knock immunity — can't re-stick for N frames after being knocked off
@@ -2510,7 +2517,8 @@ class Game {
 
         // Swept collision: if ball moved far this frame, check the path too
         if (onCooldown && !brick.overlaps(ball)) continue;  // already separated, skip
-        var prevBX = ball.x - ball.vx, prevBY = ball.y - ball.vy;
+        var prevBX = (ball._prevX !== undefined) ? ball._prevX : ball.x - ball.vx;
+        var prevBY = (ball._prevY !== undefined) ? ball._prevY : ball.y - ball.vy;
         var ballMoved = Math.hypot(ball.vx, ball.vy);
         if (ballMoved > ball.r * 0.8 && !brick.overlaps(ball)) {
           // Cast ray from prev→current position, check AABB intersection
