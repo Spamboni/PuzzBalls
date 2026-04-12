@@ -605,7 +605,7 @@ async function pollPagesDeployment(token, repo) {
   link.href = siteUrl;
 
   var startTime = Date.now();
-  var maxWait   = 45000;   // 45 seconds max — Pages is always done by then
+  var maxWait   = 60000;   // 60 seconds max
   var pollInterval = 4000; // check every 4 seconds
 
   function tick() {
@@ -613,7 +613,7 @@ async function pollPagesDeployment(token, repo) {
     var sec = Math.floor(ms / 1000);
     elapsed.textContent = sec + 's';
     // Animate bar 0->90% over 40s, then slow
-    var pct = Math.min(90, (ms / 40000) * 90);
+    var pct = Math.min(90, (ms / 55000) * 90);
     bar.style.width = pct + '%';
   }
 
