@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1596;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1597;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -477,7 +477,12 @@ class TubePiece {
             return { x: pt.x - d*bx, y: pt.y - d*by };
           };
 
-          return { pA: _proj(ptA), pB: _proj(ptB) };
+          // Return bisector center and direction for clipping
+          return {
+            pA: _proj(ptA), pB: _proj(ptB),
+            jc: { x: jx, y: jy },
+            bd: { x: bx, y: by }
+          };
         };
 
         // Build fill from UNTRIMMED edges — trimmed edges have pulled-back endpoints that
@@ -493,9 +498,43 @@ class TubePiece {
 
         var fillA = _fullEdgeA.slice(), fillB = _fullEdgeB.slice();
 
+        // Helper: clip fill edge array at a bisector plane, keeping only points on the
+        // inward side (where (pt-J)·bisector <= 0), then prepend the bisector corner.
+        var _clipFillEdge = function(edge, cornerPt, bisCenter, bisDir, fromStart) {
+          var bx2 = bisDir.x, by2 = bisDir.y;
+          var jx2 = bisCenter.x, jy2 = bisCenter.y;
+          if (fromStart) {
+            // Remove points from start that are on the outward side of bisector
+            var start = 0;
+            while (start < edge.length - 2) {
+              var d2 = (edge[start].x - jx2)*bx2 + (edge[start].y - jy2)*by2;
+              if (d2 <= 0.5) break; // inside territory
+              start++;
+            }
+            var clipped = edge.slice(start);
+            clipped[0] = cornerPt;
+            return clipped;
+          } else {
+            // Remove points from end
+            var end = edge.length - 1;
+            while (end > 1) {
+              var d2 = (edge[end].x - jx2)*bx2 + (edge[end].y - jy2)*by2;
+              if (d2 <= 0.5) break;
+              end--;
+            }
+            var clipped = edge.slice(0, end + 1);
+            clipped[clipped.length - 1] = cornerPt;
+            return clipped;
+          }
+        };
+
         if (this.connectedA) {
           var _bA = _bisectorFillEnd(this.connectedA, true);
-          if (_bA) { fillA[0] = _bA.pA; fillB[0] = _bA.pB; }
+          if (_bA) {
+            var _bAdata = _bA._data; // bisector center and direction stored on result
+            fillA = _clipFillEdge(fillA, _bA.pA, _bA.jc, _bA.bd, true);
+            fillB = _clipFillEdge(fillB, _bA.pB, _bA.jc, _bA.bd, true);
+          }
         } else {
           fillA.unshift({ x: fillA[0].x + _dAx*_ext, y: fillA[0].y + _dAy*_ext });
           fillB.unshift({ x: fillB[0].x + _dAx*_ext, y: fillB[0].y + _dAy*_ext });
@@ -504,8 +543,8 @@ class TubePiece {
         if (this.connectedB) {
           var _bB = _bisectorFillEnd(this.connectedB, false);
           if (_bB) {
-            fillA[fillA.length-1] = _bB.pA;
-            fillB[fillB.length-1] = _bB.pB;
+            fillA = _clipFillEdge(fillA, _bB.pA, _bB.jc, _bB.bd, false);
+            fillB = _clipFillEdge(fillB, _bB.pB, _bB.jc, _bB.bd, false);
           }
         } else {
           fillA.push({ x: fillA[fillA.length-1].x + _dBx*_ext, y: fillA[fillA.length-1].y + _dBy*_ext });
