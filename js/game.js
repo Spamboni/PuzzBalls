@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1619;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1621;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -537,6 +537,7 @@ class Game {
             if (isConn2) {
               // Two fingers on a connected tube: group drag/rotate whole chain
               var grp2 = self.tubes.getConnectedGroup(td2);
+              for (var _ghi2 = 0; _ghi2 < grp2.length; _ghi2++) grp2[_ghi2]._groupHighlight = true;
               var gcx2 = grp2.reduce(function(s,t){return s+t.x;},0)/grp2.length;
               var gcy2 = grp2.reduce(function(s,t){return s+t.y;},0)/grp2.length;
               self._tubeGroupDrag = {
@@ -1513,6 +1514,7 @@ class Game {
         if (_td2f.connectedA || _td2f.connectedB) {
           // Connected tube with two fingers → upgrade to group drag/rotate
           var _grp2f = self.tubes.getConnectedGroup(_td2f);
+          for (var _ghi3 = 0; _ghi3 < _grp2f.length; _ghi3++) _grp2f[_ghi3]._groupHighlight = true;
           var _gcx2f = _grp2f.reduce(function(s,t){return s+t.x;},0)/_grp2f.length;
           var _gcy2f = _grp2f.reduce(function(s,t){return s+t.y;},0)/_grp2f.length;
           self._tubeGroupDrag = {
@@ -1713,6 +1715,8 @@ class Game {
       // Release tube drag — apply snap if close enough
       if (self._tubeGroupDrag) {
         var gd2 = self._tubeGroupDrag;
+        // Clear group highlight on all tubes
+        for (var _ghc = 0; _ghc < gd2.group.length; _ghc++) gd2.group[_ghc]._groupHighlight = false;
         if (gd2.snapCandidate && gd2.snapCandidate.dist < self.tubes.SNAP_DIST) {
           self.tubes.applySnapGroup(gd2.group, gd2.snapCandidate);
           // Weld sound
@@ -4420,32 +4424,8 @@ class Game {
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
     this.tubes.draw(ctx, 'main', this.frame, _selTubeForDraw);
-    // Draw group bounding box when group-dragging (if toggle is on, and actually moved)
-    if (this._tubeGroupDrag && this._tubeGroupDrag.hasMoved && window._tubeBBoxOn !== false && this._editorTubeMode) {
-      var _grp = this._tubeGroupDrag.group;
-      var _bx1 = Infinity, _by1 = Infinity, _bx2 = -Infinity, _by2 = -Infinity;
-      for (var _bi = 0; _bi < _grp.length; _bi++) {
-        var _bt = _grp[_bi];
-        var _bp = _bt._path;
-        if (!_bp) continue;
-        var _br = _bt.radius + 4;
-        for (var _bpi = 0; _bpi < _bp.length; _bpi++) {
-          _bx1 = Math.min(_bx1, _bp[_bpi].x - _br);
-          _by1 = Math.min(_by1, _bp[_bpi].y - _br);
-          _bx2 = Math.max(_bx2, _bp[_bpi].x + _br);
-          _by2 = Math.max(_by2, _bp[_bpi].y + _br);
-        }
-      }
-      if (_bx1 < Infinity) {
-        ctx.beginPath();
-        ctx.rect(_bx1, _by1, _bx2 - _bx1, _by2 - _by1);
-        ctx.strokeStyle = 'rgba(255,230,0,0.55)';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([6, 4]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
+    // Bounding box draw disabled — replaced by per-tube cyan glow outline (_groupHighlight)
+    // if (this._tubeGroupDrag && this._tubeGroupDrag.hasMoved && window._tubeBBoxOn !== false && this._editorTubeMode) { ... }
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
     for (var i = 0; i < this.bricks.length; i++) this.bricks[i].draw(ctx);
     this._drawSplats();  // draw ON TOP of bricks, before balls
@@ -5986,6 +5966,7 @@ class Game {
       if ((hitTube.connectedA || hitTube.connectedB) && !tappedFreeEnd) {
         // Group drag — whole connected chain moves as one unit
         var group = this.tubes.getConnectedGroup(hitTube);
+        for (var _ghi = 0; _ghi < group.length; _ghi++) group[_ghi]._groupHighlight = true;
         this._tubeGroupDrag = {
           group: group,
           startX: pos.x, startY: pos.y,
