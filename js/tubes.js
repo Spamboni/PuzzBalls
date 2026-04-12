@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1603;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1604;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -431,64 +431,56 @@ class TubePiece {
         // The bisector plane passes through the joint center, perpendicular to
         // the bisector of the two tube directions. Points are moved along the
         // bisector direction until they lie exactly on this plane.
-        // Compute bisector-miter fill corners at a connected joint end.
-        // Each fill polygon corner = socket edge point projected onto the bisector cut line.
-        // The bisector cut line passes through the joint center perpendicular to the
-        // angle bisector of the two tube directions. Projecting ensures both tubes'
-        // fills share the same cut line — zero overlap, zero gap.
+        // Compute fill polygon end corners at a connected joint.
+        // Uses perpendicular-to-my-centerline cut at the joint center — simple and stable.
+        // Both tubes cut at their own perpendicular from joint center, which naturally
+        // avoids overlap since each tube's fill stops at the joint center.
         var _bisectorFillEnd = function(conn, isStart) {
           var oPts = conn.tube._path;
           if (!oPts || oPts.length < 2) return null;
           var oSide = conn.side;
 
-          // My inward centerline direction
+          // My centerline direction at the joint end
           var myIdx = isStart ? 0 : _ptsLen - 1;
           var myIn  = isStart ? Math.min(4,_ptsLen-1) : Math.max(_ptsLen-5,0);
           var mDx = pts[myIn].x - pts[myIdx].x, mDy = pts[myIn].y - pts[myIdx].y;
           var mL = Math.hypot(mDx,mDy)||1; mDx/=mL; mDy/=mL;
-          // My perpendicular (90° CCW from inward direction)
-          var mNx = -mDy, mNy = mDx;
+          var mNx = -mDy, mNy = mDx; // perpendicular (90° CCW)
 
-          // Partner inward direction
+          // Partner path endpoint
           var oIdx = oSide === 'A' ? 0 : oPts.length-1;
           var oIn  = oSide === 'A' ? Math.min(4,oPts.length-1) : Math.max(oPts.length-5,0);
           var oDx = oPts[oIn].x - oPts[oIdx].x, oDy = oPts[oIn].y - oPts[oIdx].y;
           var oL = Math.hypot(oDx,oDy)||1; oDx/=oL; oDy/=oL;
 
-          // Same-side connection (A-A or B-B): negate partner dir so bisector is correct
+          // Same-side connection: negate partner direction
           var mySide = isStart ? 'A' : 'B';
           if (mySide === oSide) { oDx = -oDx; oDy = -oDy; }
 
-          // Bisector of both inward directions
-          var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
-          if (bl < 0.001) { bx = mNx; by = mNy; } else { bx/=bl; by/=bl; }
-
-          // Joint center (average of both path endpoints for accuracy)
+          // Joint center
           var oJx = oPts[oIdx].x, oJy = oPts[oIdx].y;
           var jx = (pts[myIdx].x + oJx) * 0.5, jy = (pts[myIdx].y + oJy) * 0.5;
 
-          // Exact socket edge points: joint center ± perpendicular * tubeR
+          // Bisector direction (for the bisector-plane cut)
+          var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
+          if (bl < 0.001) { bx = mNx; by = mNy; } else { bx/=bl; by/=bl; }
+
+          // Cut points: walk from joint center along MY perpendicular
+          // Then project onto bisector plane so fills of both tubes meet flush
           var ptA = { x: jx - mNx * tubeR, y: jy - mNy * tubeR };
           var ptB = { x: jx + mNx * tubeR, y: jy + mNy * tubeR };
 
-          // For near-collinear tubes (angle < ~10°), skip projection — bisector is
-          // nearly parallel to the tube and projection becomes unstable / zero effect.
+          // Bisector projection for miter (skip if near-collinear)
           var bendDot = mDx*oDx + mDy*oDy;
-          if (bendDot > 0.98) {
-            // Nearly straight: just use perpendicular cut at joint center
-            return { pA: ptA, pB: ptB };
+          if (bendDot < 0.98) {
+            var dA = (ptA.x-jx)*bx + (ptA.y-jy)*by;
+            var dB = (ptB.x-jx)*bx + (ptB.y-jy)*by;
+            ptA = { x: ptA.x - dA*bx, y: ptA.y - dA*by };
+            ptB = { x: ptB.x - dB*bx, y: ptB.y - dB*by };
           }
 
-          // Project each point onto the bisector cut line (through jx/jy, perp to bisector).
-          // Removes the component along the bisector direction → miter cut.
-          var _proj = function(pt) {
-            var d = (pt.x - jx)*bx + (pt.y - jy)*by;
-            return { x: pt.x - d*bx, y: pt.y - d*by };
-          };
-
-          // Return bisector center and direction for clipping
           return {
-            pA: _proj(ptA), pB: _proj(ptB),
+            pA: ptA, pB: ptB,
             jc: { x: jx, y: jy },
             bd: { x: bx, y: by }
           };
