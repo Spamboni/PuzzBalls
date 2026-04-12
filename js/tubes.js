@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1601;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1602;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -499,9 +499,34 @@ class TubePiece {
         // Replace first/last point with bisector corner to get the correct miter angle.
         var fillA = edgeA.slice(), fillB = edgeB.slice();
 
+        // After replacing end points with bisector corners, also strip any trimmed
+        // edge points that leaked past the bisector plane (d > 0 = outward side).
+        var _stripPast = function(arr, jc, bd, fromStart) {
+          var bx2 = bd.x, by2 = bd.y, jx2 = jc.x, jy2 = jc.y;
+          if (fromStart) {
+            while (arr.length > 2) {
+              var d2 = (arr[1].x - jx2)*bx2 + (arr[1].y - jy2)*by2;
+              if (d2 <= 0) break; // inside territory
+              arr.splice(1, 1);
+            }
+          } else {
+            var last = arr.length - 2;
+            while (last > 0) {
+              var d2 = (arr[last].x - jx2)*bx2 + (arr[last].y - jy2)*by2;
+              if (d2 <= 0) break;
+              arr.splice(last, 1);
+              last--;
+            }
+          }
+        };
+
         if (this.connectedA) {
           var _bA = _bisectorFillEnd(this.connectedA, true);
-          if (_bA) { fillA[0] = _bA.pA; fillB[0] = _bA.pB; }
+          if (_bA) {
+            fillA[0] = _bA.pA; fillB[0] = _bA.pB;
+            _stripPast(fillA, _bA.jc, _bA.bd, true);
+            _stripPast(fillB, _bA.jc, _bA.bd, true);
+          }
         } else {
           fillA.unshift({ x: fillA[0].x + _dAx*_ext, y: fillA[0].y + _dAy*_ext });
           fillB.unshift({ x: fillB[0].x + _dAx*_ext, y: fillB[0].y + _dAy*_ext });
@@ -512,6 +537,8 @@ class TubePiece {
           if (_bB) {
             fillA[fillA.length-1] = _bB.pA;
             fillB[fillB.length-1] = _bB.pB;
+            _stripPast(fillA, _bB.jc, _bB.bd, false);
+            _stripPast(fillB, _bB.jc, _bB.bd, false);
           }
         } else {
           fillA.push({ x: fillA[fillA.length-1].x + _dBx*_ext, y: fillA[fillA.length-1].y + _dBy*_ext });
@@ -992,9 +1019,21 @@ class TubeManager {
       bendDiff = ((bendDiff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
 
       var maxBend = Math.PI * 0.5; // 90 degrees
-      if (Math.abs(bendDiff) > maxBend) {
+      var beyondLimit = Math.abs(bendDiff) > maxBend;
+      // Only clamp if we started within the valid zone OR have since rotated into it.
+      // This lets tubes connected at obtuse angles rotate freely until they hit ≤90°,
+      // then the clamp kicks in to prevent going back past 90°.
+      if (pivotState.startedBeyondLimit && beyondLimit) {
+        // Started beyond limit and still beyond — update the "started" flag if we
+        // crossed into valid at any point (track via pivotState)
+        pivotState.startedBeyondLimit = true; // still beyond, keep flag
+      } else if (pivotState.startedBeyondLimit && !beyondLimit) {
+        // Crossed into valid zone — clear flag so clamp engages from here
+        pivotState.startedBeyondLimit = false;
+      } else if (!pivotState.startedBeyondLimit && beyondLimit) {
+        // Was valid, now trying to go beyond — clamp it
         var excess = Math.abs(bendDiff) - maxBend;
-        var sign = bendDiff > 0 ? -1 : 1; // push back toward limit
+        var sign = bendDiff > 0 ? -1 : 1;
         rawRotation += sign * excess;
         _clampedAngle += sign * excess;
         tube.rotation = rawRotation;
@@ -1016,12 +1055,26 @@ class TubeManager {
     var armLen   = Math.hypot(tube.x - pivotX, tube.y - pivotY);
     // fingerToCenterAngle: offset from finger to arm center at start
     var fingerAngle0 = Math.atan2(fingerY - pivotY, fingerX - pivotX);
+    // Record whether we started beyond the 90° limit.
+    // If so, allow free rotation until we rotate INTO the valid zone,
+    // then enforce the limit (clamp only prevents valid→invalid, not invalid→valid).
+    var _initBendAbs = Math.PI; // default: assume beyond limit
+    var _conn = tube.connectedA || tube.connectedB;
+    if (_conn) {
+      var _mySide = tube.connectedA ? 'A' : 'B';
+      var _mySock = _mySide === 'A' ? tube.socketA() : tube.socketB();
+      var _partnerSock = _conn.side === 'A' ? _conn.tube.socketA() : _conn.tube.socketB();
+      var _bd = (_mySock.angle + Math.PI) - _partnerSock.angle;
+      _bd = ((_bd + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      _initBendAbs = Math.abs(_bd);
+    }
     return {
       pivotX: pivotX, pivotY: pivotY,
       armLen: armLen,
       initArmAngle: armAngle,
       initRotation: tube.rotation,
       fingerToCenterAngle: fingerAngle0 - armAngle,
+      startedBeyondLimit: _initBendAbs > Math.PI * 0.5,
     };
   }
 
