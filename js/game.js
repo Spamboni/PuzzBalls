@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1592;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1593;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -502,12 +502,6 @@ class Game {
         self._lastPinchAngle = undefined;
         self._editorPinchStart = null;
         self._tubePinchStart = null;
-
-        // If a group drag is already active, second finger starts group rotate — don't process as new tap
-        if (self._tubeGroupDrag && self._editorTubeMode) {
-          self._tubeGroupPinchStart = null; // will be initialized on first onMove
-          return;
-        }
 
         if (self._editorTubeMode) {
           var rect2 = self.canvas.getBoundingClientRect();
@@ -1127,6 +1121,14 @@ class Game {
               self._tubeType=tb5.val;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
             }
+          }
+        }
+        // BBox toggle button
+        if (self._editorTubeMode && self._tubeBBoxBtn) {
+          var bb = self._tubeBBoxBtn;
+          if (_px>=bb.x&&_px<=bb.x+bb.w&&_py>=bb.y-4&&_py<=bb.y+bb.h+4) {
+            window._tubeBBoxOn = window._tubeBBoxOn === false ? true : false;
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
           }
         }
         // Tube style buttons
@@ -4423,6 +4425,32 @@ class Game {
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
     this.tubes.draw(ctx, 'main', this.frame, this._tubeSelected);
+    // Draw group bounding box when group-dragging (if toggle is on)
+    if (this._tubeGroupDrag && window._tubeBBoxOn !== false && this._editorTubeMode) {
+      var _grp = this._tubeGroupDrag.group;
+      var _bx1 = Infinity, _by1 = Infinity, _bx2 = -Infinity, _by2 = -Infinity;
+      for (var _bi = 0; _bi < _grp.length; _bi++) {
+        var _bt = _grp[_bi];
+        var _bp = _bt._path;
+        if (!_bp) continue;
+        var _br = _bt.radius + 4;
+        for (var _bpi = 0; _bpi < _bp.length; _bpi++) {
+          _bx1 = Math.min(_bx1, _bp[_bpi].x - _br);
+          _by1 = Math.min(_by1, _bp[_bpi].y - _br);
+          _bx2 = Math.max(_bx2, _bp[_bpi].x + _br);
+          _by2 = Math.max(_by2, _bp[_bpi].y + _br);
+        }
+      }
+      if (_bx1 < Infinity) {
+        ctx.beginPath();
+        ctx.rect(_bx1, _by1, _bx2 - _bx1, _by2 - _by1);
+        ctx.strokeStyle = 'rgba(255,230,0,0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
     for (var i = 0; i < this.bricks.length; i++) this.bricks[i].draw(ctx);
     this._drawSplats();  // draw ON TOP of bricks, before balls
@@ -6277,6 +6305,20 @@ class Game {
       ctx.fillText(styles[si].toUpperCase(), sx2 + sW/2, row2Y + rH/2);
       this._tubeStyleBtns.push({ x:sx2, y:row2Y, w:sW, h:rH, val:styles[si] });
     }
+
+    // BBox toggle button — small, at end of style row
+    var bboxBtnW = 34;
+    var bboxX = padding + 4 * (sW + 2) + 2;
+    var bboxOn = window._tubeBBoxOn !== false;
+    ctx.fillStyle = bboxOn ? 'rgba(255,200,0,0.25)' : 'rgba(0,15,40,0.7)';
+    ctx.beginPath(); ctx.roundRect(bboxX, row2Y, bboxBtnW, rH, 3); ctx.fill();
+    ctx.strokeStyle = bboxOn ? '#ffcc00' : '#334455'; ctx.lineWidth = bboxOn ? 1.5 : 0.8;
+    ctx.beginPath(); ctx.roundRect(bboxX, row2Y, bboxBtnW, rH, 3); ctx.stroke();
+    ctx.fillStyle = bboxOn ? '#ffcc00' : '#445566';
+    ctx.font = "bold 8px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('BOX', bboxX + bboxBtnW/2, row2Y + rH/2);
+    this._tubeBBoxBtn = { x: bboxX, y: row2Y, w: bboxBtnW, h: rH };
 
     // Sliders: LENGTH | SPEED MOD | ROTATION
     var row3Y = row2Y + rH + gap;
