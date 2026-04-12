@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1580;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1636;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -99,7 +99,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:0, maxSplats:20 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, maxSubSteps: 3, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:0, maxSplats:20 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
@@ -528,6 +528,7 @@ class UI {
         pane.appendChild(resetSoundBtn);
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
+        _addSlider(pane,'Physics Steps','Settings','maxSubSteps',1,6,1,function(v){return v+' steps/frame';});
       } else {
         var bs = BallSettings[t.id];
         _addSlider(pane,'Size',       null, null, 6, 30,  1,    function(v){return v+'px';},       t.id, 'size');
