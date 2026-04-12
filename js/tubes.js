@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1604;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1605;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -421,134 +421,58 @@ class TubePiece {
       this._trimmedEdgeB = edgeB;
 
       // ── Tube body fill ─────────────────────────────────────────────────────────────────────────────────────
-      // At connected ends, snap fill corners to the joint bisector plane so both
-      // tubes meet flush with zero overlap (no opacity doubling).
-      // At open ends, extend past socket so closePath hides behind the end cap.
+      // Draw fill as a thick stroke along the centerline path — this naturally
+      // stays within the tube walls and requires no polygon math.
+      // lineWidth = tubeR*2 fills the full tube interior.
+      // At connected ends, trim the path to stop at the joint center.
       if (window.TUBE_DEBUG.bodyFill) {
-        var _ptsLen = pts.length;
-
-        // Project a point onto the bisector plane at a joint.
-        // The bisector plane passes through the joint center, perpendicular to
-        // the bisector of the two tube directions. Points are moved along the
-        // bisector direction until they lie exactly on this plane.
-        // Compute fill polygon end corners at a connected joint.
-        // Uses perpendicular-to-my-centerline cut at the joint center — simple and stable.
-        // Both tubes cut at their own perpendicular from joint center, which naturally
-        // avoids overlap since each tube's fill stops at the joint center.
-        var _bisectorFillEnd = function(conn, isStart) {
-          var oPts = conn.tube._path;
-          if (!oPts || oPts.length < 2) return null;
-          var oSide = conn.side;
-
-          // My centerline direction at the joint end
-          var myIdx = isStart ? 0 : _ptsLen - 1;
-          var myIn  = isStart ? Math.min(4,_ptsLen-1) : Math.max(_ptsLen-5,0);
-          var mDx = pts[myIn].x - pts[myIdx].x, mDy = pts[myIn].y - pts[myIdx].y;
-          var mL = Math.hypot(mDx,mDy)||1; mDx/=mL; mDy/=mL;
-          var mNx = -mDy, mNy = mDx; // perpendicular (90° CCW)
-
-          // Partner path endpoint
-          var oIdx = oSide === 'A' ? 0 : oPts.length-1;
-          var oIn  = oSide === 'A' ? Math.min(4,oPts.length-1) : Math.max(oPts.length-5,0);
-          var oDx = oPts[oIn].x - oPts[oIdx].x, oDy = oPts[oIn].y - oPts[oIdx].y;
-          var oL = Math.hypot(oDx,oDy)||1; oDx/=oL; oDy/=oL;
-
-          // Same-side connection: negate partner direction
-          var mySide = isStart ? 'A' : 'B';
-          if (mySide === oSide) { oDx = -oDx; oDy = -oDy; }
-
-          // Joint center
-          var oJx = oPts[oIdx].x, oJy = oPts[oIdx].y;
-          var jx = (pts[myIdx].x + oJx) * 0.5, jy = (pts[myIdx].y + oJy) * 0.5;
-
-          // Bisector direction (for the bisector-plane cut)
-          var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
-          if (bl < 0.001) { bx = mNx; by = mNy; } else { bx/=bl; by/=bl; }
-
-          // Cut points: walk from joint center along MY perpendicular
-          // Then project onto bisector plane so fills of both tubes meet flush
-          var ptA = { x: jx - mNx * tubeR, y: jy - mNy * tubeR };
-          var ptB = { x: jx + mNx * tubeR, y: jy + mNy * tubeR };
-
-          // Bisector projection for miter (skip if near-collinear)
-          var bendDot = mDx*oDx + mDy*oDy;
-          if (bendDot < 0.98) {
-            var dA = (ptA.x-jx)*bx + (ptA.y-jy)*by;
-            var dB = (ptB.x-jx)*bx + (ptB.y-jy)*by;
-            ptA = { x: ptA.x - dA*bx, y: ptA.y - dA*by };
-            ptB = { x: ptB.x - dB*bx, y: ptB.y - dB*by };
-          }
-
-          return {
-            pA: ptA, pB: ptB,
-            jc: { x: jx, y: jy },
-            bd: { x: bx, y: by }
-          };
-        };
-
-        var _ext = tubeR * 0.5;
-        var _dAx = pts[0].x - pts[Math.min(1,_ptsLen-1)].x, _dAy = pts[0].y - pts[Math.min(1,_ptsLen-1)].y;
-        var _dAl = Math.hypot(_dAx,_dAy)||1; _dAx/=_dAl; _dAy/=_dAl;
-        var _dBx = pts[_ptsLen-1].x - pts[Math.max(0,_ptsLen-2)].x, _dBy = pts[_ptsLen-1].y - pts[Math.max(0,_ptsLen-2)].y;
-        var _dBl = Math.hypot(_dBx,_dBy)||1; _dBx/=_dBl; _dBy/=_dBl;
-
-        // Use trimmed edges as fill base — they already stop near the joint.
-        // Replace first/last point with bisector corner to get the correct miter angle.
-        var fillA = edgeA.slice(), fillB = edgeB.slice();
-
-        // After replacing end points with bisector corners, also strip any trimmed
-        // edge points that leaked past the bisector plane (d > 0 = outward side).
-        var _stripPast = function(arr, jc, bd, fromStart) {
-          var bx2 = bd.x, by2 = bd.y, jx2 = jc.x, jy2 = jc.y;
-          if (fromStart) {
-            while (arr.length > 2) {
-              var d2 = (arr[1].x - jx2)*bx2 + (arr[1].y - jy2)*by2;
-              if (d2 <= 0) break; // inside territory
-              arr.splice(1, 1);
-            }
-          } else {
-            var last = arr.length - 2;
-            while (last > 0) {
-              var d2 = (arr[last].x - jx2)*bx2 + (arr[last].y - jy2)*by2;
-              if (d2 <= 0) break;
-              arr.splice(last, 1);
-              last--;
-            }
-          }
-        };
-
-        if (this.connectedA) {
-          var _bA = _bisectorFillEnd(this.connectedA, true);
-          if (_bA) {
-            fillA[0] = _bA.pA; fillB[0] = _bA.pB;
-            _stripPast(fillA, _bA.jc, _bA.bd, true);
-            _stripPast(fillB, _bA.jc, _bA.bd, true);
-          }
-        } else {
-          fillA.unshift({ x: fillA[0].x + _dAx*_ext, y: fillA[0].y + _dAy*_ext });
-          fillB.unshift({ x: fillB[0].x + _dAx*_ext, y: fillB[0].y + _dAy*_ext });
-        }
-
-        if (this.connectedB) {
-          var _bB = _bisectorFillEnd(this.connectedB, false);
-          if (_bB) {
-            fillA[fillA.length-1] = _bB.pA;
-            fillB[fillB.length-1] = _bB.pB;
-            _stripPast(fillA, _bB.jc, _bB.bd, false);
-            _stripPast(fillB, _bB.jc, _bB.bd, false);
-          }
-        } else {
-          fillA.push({ x: fillA[fillA.length-1].x + _dBx*_ext, y: fillA[fillA.length-1].y + _dBy*_ext });
-          fillB.push({ x: fillB[fillB.length-1].x + _dBx*_ext, y: fillB[fillB.length-1].y + _dBy*_ext });
-        }
-        ctx.beginPath();
-        ctx.moveTo(fillA[0].x, fillA[0].y);
-        for (var i = 1; i < fillA.length; i++) ctx.lineTo(fillA[i].x, fillA[i].y);
-        for (var i = fillB.length - 1; i >= 0; i--) ctx.lineTo(fillB[i].x, fillB[i].y);
-        ctx.closePath();
         var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
-        ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha * (window.TUBE_DEBUG.bodyFillMult || 1.0)) + ')';
-        ctx.fill();
+        bodyAlpha *= (window.TUBE_DEBUG.bodyFillMult || 1.0);
+        ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+        ctx.lineWidth = tubeR * 2;
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'round';
+
+        // Build a sub-path of pts trimmed at connected ends to the joint center
+        var fillPts = pts.slice();
+        var _ptsLen2 = fillPts.length;
+
+        // Trim start (socket A) to joint center if connected
+        if (this.connectedA) {
+          var oPtsA = this.connectedA.tube._path;
+          var oIdxA = this.connectedA.side === 'A' ? 0 : oPtsA.length - 1;
+          var jxA = (fillPts[0].x + oPtsA[oIdxA].x) * 0.5;
+          var jyA = (fillPts[0].y + oPtsA[oIdxA].y) * 0.5;
+          // Remove points past the joint center, insert joint center as first point
+          while (fillPts.length > 2) {
+            var d2 = Math.hypot(fillPts[1].x - jxA, fillPts[1].y - jyA);
+            var d0 = Math.hypot(fillPts[0].x - jxA, fillPts[0].y - jyA);
+            if (d0 <= d2) break;
+            fillPts.shift();
+          }
+          fillPts[0] = { x: jxA, y: jyA };
+        }
+
+        // Trim end (socket B) to joint center if connected
+        if (this.connectedB) {
+          var oPtsB = this.connectedB.tube._path;
+          var oIdxB = this.connectedB.side === 'A' ? 0 : oPtsB.length - 1;
+          var jxB = (fillPts[fillPts.length-1].x + oPtsB[oIdxB].x) * 0.5;
+          var jyB = (fillPts[fillPts.length-1].y + oPtsB[oIdxB].y) * 0.5;
+          while (fillPts.length > 2) {
+            var last = fillPts.length - 1;
+            var dLast = Math.hypot(fillPts[last].x - jxB, fillPts[last].y - jyB);
+            var dPrev = Math.hypot(fillPts[last-1].x - jxB, fillPts[last-1].y - jyB);
+            if (dLast <= dPrev) break;
+            fillPts.pop();
+          }
+          fillPts[fillPts.length-1] = { x: jxB, y: jyB };
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(fillPts[0].x, fillPts[0].y);
+        for (var i = 1; i < fillPts.length; i++) ctx.lineTo(fillPts[i].x, fillPts[i].y);
+        ctx.stroke();
       }
 
       // ── Ball inside tube — drawn UNDER walls/highlights for 3D depth ─────────
