@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1598;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1599;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -489,56 +489,19 @@ class TubePiece {
           };
         };
 
-        // Build fill from UNTRIMMED edges — trimmed edges have pulled-back endpoints that
-        // cause the fill to be anchored to the trim position instead of the joint bisector.
-        var _fullEdgeA = this._offsetPath(pts, -tubeR);
-        var _fullEdgeB = this._offsetPath(pts,  tubeR);
-
         var _ext = tubeR * 0.5;
         var _dAx = pts[0].x - pts[Math.min(1,_ptsLen-1)].x, _dAy = pts[0].y - pts[Math.min(1,_ptsLen-1)].y;
         var _dAl = Math.hypot(_dAx,_dAy)||1; _dAx/=_dAl; _dAy/=_dAl;
         var _dBx = pts[_ptsLen-1].x - pts[Math.max(0,_ptsLen-2)].x, _dBy = pts[_ptsLen-1].y - pts[Math.max(0,_ptsLen-2)].y;
         var _dBl = Math.hypot(_dBx,_dBy)||1; _dBx/=_dBl; _dBy/=_dBl;
 
-        var fillA = _fullEdgeA.slice(), fillB = _fullEdgeB.slice();
-
-        // Helper: clip fill edge array at a bisector plane, keeping only points on the
-        // inward side (where (pt-J)·bisector <= 0), then prepend the bisector corner.
-        var _clipFillEdge = function(edge, cornerPt, bisCenter, bisDir, fromStart) {
-          var bx2 = bisDir.x, by2 = bisDir.y;
-          var jx2 = bisCenter.x, jy2 = bisCenter.y;
-          if (fromStart) {
-            // Remove points from start that are on the outward side of bisector
-            var start = 0;
-            while (start < edge.length - 2) {
-              var d2 = (edge[start].x - jx2)*bx2 + (edge[start].y - jy2)*by2;
-              if (d2 <= 0.5) break; // inside territory
-              start++;
-            }
-            var clipped = edge.slice(start);
-            clipped[0] = cornerPt;
-            return clipped;
-          } else {
-            // Remove points from end
-            var end = edge.length - 1;
-            while (end > 1) {
-              var d2 = (edge[end].x - jx2)*bx2 + (edge[end].y - jy2)*by2;
-              if (d2 <= 0.5) break;
-              end--;
-            }
-            var clipped = edge.slice(0, end + 1);
-            clipped[clipped.length - 1] = cornerPt;
-            return clipped;
-          }
-        };
+        // Use trimmed edges as fill base — they already stop near the joint.
+        // Replace first/last point with bisector corner to get the correct miter angle.
+        var fillA = edgeA.slice(), fillB = edgeB.slice();
 
         if (this.connectedA) {
           var _bA = _bisectorFillEnd(this.connectedA, true);
-          if (_bA) {
-            var _bAdata = _bA._data; // bisector center and direction stored on result
-            fillA = _clipFillEdge(fillA, _bA.pA, _bA.jc, _bA.bd, true);
-            fillB = _clipFillEdge(fillB, _bA.pB, _bA.jc, _bA.bd, true);
-          }
+          if (_bA) { fillA[0] = _bA.pA; fillB[0] = _bA.pB; }
         } else {
           fillA.unshift({ x: fillA[0].x + _dAx*_ext, y: fillA[0].y + _dAy*_ext });
           fillB.unshift({ x: fillB[0].x + _dAx*_ext, y: fillB[0].y + _dAy*_ext });
@@ -547,14 +510,13 @@ class TubePiece {
         if (this.connectedB) {
           var _bB = _bisectorFillEnd(this.connectedB, false);
           if (_bB) {
-            fillA = _clipFillEdge(fillA, _bB.pA, _bB.jc, _bB.bd, false);
-            fillB = _clipFillEdge(fillB, _bB.pB, _bB.jc, _bB.bd, false);
+            fillA[fillA.length-1] = _bB.pA;
+            fillB[fillB.length-1] = _bB.pB;
           }
         } else {
           fillA.push({ x: fillA[fillA.length-1].x + _dBx*_ext, y: fillA[fillA.length-1].y + _dBy*_ext });
           fillB.push({ x: fillB[fillB.length-1].x + _dBx*_ext, y: fillB[fillB.length-1].y + _dBy*_ext });
         }
-
         ctx.beginPath();
         ctx.moveTo(fillA[0].x, fillA[0].y);
         for (var i = 1; i < fillA.length; i++) ctx.lineTo(fillA[i].x, fillA[i].y);
