@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1623;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1624;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -255,9 +255,6 @@ class TubePiece {
   }
 
   // ── Build a single closed silhouette path around the tube outline ────────────
-  // Traces: edgeA start→end, half-ellipse cap at B end, edgeB reversed, half-ellipse cap at A.
-  // Connected ends get a straight line across instead of a cap.
-  // Uses manual ellipse point generation so no ctx.save/restore breaks the path.
   _silhouettePath(ctx, offset) {
     var pts = this._path;
     if (!pts || pts.length < 2) return;
@@ -266,20 +263,18 @@ class TubePiece {
     var eB = this._offsetPath(pts,  r);
     var sockA = this.socketA(), sockB = this.socketB();
     var rx = r * 0.35, ry = r;
-    var CAP_STEPS = 12;
+    var CAP_STEPS = 14;
 
-    // Helper: emit half-ellipse arc points in world space (outward half, from -PI/2 to +PI/2)
-    function capPoints(sock, reverse) {
+    // Emit half-ellipse points in world space.
+    // Socket angle points outward. In local cap space, eA wall arrives from +Y side,
+    // eB wall from -Y side. Outward half sweeps from +PI/2 → -PI/2 clockwise (anticlockwise=false → false means CW in canvas).
+    // We go from angle PI/2 down to -PI/2 (decreasing), which is the outward bulge.
+    function capPoints(sock) {
       var out = [];
-      var start = -Math.PI / 2, end = Math.PI / 2;
+      var ca = Math.cos(sock.angle), sa = Math.sin(sock.angle);
       for (var s = 0; s <= CAP_STEPS; s++) {
-        var t = reverse
-          ? start + (end - start) * (1 - s / CAP_STEPS)
-          : start + (end - start) * (s / CAP_STEPS);
-        // Local ellipse point
+        var t = Math.PI / 2 - (Math.PI * s / CAP_STEPS); // PI/2 → -PI/2
         var lx = rx * Math.cos(t), ly = ry * Math.sin(t);
-        // Rotate by socket angle into world space
-        var ca = Math.cos(sock.angle), sa = Math.sin(sock.angle);
         out.push({
           x: sock.x + ca * lx - sa * ly,
           y: sock.y + sa * lx + ca * ly,
@@ -292,9 +287,9 @@ class TubePiece {
     ctx.moveTo(eA[0].x, eA[0].y);
     for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
 
-    // B end cap or straight
+    // B end
     if (!this.connectedB) {
-      var capB = capPoints(sockB, false);
+      var capB = capPoints(sockB);
       for (var i = 0; i < capB.length; i++) ctx.lineTo(capB[i].x, capB[i].y);
     } else {
       ctx.lineTo(eB[eB.length - 1].x, eB[eB.length - 1].y);
@@ -303,13 +298,12 @@ class TubePiece {
     // Walk eB reversed
     for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
 
-    // A end cap or straight
+    // A end
     if (!this.connectedA) {
-      var capA = capPoints(sockA, false);
+      var capA = capPoints(sockA);
       for (var i = 0; i < capA.length; i++) ctx.lineTo(capA[i].x, capA[i].y);
-    } else {
-      ctx.lineTo(eA[0].x, eA[0].y);
     }
+    // (connected A: closePath will close back to eA[0] automatically)
 
     ctx.closePath();
   }
