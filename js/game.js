@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1638;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1639;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -608,6 +608,15 @@ class Game {
           if (pos.x >= cbr.x && pos.x <= cbr.x + cbr.w && pos.y >= cbr.y && pos.y <= cbr.y + cbr.h) {
             if (window.Sound && Sound.uiToggle) Sound.uiToggle(!window[cbr.key]);
             window[cbr.key] = !window[cbr.key]; return;
+          }
+        }
+      }
+      if (self._cornerMidRects) {
+        for (var cmi = 0; cmi < self._cornerMidRects.length; cmi++) {
+          var cmr = self._cornerMidRects[cmi];
+          if (pos.x >= cmr.x && pos.x <= cmr.x + cmr.w && pos.y >= cmr.y && pos.y <= cmr.y + cmr.h) {
+            if (window.Sound && Sound.uiToggle) Sound.uiToggle(!window[cmr.key]);
+            window[cmr.key] = !window[cmr.key]; return;
           }
         }
       }
@@ -6659,6 +6668,22 @@ class Game {
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText(bs.label, obj.x, obj.y + obj.r + (obj.type === BALL_TYPES.EXPLODER ? 10 : 3));
     }
+    // ── Always-on velocity indicator above ball ───────────────────────────────
+    if (window._showVelocityIndicator !== false) {
+      var _spd = Math.hypot(obj.vx || 0, obj.vy || 0);
+      var _spdStr = _spd.toFixed(1);
+      ctx.save();
+      ctx.font = "bold 11px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      var _velY = obj.y - obj.r - 4;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillText(_spdStr, obj.x + 1, _velY + 1);
+      ctx.fillStyle = '#00ff44';
+      ctx.shadowColor = '#00cc33'; ctx.shadowBlur = 5;
+      ctx.fillText(_spdStr, obj.x, _velY);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
   }
 
   _drawGravityRange(well) {
@@ -6779,20 +6804,6 @@ class Game {
     }
     ctx.restore();
 
-    // ── Launch velocity readout above ball ────────────────────────────────────
-    var _bs3 = BallSettings[obj.type] || BallSettings.bouncer;
-    var _launchSpd = Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (_bs3.velocity || 1);
-    ctx.save();
-    ctx.font = "bold 12px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    var _spdTxt = 'v ' + _launchSpd.toFixed(1);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillText(_spdTxt, obj.x + 1, obj.y - obj.r - 6 + 1);
-    ctx.fillStyle = '#ffee44';
-    ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6;
-    ctx.fillText(_spdTxt, obj.x, obj.y - obj.r - 6);
-    ctx.shadowBlur = 0;
-    ctx.restore();
   }
 
   _drawHudClearButtons() {
@@ -6951,21 +6962,28 @@ class Game {
     var btnW = 28, btnH = 28, gap = 4, margin = 6;
     var btmY = H - margin - btnH;
 
-    // Bottom-left — two rows of toggle buttons
+    // Bottom-left — three rows of toggle buttons
     // Row A (top): brick note display buttons
     var brickBtns = [
       { key: '_showBrickNote',      label: '♪',   default: true },
       { key: '_showBrickOctave',    label: '8va', default: true },
       { key: '_showBrickTimbre',    label: 'TIM', default: true },
     ];
-    // Row B (bottom): ball display buttons
+    // Row B (middle): new feature toggles
+    var midBtns = [
+      { key: '_showVelocityIndicator', label: 'VEL', default: true },
+      { key: '_showDmgNumbers',        label: 'DMG', default: true },
+    ];
+    // Row C (bottom): ball display buttons
     var leftBtns = [
       { key: '_showVelocityArrows', label: '↗',   default: false },
       { key: '_showBallLabel',      label: 'Aa',  default: false },
       { key: '_showBallAbbr',       label: 'BNC', default: true  },
     ];
-    var rowAY = btmY - btnH - gap;
+    var rowAY = btmY - (btnH + gap) * 2;
+    var rowBY = btmY - (btnH + gap);
     this._cornerBrickBtns = [];
+    this._cornerMidRects  = [];
     this._cornerLeftRects = [];
 
     // Helper to draw a toggle button
@@ -6990,6 +7008,14 @@ class Game {
       var lx = margin + bi3 * (btnW + gap);
       drawToggleBtn(lx, rowAY, bb.label, window[bb.key], 'rgba(180,80,255,0.7)');
       this._cornerBrickBtns.push({ x: lx, y: rowAY, w: btnW, h: btnH, key: bb.key });
+    }
+
+    for (var mi = 0; mi < midBtns.length; mi++) {
+      var mb = midBtns[mi];
+      if (window[mb.key] === undefined) window[mb.key] = mb.default;
+      var mx = margin + mi * (btnW + gap);
+      drawToggleBtn(mx, rowBY, mb.label, window[mb.key], 'rgba(0,220,120,0.7)');
+      this._cornerMidRects.push({ x: mx, y: rowBY, w: btnW, h: btnH, key: mb.key });
     }
 
     for (var li = 0; li < leftBtns.length; li++) {
@@ -7075,6 +7101,7 @@ class Game {
 
     // ── Floating damage numbers ───────────────────────────────────────────────
     if (!this._dmgNumbers) return;
+    if (window._showDmgNumbers === false) { this._dmgNumbers.length = 0; return; }
     var SOLID_FRAMES = 18;   // ~0.3s constant velocity + full opacity
     var DECAY_FRAMES = 37;   // then exponential decay over ~0.6s
     for (var di = this._dmgNumbers.length - 1; di >= 0; di--) {
