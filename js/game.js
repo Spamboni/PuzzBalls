@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1591;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1592;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -502,6 +502,12 @@ class Game {
         self._lastPinchAngle = undefined;
         self._editorPinchStart = null;
         self._tubePinchStart = null;
+
+        // If a group drag is already active, second finger starts group rotate — don't process as new tap
+        if (self._tubeGroupDrag && self._editorTubeMode) {
+          self._tubeGroupPinchStart = null; // will be initialized on first onMove
+          return;
+        }
 
         if (self._editorTubeMode) {
           var rect2 = self.canvas.getBoundingClientRect();
@@ -5929,18 +5935,34 @@ class Game {
         this._tubeDragging = null;
         return;
       }
-      // Middle tube (both ends connected): always group-drag the whole chain.
-      // Only end tubes (one connection) get pivot behavior.
-      var isMiddleTube = hitTube.connectedA && hitTube.connectedB;
-      // Build/select: check if tap is near a joint — if so, group drag
-      var joint = this.tubes.findJointAt(pos.x, pos.y, hitTube.radius + 8);
-      if (isMiddleTube || (joint && (hitTube.connectedA || hitTube.connectedB))) {
+      // Zone logic for connected tubes:
+      // - Tap within endZone of a FREE socket on an end tube → pivot around its joint
+      // - Everything else on a connected tube → group drag the whole chain
+      // This means the entire tube body (except the free end tip) moves the group.
+      var endZone = hitTube.radius * 2.5;
+      var tappedFreeEnd = false;
+      if (hitTube.connectedA || hitTube.connectedB) {
+        // Check if tap is near a free (unconnected) socket — only for end tubes
+        var isEndTube = !(hitTube.connectedA && hitTube.connectedB);
+        if (isEndTube) {
+          if (!hitTube.connectedA) {
+            var sA = hitTube.socketA();
+            if (Math.hypot(pos.x - sA.x, pos.y - sA.y) < endZone) tappedFreeEnd = true;
+          }
+          if (!hitTube.connectedB) {
+            var sB = hitTube.socketB();
+            if (Math.hypot(pos.x - sB.x, pos.y - sB.y) < endZone) tappedFreeEnd = true;
+          }
+        }
+      }
+
+      if ((hitTube.connectedA || hitTube.connectedB) && !tappedFreeEnd) {
+        // Group drag — whole connected chain moves as one unit
         var group = this.tubes.getConnectedGroup(hitTube);
         this._tubeGroupDrag = {
           group: group,
           startX: pos.x, startY: pos.y,
           origins: group.map(function(t) { return { x: t.x, y: t.y }; }),
-          // Store group centroid for two-finger rotate
           cx: group.reduce(function(s,t){return s+t.x;},0)/group.length,
           cy: group.reduce(function(s,t){return s+t.y;},0)/group.length,
           rotOrigins: group.map(function(t) { return { x: t.x, y: t.y, r: t.rotation }; }),
@@ -5949,12 +5971,12 @@ class Game {
         this._tubeGroupPinchStart = null;
         return;
       }
-      // Normal drag
+      // Normal drag / pivot
       this._tubeGroupDrag = null;
       this._tubeDragging = hitTube;
       this._tubeDragOffX = pos.x - hitTube.x;
       this._tubeDragOffY = pos.y - hitTube.y;
-      this._tubePivotState = (hitTube.connectedA || hitTube.connectedB)
+      this._tubePivotState = tappedFreeEnd
         ? this.tubes.makePivotState(hitTube, pos.x, pos.y)
         : null;
       return;
