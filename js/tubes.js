@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1614;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1618;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -636,17 +636,48 @@ class TubePiece {
     }
 
     // ── Snap proximity glow on end caps ───────────────────────────────────────
-    // When a snap target is detected, the matching cap glows bright instead of
-    // showing separate indicator circles
+    // When a snap target is detected, the matching cap glows cyan instead of
+    // drawing a separate indicator circle
     if (this._snapHighlight) {
-      // Determine which socket is snapping
       var sA = this.socketA(), sB = this.socketB();
       var glowSock = (Math.hypot(sA.x - this._snapHighlight.x, sA.y - this._snapHighlight.y) <
                       Math.hypot(sB.x - this._snapHighlight.x, sB.y - this._snapHighlight.y)) ? sA : sB;
-      ctx.beginPath(); ctx.arc(glowSock.x, glowSock.y, tubeR + 4, 0, Math.PI * 2);
-      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 14;
-      ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.save();
+      ctx.translate(glowSock.x, glowSock.y);
+      ctx.rotate(glowSock.angle);
+      var rx = tubeR * 0.35, ry = tubeR;
+      ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00eeff';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 18;
+      ctx.stroke();
+      // Outer halo pass for extra glow
+      ctx.beginPath(); ctx.ellipse(0, 0, rx + 3, ry + 3, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0,238,255,0.25)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+      // Trigger snap proximity sound (throttled via flag on tube)
+      if (!this._snapSoundPlayed) {
+        this._snapSoundPlayed = true;
+        if (window.Sound && Sound.getCtx) {
+          var _sc = Sound.getCtx();
+          if (_sc) {
+            var _sg = _sc.createGain(); _sg.connect(_sc.destination);
+            _sg.gain.setValueAtTime(0.04, _sc.currentTime);
+            _sg.gain.exponentialRampToValueAtTime(0.001, _sc.currentTime + 0.35);
+            var _so = _sc.createOscillator(); _so.connect(_sg);
+            _so.type = 'sawtooth';
+            _so.frequency.setValueAtTime(180, _sc.currentTime);
+            _so.frequency.linearRampToValueAtTime(220, _sc.currentTime + 0.08);
+            _so.frequency.exponentialRampToValueAtTime(120, _sc.currentTime + 0.35);
+            _so.start(_sc.currentTime); _so.stop(_sc.currentTime + 0.35);
+          }
+        }
+      }
+    } else {
+      this._snapSoundPlayed = false;
     }
 
     // ── Editor selection highlight ────────────────────────────────────────────
