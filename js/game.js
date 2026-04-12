@@ -1,27 +1,39 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1587;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1588;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
 
 window._buildTubeDebugPanel = function() {
+  // Toggle panel visibility — don't destroy it (preserves slider state)
   var existing = document.getElementById('tube-debug-panel');
-  if (existing) { existing.remove(); window._tubeDebugPanelOpen = false; return; }
-  window._tubeDebugPanelOpen = true;
+  if (existing) {
+    existing.style.display = existing.style.display === 'none' ? 'block' : 'none';
+    return;
+  }
 
   var panel = document.createElement('div');
   panel.id = 'tube-debug-panel';
   panel.style.cssText = [
     'position:fixed', 'bottom:80px', 'left:10px', 'z-index:9999',
-    'background:rgba(0,0,0,0.88)', 'border:1px solid #00ffcc',
-    'border-radius:10px', 'padding:10px 14px', 'min-width:190px',
+    'background:rgba(0,0,0,0.92)', 'border:1px solid #00ffcc',
+    'border-radius:10px', 'padding:10px 14px', 'min-width:200px',
     'font-family:monospace', 'font-size:13px', 'color:#00ffcc',
     'box-shadow:0 0 16px #00ffcc44', 'user-select:none'
   ].join(';');
 
-  var title = document.createElement('div');
-  title.textContent = '🔬 TUBE LAYERS';
-  title.style.cssText = 'font-weight:bold; margin-bottom:8px; color:#ffffff; letter-spacing:2px; font-size:11px;';
-  panel.appendChild(title);
+  // Title row with X close button
+  var titleRow = document.createElement('div');
+  titleRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;';
+  var titleTxt = document.createElement('span');
+  titleTxt.textContent = '🔬 TUBE LAYERS';
+  titleTxt.style.cssText = 'font-weight:bold; color:#ffffff; letter-spacing:2px; font-size:11px;';
+  var closeBtn = document.createElement('button');
+  closeBtn.textContent = '✕';
+  closeBtn.style.cssText = 'background:none; border:none; color:#00ffcc; font-size:14px; cursor:pointer; padding:0 2px; line-height:1;';
+  closeBtn.addEventListener('click', function() { panel.style.display = 'none'; });
+  titleRow.appendChild(titleTxt);
+  titleRow.appendChild(closeBtn);
+  panel.appendChild(titleRow);
 
   var flags = [
     { key: 'bodyFill',    label: 'Body fill (0.06α)' },
@@ -41,29 +53,27 @@ window._buildTubeDebugPanel = function() {
     cb.type = 'checkbox';
     cb.checked = window.TUBE_DEBUG[f.key];
     cb.style.cssText = 'width:16px; height:16px; cursor:pointer; accent-color:#00ffcc;';
-    cb.addEventListener('change', function() {
-      window.TUBE_DEBUG[f.key] = cb.checked;
-    });
+    cb.addEventListener('change', function() { window.TUBE_DEBUG[f.key] = cb.checked; });
     var lbl = document.createElement('span');
     lbl.textContent = f.label;
-    row.appendChild(cb);
-    row.appendChild(lbl);
+    row.appendChild(cb); row.appendChild(lbl);
     panel.appendChild(row);
   });
 
-  // Body fill brightness slider
-  var sliderRow = document.createElement('div');
-  sliderRow.style.cssText = 'margin-top:8px; font-size:11px; color:#aaffcc;';
-  sliderRow.innerHTML = 'Fill brightness';
+  // Body fill brightness slider — label and slider as separate elements
+  var sliderLabel = document.createElement('div');
+  sliderLabel.style.cssText = 'margin-top:8px; font-size:11px; color:#aaffcc;';
+  sliderLabel.textContent = 'Fill brightness: 1.0x';
   var slider = document.createElement('input');
-  slider.type = 'range'; slider.min = '0'; slider.max = '20'; slider.step = '0.5'; slider.value = '1';
-  slider.style.cssText = 'width:100%; accent-color:#00ffcc; margin-top:2px;';
+  slider.type = 'range'; slider.min = '0'; slider.max = '20'; slider.step = '0.5';
+  slider.value = String(window.TUBE_DEBUG.bodyFillMult || 1.0);
+  slider.style.cssText = 'width:100%; accent-color:#00ffcc; margin-top:4px; display:block;';
   slider.addEventListener('input', function() {
     window.TUBE_DEBUG.bodyFillMult = parseFloat(slider.value);
-    sliderRow.innerHTML = 'Fill brightness: ' + slider.value + 'x';
+    sliderLabel.textContent = 'Fill brightness: ' + slider.value + 'x';
   });
-  sliderRow.appendChild(slider);
-  panel.appendChild(sliderRow);
+  panel.appendChild(sliderLabel);
+  panel.appendChild(slider);
 
   // Reset all button
   var resetBtn = document.createElement('button');
@@ -74,8 +84,12 @@ window._buildTubeDebugPanel = function() {
     'border-radius:6px', 'cursor:pointer', 'font-family:monospace', 'font-size:12px'
   ].join(';');
   resetBtn.addEventListener('click', function() {
-    Object.keys(window.TUBE_DEBUG).forEach(function(k) { window.TUBE_DEBUG[k] = true; });
+    Object.keys(window.TUBE_DEBUG).forEach(function(k) {
+      if (typeof window.TUBE_DEBUG[k] === 'boolean') window.TUBE_DEBUG[k] = true;
+      if (k === 'bodyFillMult') window.TUBE_DEBUG[k] = 1.0;
+    });
     panel.querySelectorAll('input[type=checkbox]').forEach(function(cb) { cb.checked = true; });
+    slider.value = '1'; sliderLabel.textContent = 'Fill brightness: 1.0x';
   });
   panel.appendChild(resetBtn);
 
@@ -609,7 +623,7 @@ class Game {
             self._editorMode=false; self._editorTubeMode=false;
             window._tubeEditorMode=false; self._editorSelected=null;
             var _dbgBtnDone = document.getElementById('tube-debug-btn'); if (_dbgBtnDone) _dbgBtnDone.style.display='none';
-            var _dbgPanelDone = document.getElementById('tube-debug-panel'); if (_dbgPanelDone) _dbgPanelDone.remove();
+            var _dbgPanelDone = document.getElementById('tube-debug-panel'); if (_dbgPanelDone) _dbgPanelDone.style.display='none';
             self._tubeSelected=null;
             self._editorBrickDeleteMode=false;
             self._editorScrollY=0;
@@ -706,7 +720,7 @@ class Game {
               } else {
                 if (_dbgBtn) _dbgBtn.style.display = 'none';
                 var _panel = document.getElementById('tube-debug-panel');
-                if (_panel) _panel.remove();
+                if (_panel) _panel.style.display='none';
               }
               // Clear stale button rects from other tabs
               if (tb2.id==='tubes') {
