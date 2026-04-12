@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1625;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1626;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -255,18 +255,38 @@ class TubePiece {
   }
 
   // ── Silhouette outline for highlight rendering ────────────────────────────────
-  // Free tube: one closed path (wall A → cap B → wall B reversed → cap A).
-  // Connected tube: two open strokes (wall A, wall B), capped only at free ends.
-  // NO cross-lines at connected joints — the fillet fills that gap visually.
+  // Uses _trimmedEdgeA/B (set during draw) so walls stop exactly at joint boundaries.
+  // Free ends get ellipse caps. Connected ends just stop — fillet covers the gap.
   _silhouettePath(ctx, offset) {
     var pts = this._path;
     if (!pts || pts.length < 2) return;
     var r  = this.radius + offset;
-    var eA = this._offsetPath(pts, -r);
-    var eB = this._offsetPath(pts,  r);
     var sockA = this.socketA(), sockB = this.socketB();
     var rx = r * 0.35, ry = r;
     var STEPS = 14;
+
+    // Use trimmed edges if available (set during draw), else recompute
+    var baseA = this._trimmedEdgeA, baseB = this._trimmedEdgeB;
+    var eA, eB;
+    if (baseA && baseB && baseA.length >= 2 && baseB.length >= 2) {
+      // Re-offset the trimmed centerline by the extra highlight offset amount
+      // Simple approach: offset each trimmed point by the extra (offset) amount
+      // using the same perpendicular logic as _offsetPath
+      var extra = offset; // extra pixels beyond tubeR
+      eA = baseA.map(function(p, i, arr) {
+        var prev = arr[Math.max(0, i-1)], next = arr[Math.min(arr.length-1, i+1)];
+        var tx = next.x - prev.x, ty = next.y - prev.y, l = Math.hypot(tx,ty)||1;
+        return { x: p.x + (-ty/l)*extra, y: p.y + (tx/l)*extra };
+      });
+      eB = baseB.map(function(p, i, arr) {
+        var prev = arr[Math.max(0, i-1)], next = arr[Math.min(arr.length-1, i+1)];
+        var tx = next.x - prev.x, ty = next.y - prev.y, l = Math.hypot(tx,ty)||1;
+        return { x: p.x + (-ty/l)*(-extra), y: p.y + (tx/l)*(-extra) };
+      });
+    } else {
+      eA = this._offsetPath(pts, -r);
+      eB = this._offsetPath(pts,  r);
+    }
 
     function cap(sock) {
       var out = [], ca = Math.cos(sock.angle), sa = Math.sin(sock.angle);
@@ -281,7 +301,6 @@ class TubePiece {
     var freeA = !this.connectedA, freeB = !this.connectedB;
 
     if (freeA && freeB) {
-      // Single closed loop
       ctx.beginPath();
       ctx.moveTo(eA[0].x, eA[0].y);
       for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
@@ -292,20 +311,19 @@ class TubePiece {
       for (var i = 0; i < cA.length; i++) ctx.lineTo(cA[i].x, cA[i].y);
       ctx.closePath();
     } else {
-      // Wall A stroke: start at A end, finish at B end
+      // Wall A
       ctx.beginPath();
       ctx.moveTo(eA[0].x, eA[0].y);
       for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
-      // Wall B stroke: start at B end, finish at A end (separate subpath via moveTo)
+      // Wall B (separate subpath)
       ctx.moveTo(eB[eB.length-1].x, eB[eB.length-1].y);
       for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
-      // Cap at free B end: bridge from eA tip to eB tip
+      // Free end caps only
       if (freeB) {
         ctx.moveTo(eA[eA.length-1].x, eA[eA.length-1].y);
         var cB2 = cap(sockB);
         for (var i = 0; i < cB2.length; i++) ctx.lineTo(cB2[i].x, cB2[i].y);
       }
-      // Cap at free A end: bridge from eB[0] to eA[0]
       if (freeA) {
         ctx.moveTo(eB[0].x, eB[0].y);
         var cA2 = cap(sockA);
