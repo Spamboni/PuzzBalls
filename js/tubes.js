@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1602;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1603;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -10,6 +10,7 @@ window.TUBE_DEBUG = window.TUBE_DEBUG || {
   jointFillet:  true,
   endCaps:      true,
   capDarkFill:  true,  // Dark interior ellipse at tube mouth
+  bodyFillMult: 1.0,  // Debug multiplier for body fill alpha (1.0 = normal)
 };
 // tubes.js — PuzzBalls tube system
 // Tube pieces: straight, elbow90/45/30/15, uturn, funnel
@@ -454,6 +455,10 @@ class TubePiece {
           var oDx = oPts[oIn].x - oPts[oIdx].x, oDy = oPts[oIn].y - oPts[oIdx].y;
           var oL = Math.hypot(oDx,oDy)||1; oDx/=oL; oDy/=oL;
 
+          // Same-side connection (A-A or B-B): negate partner dir so bisector is correct
+          var mySide = isStart ? 'A' : 'B';
+          if (mySide === oSide) { oDx = -oDx; oDy = -oDy; }
+
           // Bisector of both inward directions
           var bx = mDx+oDx, by = mDy+oDy, bl = Math.hypot(bx,by);
           if (bl < 0.001) { bx = mNx; by = mNy; } else { bx/=bl; by/=bl; }
@@ -550,7 +555,7 @@ class TubePiece {
         for (var i = fillB.length - 1; i >= 0; i--) ctx.lineTo(fillB[i].x, fillB[i].y);
         ctx.closePath();
         var bodyAlpha = style === 'glass' ? 0.06 : style === 'window' ? 0.22 : 0.75;
-        ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha) + ')';
+        ctx.fillStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * bodyAlpha * (window.TUBE_DEBUG.bodyFillMult || 1.0)) + ')';
         ctx.fill();
       }
 
@@ -1168,6 +1173,11 @@ class TubeManager {
     var lenA = Math.hypot(dAx, dAy) || 1, lenB = Math.hypot(dBx, dBy) || 1;
     dAx /= lenA; dAy /= lenA; dBx /= lenB; dBy /= lenB;
 
+    // Same-side connections (A-A or B-B): both dirs point same way — negate dB
+    // so bisector math treats them as opposing, giving correct fillet geometry.
+    var sameSide = (sideA === sideB);
+    if (sameSide) { dBx = -dBx; dBy = -dBy; }
+
     // ── Angle between tubes ─────────────────────────────────────────────
     var dot = dAx * dBx + dAy * dBy;
     dot = Math.max(-1, Math.min(1, dot));
@@ -1285,7 +1295,7 @@ class TubeManager {
     // The wall at each endpoint continues in the tube's centerline direction.
     // Extending AWAY from each tube (-dA from tube A's endpoint, -dB from tube B's)
     // and intersecting gives a control point that makes the Bezier tangent to both walls.
-    var _bezierCP = function(pA, pB) {
+    var _bezierCP = function(pA, pB, maxDist) {
       var det = (-dAx) * (-dBy) - (-dAy) * (-dBx);
       if (Math.abs(det) < 1e-6) {
         return { x: (pA.x + pB.x) / 2, y: (pA.y + pB.y) / 2 };
@@ -1293,14 +1303,14 @@ class TubeManager {
       var t = ((pB.x - pA.x) * (-dBy) - (pB.y - pA.y) * (-dBx)) / det;
       var cpx = pA.x + t * (-dAx);
       var cpy = pA.y + t * (-dAy);
-      var maxD = r * 5;
       var d = Math.hypot(cpx - jx, cpy - jy);
-      if (d > maxD) { cpx = jx + (cpx - jx) * maxD / d; cpy = jy + (cpy - jy) * maxD / d; }
+      if (d > maxDist) { cpx = jx + (cpx - jx) * maxDist / d; cpy = jy + (cpy - jy) * maxDist / d; }
       return { x: cpx, y: cpy };
     };
 
-    var outsideCP = _bezierCP(outsideA, outsideB);
-    var insideCP  = _bezierCP(insideA, insideB);
+    // Outside curve can extend further; inside curve capped tighter to prevent pinching
+    var outsideCP = _bezierCP(outsideA, outsideB, r * 5);
+    var insideCP  = _bezierCP(insideA, insideB, r * 1.5);
 
     // Joint body fill removed — was covering balls passing through joints
 
