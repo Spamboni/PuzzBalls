@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1616;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1617;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -548,8 +548,6 @@ class Game {
               self._tubeGroupPinchStart = {
                 angle: Math.atan2(pp1.y - pp0.y, pp1.x - pp0.x),
                 mx: (pp0.x + pp1.x) * 0.5, my: (pp0.y + pp1.y) * 0.5,
-                cx: gcx2, cy: gcy2,
-                rotOrigins: grp2.map(function(t) { return { x: t.x, y: t.y, r: t.rotation }; }),
               };
               self._tubeDragging = null;
               self._tubePinchStart = null;
@@ -1564,8 +1562,6 @@ class Game {
             self._tubeGroupPinchStart = {
               angle: Math.atan2(gf1.y - gf0.y, gf1.x - gf0.x),
               mx: (gf0.x + gf1.x) * 0.5, my: (gf0.y + gf1.y) * 0.5,
-              cx: gd.cx, cy: gd.cy,
-              rotOrigins: gd.group.map(function(t) { return { x: t.x, y: t.y, r: t.rotation }; }),
             };
           } else {
             var gps = self._tubeGroupPinchStart;
@@ -1574,15 +1570,18 @@ class Game {
             var newMx = (gf0.x + gf1.x) * 0.5, newMy = (gf0.y + gf1.y) * 0.5;
             var dMx = newMx - gps.mx, dMy = newMy - gps.my;
             var cosA = Math.cos(dAngle), sinA = Math.sin(dAngle);
+            // Pivot = current finger midpoint. Rotate each tube around it, then shift by midpoint translation.
             for (var gi2 = 0; gi2 < gd.group.length; gi2++) {
-              var ro = gps.rotOrigins[gi2];
-              // Rotate around group centroid then translate
-              var rx = ro.x - gps.cx, ry = ro.y - gps.cy;
-              gd.group[gi2].x = gps.cx + rx*cosA - ry*sinA + dMx;
-              gd.group[gi2].y = gps.cy + rx*sinA + ry*cosA + dMy;
-              gd.group[gi2].rotation = ro.r + dAngle;
-              gd.group[gi2].rebuild();
+              var t2 = gd.group[gi2];
+              var rx = t2.x - gps.mx, ry = t2.y - gps.my;
+              t2.x = gps.mx + rx*cosA - ry*sinA + dMx;
+              t2.y = gps.my + rx*sinA + ry*cosA + dMy;
+              t2.rotation += dAngle;
+              t2.rebuild();
             }
+            // Advance pivot state for next frame delta
+            gps.angle = newAngle;
+            gps.mx = newMx; gps.my = newMy;
             gd.snapCandidate = self.tubes.checkSnapGroup(gd.group);
           }
           return;
