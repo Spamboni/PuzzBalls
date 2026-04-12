@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1589;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1590;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1504,9 +1504,42 @@ class Game {
           return;
         }
       }
-      // Group drag: move all connected tubes together
+      // Group drag: move all connected tubes together (one or two fingers)
       if (self._tubeGroupDrag) {
         var gd = self._tubeGroupDrag;
+        // Two-finger: rotate + translate whole group
+        if (e && e.touches && e.touches.length >= 2) {
+          var rect2 = self.canvas.getBoundingClientRect();
+          var gf0 = { x: e.touches[0].clientX - rect2.left, y: e.touches[0].clientY - rect2.top };
+          var gf1 = { x: e.touches[1].clientX - rect2.left, y: e.touches[1].clientY - rect2.top };
+          if (!self._tubeGroupPinchStart) {
+            self._tubeGroupPinchStart = {
+              angle: Math.atan2(gf1.y - gf0.y, gf1.x - gf0.x),
+              mx: (gf0.x + gf1.x) * 0.5, my: (gf0.y + gf1.y) * 0.5,
+              cx: gd.cx, cy: gd.cy,
+              rotOrigins: gd.group.map(function(t) { return { x: t.x, y: t.y, r: t.rotation }; }),
+            };
+          } else {
+            var gps = self._tubeGroupPinchStart;
+            var newAngle = Math.atan2(gf1.y - gf0.y, gf1.x - gf0.x);
+            var dAngle = newAngle - gps.angle;
+            var newMx = (gf0.x + gf1.x) * 0.5, newMy = (gf0.y + gf1.y) * 0.5;
+            var dMx = newMx - gps.mx, dMy = newMy - gps.my;
+            var cosA = Math.cos(dAngle), sinA = Math.sin(dAngle);
+            for (var gi2 = 0; gi2 < gd.group.length; gi2++) {
+              var ro = gps.rotOrigins[gi2];
+              // Rotate around group centroid then translate
+              var rx = ro.x - gps.cx, ry = ro.y - gps.cy;
+              gd.group[gi2].x = gps.cx + rx*cosA - ry*sinA + dMx;
+              gd.group[gi2].y = gps.cy + rx*sinA + ry*cosA + dMy;
+              gd.group[gi2].rotation = ro.r + dAngle;
+              gd.group[gi2].rebuild();
+            }
+          }
+          return;
+        }
+        // One-finger: translate only
+        self._tubeGroupPinchStart = null;
         var dx2 = pos.x - gd.startX;
         var dy2 = pos.y - gd.startY;
         for (var gi = 0; gi < gd.group.length; gi++) {
@@ -1629,6 +1662,7 @@ class Game {
       // Release tube drag — apply snap if close enough
       if (self._tubeGroupDrag) {
         self._tubeGroupDrag = null;
+        self._tubeGroupPinchStart = null;
       }
       if (self._tubeDragging) {
         var snapResult = self.tubes.checkSnap(self._tubeDragging);
@@ -5821,16 +5855,24 @@ class Game {
         this._tubeDragging = null;
         return;
       }
+      // Middle tube (both ends connected): always group-drag the whole chain.
+      // Only end tubes (one connection) get pivot behavior.
+      var isMiddleTube = hitTube.connectedA && hitTube.connectedB;
       // Build/select: check if tap is near a joint — if so, group drag
       var joint = this.tubes.findJointAt(pos.x, pos.y, hitTube.radius + 8);
-      if (joint && (hitTube.connectedA || hitTube.connectedB)) {
+      if (isMiddleTube || (joint && (hitTube.connectedA || hitTube.connectedB))) {
         var group = this.tubes.getConnectedGroup(hitTube);
         this._tubeGroupDrag = {
           group: group,
           startX: pos.x, startY: pos.y,
-          origins: group.map(function(t) { return { x: t.x, y: t.y }; })
+          origins: group.map(function(t) { return { x: t.x, y: t.y }; }),
+          // Store group centroid for two-finger rotate
+          cx: group.reduce(function(s,t){return s+t.x;},0)/group.length,
+          cy: group.reduce(function(s,t){return s+t.y;},0)/group.length,
+          rotOrigins: group.map(function(t) { return { x: t.x, y: t.y, r: t.rotation }; }),
         };
         this._tubeDragging = null;
+        this._tubeGroupPinchStart = null;
         return;
       }
       // Normal drag
