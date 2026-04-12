@@ -256,23 +256,19 @@ class TubePiece {
 
   // ── Silhouette outline for highlight rendering ────────────────────────────────
   // Uses _trimmedEdgeA/B (set during draw) so walls stop exactly at joint boundaries.
-  // Free ends get ellipse caps. Connected ends just stop — fillet covers the gap.
+  // Free ends get full ellipse caps. Connected ends just stop — joint highlight covers the gap.
   _silhouettePath(ctx, offset) {
     var pts = this._path;
     if (!pts || pts.length < 2) return;
     var r  = this.radius + offset;
     var sockA = this.socketA(), sockB = this.socketB();
     var rx = r * 0.35, ry = r;
-    var STEPS = 14;
 
     // Use trimmed edges if available (set during draw), else recompute
     var baseA = this._trimmedEdgeA, baseB = this._trimmedEdgeB;
     var eA, eB;
     if (baseA && baseB && baseA.length >= 2 && baseB.length >= 2) {
-      // Re-offset the trimmed centerline by the extra highlight offset amount
-      // Simple approach: offset each trimmed point by the extra (offset) amount
-      // using the same perpendicular logic as _offsetPath
-      var extra = offset; // extra pixels beyond tubeR
+      var extra = offset;
       eA = baseA.map(function(p, i, arr) {
         var prev = arr[Math.max(0, i-1)], next = arr[Math.min(arr.length-1, i+1)];
         var tx = next.x - prev.x, ty = next.y - prev.y, l = Math.hypot(tx,ty)||1;
@@ -288,47 +284,26 @@ class TubePiece {
       eB = this._offsetPath(pts,  r);
     }
 
-    function cap(sock) {
-      var out = [], ca = Math.cos(sock.angle), sa = Math.sin(sock.angle);
-      for (var s = 0; s <= STEPS; s++) {
-        var t = Math.PI / 2 - Math.PI * s / STEPS;
-        var lx = rx * Math.cos(t), ly = ry * Math.sin(t);
-        out.push({ x: sock.x + ca*lx - sa*ly, y: sock.y + sa*lx + ca*ly });
-      }
-      return out;
-    }
-
     var freeA = !this.connectedA, freeB = !this.connectedB;
 
-    if (freeA && freeB) {
-      ctx.beginPath();
-      ctx.moveTo(eA[0].x, eA[0].y);
-      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
-      var cB = cap(sockB);
-      for (var i = 0; i < cB.length; i++) ctx.lineTo(cB[i].x, cB[i].y);
-      for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
-      var cA = cap(sockA);
-      for (var i = 0; i < cA.length; i++) ctx.lineTo(cA[i].x, cA[i].y);
-      ctx.closePath();
-    } else {
-      // Wall A
-      ctx.beginPath();
-      ctx.moveTo(eA[0].x, eA[0].y);
-      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
-      // Wall B (separate subpath)
-      ctx.moveTo(eB[eB.length-1].x, eB[eB.length-1].y);
-      for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
-      // Free end caps only
-      if (freeB) {
-        ctx.moveTo(eA[eA.length-1].x, eA[eA.length-1].y);
-        var cB2 = cap(sockB);
-        for (var i = 0; i < cB2.length; i++) ctx.lineTo(cB2[i].x, cB2[i].y);
-      }
-      if (freeA) {
-        ctx.moveTo(eB[0].x, eB[0].y);
-        var cA2 = cap(sockA);
-        for (var i = 0; i < cA2.length; i++) ctx.lineTo(cA2[i].x, cA2[i].y);
-      }
+    // Wall A subpath
+    ctx.beginPath();
+    ctx.moveTo(eA[0].x, eA[0].y);
+    for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+    // Wall B subpath (reversed direction)
+    ctx.moveTo(eB[eB.length-1].x, eB[eB.length-1].y);
+    for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
+
+    // Free end caps as full ellipses (no chord line across the middle)
+    if (freeB) {
+      ctx.moveTo(sockB.x + Math.cos(sockB.angle)*rx + Math.sin(sockB.angle)*0,
+                 sockB.y + Math.sin(sockB.angle)*rx - Math.cos(sockB.angle)*0);
+      ctx.ellipse(sockB.x, sockB.y, rx, ry, sockB.angle, 0, Math.PI * 2);
+    }
+    if (freeA) {
+      ctx.moveTo(sockA.x + Math.cos(sockA.angle)*rx + Math.sin(sockA.angle)*0,
+                 sockA.y + Math.sin(sockA.angle)*rx - Math.cos(sockA.angle)*0);
+      ctx.ellipse(sockA.x, sockA.y, rx, ry, sockA.angle, 0, Math.PI * 2);
     }
   }
 
@@ -1247,6 +1222,8 @@ class TubeManager {
       tube.draw(ctx, frame, tube === selectedTube);
     }
     if (window.TUBE_DEBUG.jointFillet) this._drawJointsTo(ctx, layer);
+    // Draw cyan highlight curves at joints where both tubes are group-highlighted
+    this._drawJointHighlights(ctx, layer);
   }
   _drawJointsTo(ctx, layer) {
     var drawn = {};
@@ -1267,6 +1244,149 @@ class TubeManager {
         this._drawOneJoint(ctx, tubeA, sides[si] === 'connectedA' ? 'A' : 'B', tubeB, conn.side);
       }
     }
+  }
+
+  // ── Cyan highlight curves at joints between group-highlighted tubes ─────────
+  _drawJointHighlights(ctx, layer) {
+    var drawn = {};
+    for (var ti = 0; ti < this.tubes.length; ti++) {
+      var tubeA = this.tubes[ti];
+      if (tubeA.layer !== layer) continue;
+      if (tubeA.type === 'funnel') continue;
+      if (!tubeA._groupHighlight) continue;
+      var sides = ['connectedA', 'connectedB'];
+      for (var si = 0; si < sides.length; si++) {
+        var conn = tubeA[sides[si]];
+        if (!conn) continue;
+        var tubeB = conn.tube;
+        if (tubeB.layer !== layer) continue;
+        if (tubeB.type === 'funnel') continue;
+        if (!tubeB._groupHighlight) continue;
+        var pairKey = tubeA.id < tubeB.id ? tubeA.id+'|'+tubeB.id : tubeB.id+'|'+tubeA.id;
+        if (drawn[pairKey]) continue;
+        drawn[pairKey] = true;
+        this._drawOneJointHighlight(ctx, tubeA, sides[si] === 'connectedA' ? 'A' : 'B', tubeB, conn.side);
+      }
+    }
+  }
+
+  _drawOneJointHighlight(ctx, tubeA, sideA, tubeB, sideB) {
+    var ptsA = tubeA._path, ptsB = tubeB._path;
+    if (!ptsA || ptsA.length < 2 || !ptsB || ptsB.length < 2) return;
+    var rA = tubeA.radius, rB = tubeB.radius;
+    var r = Math.max(rA, rB);
+
+    // Joint center
+    var idxA = sideA === 'A' ? 0 : ptsA.length - 1;
+    var idxB = sideB === 'A' ? 0 : ptsB.length - 1;
+    var jx = (ptsA[idxA].x + ptsB[idxB].x) / 2;
+    var jy = (ptsA[idxA].y + ptsB[idxB].y) / 2;
+
+    // Centerline directions into each tube
+    var inA = sideA === 'A' ? Math.min(4, ptsA.length - 1) : Math.max(ptsA.length - 5, 0);
+    var inB = sideB === 'A' ? Math.min(4, ptsB.length - 1) : Math.max(ptsB.length - 5, 0);
+    var dAx = ptsA[inA].x - ptsA[idxA].x, dAy = ptsA[inA].y - ptsA[idxA].y;
+    var dBx = ptsB[inB].x - ptsB[idxB].x, dBy = ptsB[inB].y - ptsB[idxB].y;
+    var lenA = Math.hypot(dAx, dAy) || 1, lenB = Math.hypot(dBx, dBy) || 1;
+    dAx /= lenA; dAy /= lenA; dBx /= lenB; dBy /= lenB;
+
+    var sameSide = (sideA === sideB);
+    if (sameSide) { dBx = -dBx; dBy = -dBy; }
+
+    var dot = Math.max(-1, Math.min(1, dAx * dBx + dAy * dBy));
+    var angle = Math.acos(dot);
+    if (angle < 0.18) return; // nearly straight — no visible fillet needed
+
+    // Get trimmed wall endpoints (same logic as _drawOneJoint)
+    var wA_eA, wA_eB, wB_eA, wB_eB;
+    if (tubeA._trimmedEdgeA && tubeA._trimmedEdgeB) {
+      var tEA = tubeA._trimmedEdgeA, tEB = tubeA._trimmedEdgeB;
+      if (sideA === 'A') { wA_eA = tEA[0]; wA_eB = tEB[0]; }
+      else { wA_eA = tEA[tEA.length-1]; wA_eB = tEB[tEB.length-1]; }
+    } else {
+      var eAa = tubeA._offsetPath(ptsA, -rA), eBa = tubeA._offsetPath(ptsA, rA);
+      if (sideA === 'A') { var ti2 = Math.min(3, eAa.length-1); wA_eA = eAa[ti2]; wA_eB = eBa[ti2]; }
+      else { var ti2 = Math.max(0, eAa.length-4); wA_eA = eAa[ti2]; wA_eB = eBa[ti2]; }
+    }
+    if (tubeB._trimmedEdgeA && tubeB._trimmedEdgeB) {
+      var tEA2 = tubeB._trimmedEdgeA, tEB2 = tubeB._trimmedEdgeB;
+      if (sideB === 'A') { wB_eA = tEA2[0]; wB_eB = tEB2[0]; }
+      else { wB_eA = tEA2[tEA2.length-1]; wB_eB = tEB2[tEB2.length-1]; }
+    } else {
+      var eAb = tubeB._offsetPath(ptsB, -rB), eBb = tubeB._offsetPath(ptsB, rB);
+      if (sideB === 'A') { var ti3 = Math.min(3, eAb.length-1); wB_eA = eAb[ti3]; wB_eB = eBb[ti3]; }
+      else { var ti3 = Math.max(0, eAb.length-4); wB_eA = eAb[ti3]; wB_eB = eBb[ti3]; }
+    }
+
+    // Bisector for pairing
+    var bisX = dAx + dBx, bisY = dAy + dBy;
+    var bisLen = Math.hypot(bisX, bisY);
+    if (bisLen < 0.001) { bisX = -dAy; bisY = dAx; }
+    else { bisX /= bisLen; bisY /= bisLen; }
+    var bisPerpX = -bisY, bisPerpY = bisX;
+
+    // Exact perpendicular offsets for stable pairing
+    var nAx = -dAy, nAy = dAx;
+    var nBx = -dBy, nBy = dBx;
+    var sockA_eA = { x: jx - nAx * rA, y: jy - nAy * rA };
+    var sockA_eB = { x: jx + nAx * rA, y: jy + nAy * rA };
+    var sockB_eA = { x: jx - nBx * rB, y: jy - nBy * rB };
+    var sockB_eB = { x: jx + nBx * rB, y: jy + nBy * rB };
+
+    var sA_eA_side = (sockA_eA.x - jx) * bisPerpX + (sockA_eA.y - jy) * bisPerpY;
+    var sB_eA_side = (sockB_eA.x - jx) * bisPerpX + (sockB_eA.y - jy) * bisPerpY;
+
+    var pair1_A, pair1_B, pair2_A, pair2_B;
+    if (sA_eA_side * sB_eA_side >= 0) {
+      pair1_A = wA_eA; pair1_B = wB_eA; pair2_A = wA_eB; pair2_B = wB_eB;
+    } else {
+      pair1_A = wA_eA; pair1_B = wB_eB; pair2_A = wA_eB; pair2_B = wB_eA;
+    }
+
+    var s1proj = (sockA_eA.x - jx) * bisX + (sockA_eA.y - jy) * bisY;
+    var s2proj = (sockA_eB.x - jx) * bisX + (sockA_eB.y - jy) * bisY;
+    var insideA, insideB, outsideA, outsideB;
+    if (s1proj < s2proj) {
+      insideA = pair1_A; insideB = pair1_B; outsideA = pair2_A; outsideB = pair2_B;
+    } else {
+      insideA = pair2_A; insideB = pair2_B; outsideA = pair1_A; outsideB = pair1_B;
+    }
+
+    // Bezier control point
+    var _bezierCP = function(pA, pB, maxDist) {
+      var det = (-dAx) * (-dBy) - (-dAy) * (-dBx);
+      if (Math.abs(det) < 1e-6) return { x: (pA.x + pB.x) / 2, y: (pA.y + pB.y) / 2 };
+      var t = ((pB.x - pA.x) * (-dBy) - (pB.y - pA.y) * (-dBx)) / det;
+      var cpx = pA.x + t * (-dAx), cpy = pA.y + t * (-dAy);
+      var d = Math.hypot(cpx - jx, cpy - jy);
+      if (d > maxDist) { cpx = jx + (cpx - jx) * maxDist / d; cpy = jy + (cpy - jy) * maxDist / d; }
+      return { x: cpx, y: cpy };
+    };
+
+    var outsideCP = _bezierCP(outsideA, outsideB, r * 5);
+    var insideCP  = _bezierCP(insideA, insideB, r * 1.5);
+
+    // Draw both fillet curves in highlight cyan — two passes (glow + crisp)
+    var _hlCurve = function(p0, cp, p1) {
+      var gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      if (gap < 0.5) return;
+      // Soft glow pass
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
+      ctx.strokeStyle = 'rgba(0,220,255,0.15)'; ctx.lineWidth = 9;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 20;
+      ctx.stroke(); ctx.shadowBlur = 0;
+      // Crisp line pass
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
+      ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 10;
+      ctx.stroke(); ctx.shadowBlur = 0;
+    };
+
+    _hlCurve(outsideA, outsideCP, outsideB);
+    _hlCurve(insideA, insideCP, insideB);
   }
 
   _drawOneJoint(ctx, tubeA, sideA, tubeB, sideB) {
