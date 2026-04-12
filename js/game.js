@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1614;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1615;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -532,15 +532,37 @@ class Game {
             }
           }
           if (self._tubeSelected) {
-            self._tubeDragging = self._tubeSelected;
-            self._tubeDragOffX = 0; self._tubeDragOffY = 0;
-            var td2 = self._tubeDragging;
-            self._tubePinchStart = {
-              p0:pp0, p1:pp1, x:td2.x, y:td2.y,
-              rot:td2.rotation, len:td2.length,
-              dist: Math.hypot(pp1.x-pp0.x, pp1.y-pp0.y),
-              angle: Math.atan2(pp1.y-pp0.y, pp1.x-pp0.x),
-            };
+            var td2 = self._tubeSelected;
+            var isConn2 = td2.connectedA || td2.connectedB;
+            if (isConn2) {
+              // Two fingers on a connected tube: group drag/rotate whole chain
+              var grp2 = self.tubes.getConnectedGroup(td2);
+              var gcx2 = grp2.reduce(function(s,t){return s+t.x;},0)/grp2.length;
+              var gcy2 = grp2.reduce(function(s,t){return s+t.y;},0)/grp2.length;
+              self._tubeGroupDrag = {
+                group: grp2,
+                startX: pp0.x, startY: pp0.y,
+                origins: grp2.map(function(t) { return { x: t.x, y: t.y }; }),
+                cx: gcx2, cy: gcy2, snapCandidate: null,
+              };
+              self._tubeGroupPinchStart = {
+                angle: Math.atan2(pp1.y - pp0.y, pp1.x - pp0.x),
+                mx: (pp0.x + pp1.x) * 0.5, my: (pp0.y + pp1.y) * 0.5,
+                cx: gcx2, cy: gcy2,
+                rotOrigins: grp2.map(function(t) { return { x: t.x, y: t.y, r: t.rotation }; }),
+              };
+              self._tubeDragging = null;
+              self._tubePinchStart = null;
+            } else {
+              self._tubeDragging = td2;
+              self._tubeDragOffX = 0; self._tubeDragOffY = 0;
+              self._tubePinchStart = {
+                p0:pp0, p1:pp1, x:td2.x, y:td2.y,
+                rot:td2.rotation, len:td2.length,
+                dist: Math.hypot(pp1.x-pp0.x, pp1.y-pp0.y),
+                angle: Math.atan2(pp1.y-pp0.y, pp1.x-pp0.x),
+              };
+            }
           }
         } else if (!self._editorTubeMode && self._editorSelected) {
           self._editorPinchStart = null;
@@ -1489,7 +1511,25 @@ class Game {
       }
       // Two-finger tube pinch — must check BEFORE single-finger drag handler
       if (self._editorMode && self._editorTubeMode && self._tubeDragging && e.touches && e.touches.length >= 2) {
-        self._tubeHandleTouch(e.touches);
+        var _td2f = self._tubeDragging;
+        if (_td2f.connectedA || _td2f.connectedB) {
+          // Connected tube with two fingers → upgrade to group drag/rotate
+          var _grp2f = self.tubes.getConnectedGroup(_td2f);
+          var _gcx2f = _grp2f.reduce(function(s,t){return s+t.x;},0)/_grp2f.length;
+          var _gcy2f = _grp2f.reduce(function(s,t){return s+t.y;},0)/_grp2f.length;
+          self._tubeGroupDrag = {
+            group: _grp2f,
+            startX: pos.x, startY: pos.y,
+            origins: _grp2f.map(function(t) { return { x: t.x, y: t.y }; }),
+            cx: _gcx2f, cy: _gcy2f, snapCandidate: null,
+          };
+          self._tubeGroupPinchStart = null;  // will init on next move frame
+          self._tubeDragging = null;
+          self._tubePivotState = null;
+          self._tubePinchStart = null;
+        } else {
+          self._tubeHandleTouch(e.touches);
+        }
         return;
       }
       if (self._tubeRotateState || self._tubeLengthState) {
