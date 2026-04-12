@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1632;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1633;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -259,13 +259,12 @@ class TubePiece {
   }
 
   // ── Silhouette outline for highlight rendering ────────────────────────────────
-  // Free ends get full ellipse caps. Connected ends just stop — joint highlight covers the gap.
+  // Free ends get outward-facing semicircle caps. Connected ends stop — joint highlight covers gap.
   _silhouettePath(ctx, offset) {
     var pts = this._path;
     if (!pts || pts.length < 2) return;
     var r  = this.radius + offset;
     var sockA = this.socketA(), sockB = this.socketB();
-    // Cap ellipse uses base radius (not inflated) so highlight matches actual cap size
     var capRx = this.radius * 0.35, capRy = this.radius;
 
     // Compute offset edges directly from full centerline path
@@ -286,22 +285,37 @@ class TubePiece {
 
     var freeA = !this.connectedA, freeB = !this.connectedB;
 
-    // Wall A subpath
-    ctx.beginPath();
-    ctx.moveTo(eA[0].x, eA[0].y);
-    for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
-    // Wall B subpath (reversed direction)
-    ctx.moveTo(eB[eB.length-1].x, eB[eB.length-1].y);
-    for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
+    if (freeA && freeB) {
+      // Single continuous closed path: wall A → cap B → wall B reversed → cap A → close
+      ctx.beginPath();
+      ctx.moveTo(eA[0].x, eA[0].y);
+      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+      // Cap B: outward-facing semicircle from eA end to eB end
+      ctx.ellipse(sockB.x, sockB.y, capRx, capRy, sockB.angle, -Math.PI/2, Math.PI/2);
+      for (var i = eB.length - 1; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
+      // Cap A: outward-facing semicircle from eB start to eA start
+      ctx.ellipse(sockA.x, sockA.y, capRx, capRy, sockA.angle, Math.PI/2, -Math.PI/2);
+      ctx.closePath();
+    } else {
+      // Wall A subpath
+      ctx.beginPath();
+      ctx.moveTo(eA[0].x, eA[0].y);
+      for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+      // Wall B subpath (reversed direction)
+      ctx.moveTo(eB[eB.length-1].x, eB[eB.length-1].y);
+      for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
 
-    // Free end caps as full ellipses (no chord line across the middle)
-    if (freeB) {
-      ctx.moveTo(sockB.x + Math.cos(sockB.angle)*capRx, sockB.y + Math.sin(sockB.angle)*capRx);
-      ctx.ellipse(sockB.x, sockB.y, capRx, capRy, sockB.angle, 0, Math.PI * 2);
-    }
-    if (freeA) {
-      ctx.moveTo(sockA.x + Math.cos(sockA.angle)*capRx, sockA.y + Math.sin(sockA.angle)*capRx);
-      ctx.ellipse(sockA.x, sockA.y, capRx, capRy, sockA.angle, 0, Math.PI * 2);
+      // Free end caps as outward-facing semicircles connecting wall endpoints
+      if (freeB) {
+        // Arc from eA's B-end to eB's B-end (outward-facing half)
+        ctx.moveTo(eA[eA.length-1].x, eA[eA.length-1].y);
+        ctx.ellipse(sockB.x, sockB.y, capRx, capRy, sockB.angle, -Math.PI/2, Math.PI/2);
+      }
+      if (freeA) {
+        // Arc from eB's A-end to eA's A-end (outward-facing half)
+        ctx.moveTo(eB[0].x, eB[0].y);
+        ctx.ellipse(sockA.x, sockA.y, capRx, capRy, sockA.angle, Math.PI/2, -Math.PI/2);
+      }
     }
   }
 
@@ -1394,16 +1408,7 @@ class TubeManager {
     var _drawCurve = function(p0, cp, p1) {
       var gap = Math.hypot(p1.x - p0.x, p1.y - p0.y);
       if (gap < 0.5) return;
-      // Wide glow pass
-      if (window.TUBE_DEBUG.selectGlow) {
-        var glowAlpha = 0.12 * (window.TUBE_DEBUG.selectGlowMult || 1.0);
-        glowAlpha = Math.min(glowAlpha, 1.0);
-        ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
-        ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
-        ctx.strokeStyle = 'rgba(0,238,255,' + glowAlpha + ')'; ctx.lineWidth = 12;
-        ctx.stroke();
-      }
-      // Crisp line
+      // Crisp line only — wall glow from adjacent tubes covers the glow here
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
       ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
       ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
