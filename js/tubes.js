@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1609;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1614;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -1062,6 +1062,79 @@ class TubeManager {
     // Lock the connection
     this.connect(dragTube, snapResult.dragSide, snapResult.otherTube, snapResult.otherSide);
     dragTube._snapHighlight = null;
+  }
+
+  // ── Group snap: check free ends of dragged group vs stationary free ends ──
+  // Returns best { dragTube, dragSide, dragSock, otherTube, otherSide, otherSock, dist } or null.
+  // Also sets _snapHighlight on both matching tubes so their end caps glow.
+  checkSnapGroup(group) {
+    // Build a quick lookup of group tube ids
+    var inGroup = {};
+    for (var gi = 0; gi < group.length; gi++) inGroup[group[gi].id] = true;
+
+    // Clear all existing group snap highlights
+    for (var gi2 = 0; gi2 < group.length; gi2++) group[gi2]._snapHighlight = null;
+    // Also clear highlights on all stationary tubes that might have been set last frame
+    for (var ti0 = 0; ti0 < this.tubes.length; ti0++) {
+      if (!inGroup[this.tubes[ti0].id]) this.tubes[ti0]._snapHighlight = null;
+    }
+
+    var snapDist = this.SNAP_DIST;
+    var best = null, bestD = snapDist;
+
+    for (var gi3 = 0; gi3 < group.length; gi3++) {
+      var dt = group[gi3];
+      // Collect free sockets on this dragged tube
+      var freeDrag = [];
+      if (!dt.connectedA) freeDrag.push({ sock: dt.socketA(), side: 'A' });
+      if (!dt.connectedB) freeDrag.push({ sock: dt.socketB(), side: 'B' });
+      if (freeDrag.length === 0) continue;
+
+      for (var ti = 0; ti < this.tubes.length; ti++) {
+        var ot = this.tubes[ti];
+        if (inGroup[ot.id]) continue;  // skip same group
+        // Collect free sockets on stationary tube
+        var freeOther = [];
+        if (!ot.connectedA) freeOther.push({ sock: ot.socketA(), side: 'A' });
+        if (!ot.connectedB) freeOther.push({ sock: ot.socketB(), side: 'B' });
+
+        for (var di = 0; di < freeDrag.length; di++) {
+          for (var oi = 0; oi < freeOther.length; oi++) {
+            var d = Math.hypot(freeDrag[di].sock.x - freeOther[oi].sock.x,
+                               freeDrag[di].sock.y - freeOther[oi].sock.y);
+            if (d < bestD) {
+              bestD = d;
+              best = {
+                dragTube: dt,   dragSide: freeDrag[di].side,  dragSock: freeDrag[di].sock,
+                otherTube: ot,  otherSide: freeOther[oi].side, otherSock: freeOther[oi].sock,
+                dist: d,
+              };
+            }
+          }
+        }
+      }
+    }
+
+    if (best) {
+      // Glow both matching end caps
+      best.dragTube._snapHighlight  = best.otherSock;
+      best.otherTube._snapHighlight = best.dragSock;
+    }
+    return best;
+  }
+
+  // ── Apply group snap: translate entire group so sockets meet, then connect ─
+  applySnapGroup(group, snapResult) {
+    var dx = snapResult.otherSock.x - snapResult.dragSock.x;
+    var dy = snapResult.otherSock.y - snapResult.dragSock.y;
+    for (var gi = 0; gi < group.length; gi++) {
+      group[gi].x += dx;
+      group[gi].y += dy;
+      group[gi]._snapHighlight = null;
+      group[gi].rebuild();
+    }
+    snapResult.otherTube._snapHighlight = null;
+    this.connect(snapResult.dragTube, snapResult.dragSide, snapResult.otherTube, snapResult.otherSide);
   }
 
   // ── Draw (split by layer) ─────────────────────────────────────────────────
