@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1617;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1618;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1582,12 +1582,14 @@ class Game {
             // Advance pivot state for next frame delta
             gps.angle = newAngle;
             gps.mx = newMx; gps.my = newMy;
+            gd.hasMoved = true;
             gd.snapCandidate = self.tubes.checkSnapGroup(gd.group);
           }
           return;
         }
         // One-finger: translate only
         self._tubeGroupPinchStart = null;
+        gd.hasMoved = true;
         var dx2 = pos.x - gd.startX;
         var dy2 = pos.y - gd.startY;
         for (var gi = 0; gi < gd.group.length; gi++) {
@@ -4418,8 +4420,8 @@ class Game {
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
     this.tubes.draw(ctx, 'main', this.frame, _selTubeForDraw);
-    // Draw group bounding box when group-dragging (if toggle is on)
-    if (this._tubeGroupDrag && window._tubeBBoxOn !== false && this._editorTubeMode) {
+    // Draw group bounding box when group-dragging (if toggle is on, and actually moved)
+    if (this._tubeGroupDrag && this._tubeGroupDrag.hasMoved && window._tubeBBoxOn !== false && this._editorTubeMode) {
       var _grp = this._tubeGroupDrag.group;
       var _bx1 = Infinity, _by1 = Infinity, _bx2 = -Infinity, _by2 = -Infinity;
       for (var _bi = 0; _bi < _grp.length; _bi++) {
