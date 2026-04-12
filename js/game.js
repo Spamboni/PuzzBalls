@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1633;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1634;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1124,13 +1124,6 @@ class Game {
           }
         }
         // BBox toggle button
-        if (self._editorTubeMode && self._tubeBBoxBtn) {
-          var bb = self._tubeBBoxBtn;
-          if (_px>=bb.x&&_px<=bb.x+bb.w&&_py>=bb.y-4&&_py<=bb.y+bb.h+4) {
-            window._tubeBBoxOn = window._tubeBBoxOn === false ? true : false;
-            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
-          }
-        }
         // Tube style buttons
         if (self._editorTubeMode && self._tubeStyleBtns) {
           for (var si5=0; si5<self._tubeStyleBtns.length; si5++) {
@@ -1612,8 +1605,9 @@ class Game {
         // One-finger: translate only
         self._tubeGroupPinchStart = null;
         gd.hasMoved = true;
+        var _gdSY = self._editorScrollY || 0;
         var dx2 = pos.x - gd.startX;
-        var dy2 = pos.y - gd.startY;
+        var dy2 = (pos.y - _gdSY) - gd.startY;
         for (var gi = 0; gi < gd.group.length; gi++) {
           gd.group[gi].x = gd.origins[gi].x + dx2;
           gd.group[gi].y = gd.origins[gi].y + dy2;
@@ -6290,15 +6284,14 @@ class Game {
     }
     var row1BotY = row1Y + tH;
 
-    // Style buttons + BBox toggle — 5 slots total in one row
+    // Style buttons — 4 equal slots
     var row2Y = row1BotY + gap;
     var styles = ['glass','window','solid','energy'];
-    var row2SlotW = Math.floor((contentW - 4) / 5);  // 5 slots: 4 styles + BOX
-    var sW = row2SlotW;
+    var sW = Math.floor((contentW - 6) / 4);
     ctx.font = "bold 11px 'Share Tech Mono',monospace";
     this._tubeStyleBtns = [];
     for (var si = 0; si < styles.length; si++) {
-      var sx2 = padding + si * (sW + 1);
+      var sx2 = padding + si * (sW + 2);
       var sAct = (this._tubeStyle || 'glass') === styles[si];
       ctx.fillStyle = sAct ? 'rgba(0,150,200,0.35)' : 'rgba(0,15,40,0.7)';
       ctx.beginPath(); ctx.roundRect(sx2, row2Y, sW, rH, 3); ctx.fill();
@@ -6308,20 +6301,7 @@ class Game {
       ctx.fillText(styles[si].toUpperCase(), sx2 + sW/2, row2Y + rH/2);
       this._tubeStyleBtns.push({ x:sx2, y:row2Y, w:sW, h:rH, val:styles[si] });
     }
-
-    // BBox toggle button — 5th slot in style row
-    var bboxX = padding + 4 * (sW + 1);
-    var bboxBtnW = contentW - 4 * (sW + 1);  // fill remaining width
-    var bboxOn = window._tubeBBoxOn !== false;
-    ctx.fillStyle = bboxOn ? 'rgba(255,200,0,0.25)' : 'rgba(0,15,40,0.7)';
-    ctx.beginPath(); ctx.roundRect(bboxX, row2Y, bboxBtnW, rH, 3); ctx.fill();
-    ctx.strokeStyle = bboxOn ? '#ffcc00' : '#334455'; ctx.lineWidth = bboxOn ? 1.5 : 0.8;
-    ctx.beginPath(); ctx.roundRect(bboxX, row2Y, bboxBtnW, rH, 3); ctx.stroke();
-    ctx.fillStyle = bboxOn ? '#ffcc00' : '#445566';
-    ctx.font = "bold 9px 'Share Tech Mono',monospace";
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('BOX', bboxX + bboxBtnW/2, row2Y + rH/2);
-    this._tubeBBoxBtn = { x: bboxX, y: row2Y, w: bboxBtnW, h: rH };
+    this._tubeBBoxBtn = null;
 
     // Sliders: LENGTH | SPEED MOD | ROTATION
     var row3Y = row2Y + rH + gap;
