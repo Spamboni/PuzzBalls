@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1621;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1622;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -254,7 +254,69 @@ class TubePiece {
     return out;
   }
 
-  // ── Draw ellipse cap at tube opening ─────────────────────────────────────────
+  // ── Build a single closed silhouette path around the tube outline ────────────
+  // Traces: edgeA start→end, half-ellipse cap at B end, edgeB reversed end→start,
+  // half-ellipse cap at A start. Connected ends get a straight across instead of cap.
+  _silhouettePath(ctx, offset) {
+    var pts = this._path;
+    if (!pts || pts.length < 2) return;
+    var r = this.radius + offset;
+    var eA = this._offsetPath(pts, -r);   // "left" wall
+    var eB = this._offsetPath(pts,  r);   // "right" wall
+    var sockA = this.socketA(), sockB = this.socketB();
+    var rx = (this.radius + offset) * 0.35;
+    var ry = this.radius + offset;
+
+    ctx.beginPath();
+    // Walk edge A from start (socket A end) to end (socket B end)
+    ctx.moveTo(eA[0].x, eA[0].y);
+    for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
+
+    // Cap or straight at socket B end
+    if (!this.connectedB) {
+      // Half-ellipse cap at B: sweeps from eA[last] around to eB[last]
+      // The cap center is sockB, oriented at sockB.angle
+      // eA[last] is at angle ~(sockB.angle + PI/2), eB[last] at ~(sockB.angle - PI/2)
+      // We draw a full ellipse arc from -PI/2 to +PI/2 (the outward half)
+      ctx.save();
+      ctx.translate(sockB.x, sockB.y);
+      ctx.rotate(sockB.angle);
+      // In local cap space: eA end is at (-rx, 0) approx, eB end at (rx, 0)
+      // Arc from PI/2 to -PI/2 going counterclockwise (the outward half)
+      ctx.restore();
+      // Use ellipse arc via bezier approximation in world space
+      // Simpler: just arc the actual ellipse in transformed context
+      ctx.save();
+      ctx.translate(sockB.x, sockB.y);
+      ctx.rotate(sockB.angle);
+      ctx.scale(rx / ry, 1);
+      ctx.arc(0, 0, ry, -Math.PI / 2, Math.PI / 2, false);
+      ctx.restore();
+    } else {
+      // Straight line across the connected end
+      ctx.lineTo(eB[eB.length - 1].x, eB[eB.length - 1].y);
+    }
+
+    // Walk edge B reversed from end (socket B) back to start (socket A)
+    for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
+
+    // Cap or straight at socket A end
+    if (!this.connectedA) {
+      // Half-ellipse cap at A: sweeps from eB[0] around to eA[0]
+      ctx.save();
+      ctx.translate(sockA.x, sockA.y);
+      ctx.rotate(sockA.angle);
+      ctx.scale(rx / ry, 1);
+      ctx.arc(0, 0, ry, -Math.PI / 2, Math.PI / 2, false);
+      ctx.restore();
+    } else {
+      ctx.lineTo(eA[0].x, eA[0].y);
+    }
+
+    ctx.closePath();
+  }
+
+
   _drawCap(ctx, cx, cy, angle, tubeR, cr, cg, cb, alpha, style) {
     ctx.save();
     ctx.translate(cx, cy);
@@ -664,20 +726,13 @@ class TubePiece {
 
     // ── Editor selection highlight ────────────────────────────────────────────
     if (isEditorSelected && this.type !== 'funnel') {
-      var eAS = this._offsetPath(pts, -tubeR-2), eBS = this._offsetPath(pts, tubeR+2);
       // Soft outer glow pass
-      ctx.beginPath(); ctx.moveTo(eAS[0].x, eAS[0].y);
-      for (var i=1;i<eAS.length;i++) ctx.lineTo(eAS[i].x, eAS[i].y);
-      for (var i=eBS.length-1;i>=0;i--) ctx.lineTo(eBS[i].x, eBS[i].y);
-      ctx.closePath();
+      this._silhouettePath(ctx, 3);
       ctx.strokeStyle = 'rgba(255,255,120,0.18)'; ctx.lineWidth = 7;
       ctx.shadowColor = '#ffff44'; ctx.shadowBlur = 14;
       ctx.stroke(); ctx.shadowBlur = 0;
       // Crisp inner outline
-      ctx.beginPath(); ctx.moveTo(eAS[0].x, eAS[0].y);
-      for (var i=1;i<eAS.length;i++) ctx.lineTo(eAS[i].x, eAS[i].y);
-      for (var i=eBS.length-1;i>=0;i--) ctx.lineTo(eBS[i].x, eBS[i].y);
-      ctx.closePath();
+      this._silhouettePath(ctx, 2);
       ctx.strokeStyle = 'rgba(255,255,140,0.75)'; ctx.lineWidth = 1.5;
       ctx.shadowColor = '#ffff88'; ctx.shadowBlur = 8;
       ctx.stroke(); ctx.shadowBlur = 0;
@@ -685,20 +740,13 @@ class TubePiece {
 
     // ── Group drag highlight ──────────────────────────────────────────────────
     if (this._groupHighlight && this.type !== 'funnel') {
-      var eAG = this._offsetPath(pts, -tubeR-2), eBG = this._offsetPath(pts, tubeR+2);
       // Soft outer glow pass
-      ctx.beginPath(); ctx.moveTo(eAG[0].x, eAG[0].y);
-      for (var i=1;i<eAG.length;i++) ctx.lineTo(eAG[i].x, eAG[i].y);
-      for (var i=eBG.length-1;i>=0;i--) ctx.lineTo(eBG[i].x, eBG[i].y);
-      ctx.closePath();
+      this._silhouettePath(ctx, 3);
       ctx.strokeStyle = 'rgba(0,220,255,0.15)'; ctx.lineWidth = 9;
       ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 20;
       ctx.stroke(); ctx.shadowBlur = 0;
       // Crisp cyan outline
-      ctx.beginPath(); ctx.moveTo(eAG[0].x, eAG[0].y);
-      for (var i=1;i<eAG.length;i++) ctx.lineTo(eAG[i].x, eAG[i].y);
-      for (var i=eBG.length-1;i>=0;i--) ctx.lineTo(eBG[i].x, eBG[i].y);
-      ctx.closePath();
+      this._silhouettePath(ctx, 2);
       ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
       ctx.shadowColor = '#00eeff'; ctx.shadowBlur = 10;
       ctx.stroke(); ctx.shadowBlur = 0;
