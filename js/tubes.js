@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1600;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1601;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -1181,17 +1181,23 @@ class TubeManager {
 
     var bisPerpX = -bisY, bisPerpY = bisX;
 
-    // Project tube A's wall endpoints onto bisector-perpendicular
-    var wA_eA_side = (wA_eA.x - jx) * bisPerpX + (wA_eA.y - jy) * bisPerpY;
-    var wA_eB_side = (wA_eB.x - jx) * bisPerpX + (wA_eB.y - jy) * bisPerpY;
-    // Project tube B's wall endpoints
-    var wB_eA_side = (wB_eA.x - jx) * bisPerpX + (wB_eA.y - jy) * bisPerpY;
-    var wB_eB_side = (wB_eB.x - jx) * bisPerpX + (wB_eB.y - jy) * bisPerpY;
+    // Use exact socket geometry for stable pairing — trimmed endpoints can flip
+    // sign near 90° causing fillet walls to swap. Exact perpendicular offsets
+    // from joint center are always consistent regardless of angle.
+    var nAx_exact = -dAy, nAy_exact = dAx;  // perp to tube A inward dir
+    var nBx_exact = -dBy, nBy_exact = dBx;  // perp to tube B inward dir
+    var sockA_eA = { x: jx - nAx_exact * rA, y: jy - nAy_exact * rA }; // tube A edgeA side
+    var sockA_eB = { x: jx + nAx_exact * rA, y: jy + nAy_exact * rA }; // tube A edgeB side
+    var sockB_eA = { x: jx - nBx_exact * rB, y: jy - nBy_exact * rB }; // tube B edgeA side
+    var sockB_eB = { x: jx + nBx_exact * rB, y: jy + nBy_exact * rB }; // tube B edgeB side
 
-    // Pair: match tube A and tube B endpoints that are on the same side
+    // Project onto bisector-perpendicular to determine same-side pairing
+    var sA_eA_side = (sockA_eA.x - jx) * bisPerpX + (sockA_eA.y - jy) * bisPerpY;
+    var sB_eA_side = (sockB_eA.x - jx) * bisPerpX + (sockB_eA.y - jy) * bisPerpY;
+
+    // Pair: match endpoints on the same side of bisector-perp
     var pair1_A, pair1_B, pair2_A, pair2_B;
-    // Try eA↔eA + eB↔eB vs eA↔eB + eB↔eA
-    if (wA_eA_side * wB_eA_side >= 0) {
+    if (sA_eA_side * sB_eA_side >= 0) {
       pair1_A = wA_eA; pair1_B = wB_eA;
       pair2_A = wA_eB; pair2_B = wB_eB;
     } else {
@@ -1199,11 +1205,12 @@ class TubeManager {
       pair2_A = wA_eB; pair2_B = wB_eA;
     }
 
-    // Inside = opposite bisector direction
-    var p1proj = (pair1_A.x - jx) * bisX + (pair1_A.y - jy) * bisY;
-    var p2proj = (pair2_A.x - jx) * bisX + (pair2_A.y - jy) * bisY;
+    // Inside = wall on the acute/inner side of the bend (lower bisector projection)
+    // Use exact socket points for stable inside/outside determination
+    var s1proj = (sockA_eA.x - jx) * bisX + (sockA_eA.y - jy) * bisY;
+    var s2proj = (sockA_eB.x - jx) * bisX + (sockA_eB.y - jy) * bisY;
     var insideA, insideB, outsideA, outsideB;
-    if (p1proj < p2proj) {
+    if (s1proj < s2proj) {
       insideA = pair1_A; insideB = pair1_B;
       outsideA = pair2_A; outsideB = pair2_B;
     } else {
