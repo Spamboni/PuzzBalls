@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1597;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1598;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -180,9 +180,10 @@ class TubePiece {
       ball.vx = Math.cos(exitAngle) * newSpd;
       ball.vy = Math.sin(exitAngle) * newSpd;
       ball.inFlight = true;
-      // Position ball at socket — chaining logic will move it if needed
-      ball.x = exitSocket.x + Math.cos(exitAngle) * (this.radius + ball.r + 6);
-      ball.y = exitSocket.y + Math.sin(exitAngle) * (this.radius + ball.r + 6);
+      // Position ball at path endpoint — avoids position snap vs socket + offset
+      var exitPtEnd = this._pointAtT(exitA ? 0 : 1);
+      ball.x = exitPtEnd.x + Math.cos(exitAngle) * (ball.r + 2);
+      ball.y = exitPtEnd.y + Math.sin(exitAngle) * (ball.r + 2);
       ball._tubeExitFrom = this.id;
       ball._tubeExitCooldown = 28;
       return { ball: ball, socket: exitSocket, exitA: exitA };
@@ -414,6 +415,9 @@ class TubePiece {
         var tr2 = _trimConn(pts, edgeA, edgeB, this.connectedB, false, tubeR);
         edgeA = tr2.a; edgeB = tr2.b;
       }
+      // Cache trimmed edges so _drawOneJoint can use exact endpoints for fillet curves
+      this._trimmedEdgeA = edgeA;
+      this._trimmedEdgeB = edgeB;
 
       // ── Tube body fill ─────────────────────────────────────────────────────────────────────────────────────
       // At connected ends, snap fill corners to the joint bisector plane so both
@@ -1169,29 +1173,42 @@ class TubeManager {
     var eA_tubeB = tubeB._offsetPath(ptsB, -rB);
     var eB_tubeB = tubeB._offsetPath(ptsB,  rB);
 
-    // The trimmed wall endpoint on tube A at this joint
-    var wA_eA, wA_eB;  // tube A's two wall endpoints at joint side
-    if (sideA === 'A') {
-      // Joint is at the start of tube A — trimmed edges start further in
-      // Use point a few in from the start to approximate the trimmed end
-      var tIdx = Math.min(3, eA_tubeA.length - 1);
-      wA_eA = eA_tubeA[tIdx];
-      wA_eB = eB_tubeA[tIdx];
+    // Use cached trimmed edge endpoints for exact fillet start/end points.
+    // Falls back to tIdx=3 estimate if cache not yet populated.
+    var wA_eA, wA_eB;
+    if (tubeA._trimmedEdgeA && tubeA._trimmedEdgeB) {
+      var tEA = tubeA._trimmedEdgeA, tEB = tubeA._trimmedEdgeB;
+      if (sideA === 'A') {
+        wA_eA = tEA[0]; wA_eB = tEB[0];
+      } else {
+        wA_eA = tEA[tEA.length-1]; wA_eB = tEB[tEB.length-1];
+      }
     } else {
-      var tIdx = Math.max(0, eA_tubeA.length - 4);
-      wA_eA = eA_tubeA[tIdx];
-      wA_eB = eB_tubeA[tIdx];
+      if (sideA === 'A') {
+        var tIdx = Math.min(3, eA_tubeA.length - 1);
+        wA_eA = eA_tubeA[tIdx]; wA_eB = eB_tubeA[tIdx];
+      } else {
+        var tIdx = Math.max(0, eA_tubeA.length - 4);
+        wA_eA = eA_tubeA[tIdx]; wA_eB = eB_tubeA[tIdx];
+      }
     }
 
-    var wB_eA, wB_eB;  // tube B's two wall endpoints at joint side
-    if (sideB === 'A') {
-      var tIdx2 = Math.min(3, eA_tubeB.length - 1);
-      wB_eA = eA_tubeB[tIdx2];
-      wB_eB = eB_tubeB[tIdx2];
+    var wB_eA, wB_eB;
+    if (tubeB._trimmedEdgeA && tubeB._trimmedEdgeB) {
+      var tEA2 = tubeB._trimmedEdgeA, tEB2 = tubeB._trimmedEdgeB;
+      if (sideB === 'A') {
+        wB_eA = tEA2[0]; wB_eB = tEB2[0];
+      } else {
+        wB_eA = tEA2[tEA2.length-1]; wB_eB = tEB2[tEB2.length-1];
+      }
     } else {
-      var tIdx2 = Math.max(0, eA_tubeB.length - 4);
-      wB_eA = eA_tubeB[tIdx2];
-      wB_eB = eB_tubeB[tIdx2];
+      if (sideB === 'A') {
+        var tIdx2 = Math.min(3, eA_tubeB.length - 1);
+        wB_eA = eA_tubeB[tIdx2]; wB_eB = eB_tubeB[tIdx2];
+      } else {
+        var tIdx2 = Math.max(0, eA_tubeB.length - 4);
+        wB_eA = eA_tubeB[tIdx2]; wB_eB = eB_tubeB[tIdx2];
+      }
     }
 
     // ── Pair wall endpoints using bisector ───────────────────────────────
