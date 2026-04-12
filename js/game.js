@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1593;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1614;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -531,47 +531,6 @@ class Game {
               if (self._tubeSelected) break;
             }
           }
-          // Check: if a group drag is active and finger 1 is on the joint,
-          // and finger 2 is near a free end of a tube in the group →
-          // switch to joint-anchor / end-stretch mode.
-          if (self._tubeGroupDrag) {
-            var gd2 = self._tubeGroupDrag;
-            // Find if finger 2 is near a free end (unconnected socket) of any group tube
-            var _stretchTube = null, _stretchSide = null;
-            var _endThresh = (gd2.group[0] ? gd2.group[0].radius + 20 : 30);
-            for (var gi3 = 0; gi3 < gd2.group.length; gi3++) {
-              var gt3 = gd2.group[gi3];
-              if (!gt3.connectedA) {
-                var sA3 = gt3.socketA();
-                if (Math.hypot(pp1.x - sA3.x, pp1.y - sA3.y) < _endThresh) {
-                  _stretchTube = gt3; _stretchSide = 'A'; break;
-                }
-              }
-              if (!gt3.connectedB) {
-                var sB3 = gt3.socketB();
-                if (Math.hypot(pp1.x - sB3.x, pp1.y - sB3.y) < _endThresh) {
-                  _stretchTube = gt3; _stretchSide = 'B'; break;
-                }
-              }
-            }
-            if (_stretchTube) {
-              // Find the joint/anchor point = the OTHER end of the stretch tube
-              // (the end that's connected to the chain)
-              var _anchorSock = _stretchSide === 'A' ? _stretchTube.socketB() : _stretchTube.socketA();
-              self._tubeJointStretch = {
-                tube: _stretchTube,
-                freeSide: _stretchSide,
-                anchorX: _anchorSock.x,
-                anchorY: _anchorSock.y,
-                origLen: _stretchTube.length,
-                origRot: _stretchTube.rotation,
-              };
-              // Pause normal group drag while stretching
-              self._tubeGroupDragPaused = true;
-              return;
-            }
-          }
-
           if (self._tubeSelected) {
             self._tubeDragging = self._tubeSelected;
             self._tubeDragOffX = 0; self._tubeDragOffY = 0;
@@ -1553,35 +1512,6 @@ class Game {
           return;
         }
       }
-      // Joint-anchor stretch: finger 1 on joint, finger 2 drags free end
-      if (self._tubeJointStretch && e && e.touches && e.touches.length >= 2) {
-        var js = self._tubeJointStretch;
-        var rect3 = self.canvas.getBoundingClientRect();
-        var f2 = { x: e.touches[1].clientX - rect3.left, y: e.touches[1].clientY - rect3.top };
-        // Anchor = connected end of stretch tube (stays fixed)
-        var ax = js.anchorX, ay = js.anchorY;
-        // Direction and length from anchor to finger 2
-        var dx3 = f2.x - ax, dy3 = f2.y - ay;
-        var newLen = Math.max(20, Math.min(600, Math.hypot(dx3, dy3)));
-        var newRot = Math.atan2(dy3, dx3);
-        // If free side is B, tube runs A→B so rotation = direction from A to B = newRot
-        // If free side is A, tube runs B→A so we need to flip
-        if (js.freeSide === 'A') {
-          newRot = newRot + Math.PI;
-        }
-        js.tube.rotation = newRot;
-        js.tube.length = newLen;
-        // Reposition tube center so the anchor end stays at anchorX/anchorY
-        var sock = js.freeSide === 'A' ? js.tube.socketB() : js.tube.socketA();
-        // After rebuild, the connected socket should be at anchor — compute center offset
-        js.tube.rebuild();
-        var curSock = js.freeSide === 'A' ? js.tube.socketB() : js.tube.socketA();
-        js.tube.x += ax - curSock.x;
-        js.tube.y += ay - curSock.y;
-        js.tube.rebuild();
-        return;
-      }
-
       // Group drag: move all connected tubes together (one or two fingers)
       if (self._tubeGroupDrag) {
         var gd = self._tubeGroupDrag;
@@ -1613,6 +1543,7 @@ class Game {
               gd.group[gi2].rotation = ro.r + dAngle;
               gd.group[gi2].rebuild();
             }
+            gd.snapCandidate = self.tubes.checkSnapGroup(gd.group);
           }
           return;
         }
@@ -1625,6 +1556,7 @@ class Game {
           gd.group[gi].y = gd.origins[gi].y + dy2;
           gd.group[gi].rebuild();
         }
+        gd.snapCandidate = self.tubes.checkSnapGroup(gd.group);
         return;
       }
       if (self._tubeDragging) {
@@ -1739,13 +1671,34 @@ class Game {
       self._draggingTubeSlider = false;
       // Release tube drag — apply snap if close enough
       if (self._tubeGroupDrag) {
+        var gd2 = self._tubeGroupDrag;
+        if (gd2.snapCandidate && gd2.snapCandidate.dist < self.tubes.SNAP_DIST) {
+          self.tubes.applySnapGroup(gd2.group, gd2.snapCandidate);
+          // Weld sound
+          if (window.Sound && Sound.getCtx) {
+            var sc2 = Sound.getCtx();
+            if (sc2) {
+              var g2w = sc2.createGain(); g2w.connect(sc2.destination);
+              g2w.gain.setValueAtTime(0.18, sc2.currentTime);
+              g2w.gain.exponentialRampToValueAtTime(0.001, sc2.currentTime + 0.18);
+              var o1w = sc2.createOscillator(); o1w.connect(g2w);
+              o1w.type = 'square'; o1w.frequency.setValueAtTime(880, sc2.currentTime);
+              o1w.frequency.exponentialRampToValueAtTime(440, sc2.currentTime + 0.06);
+              o1w.start(sc2.currentTime); o1w.stop(sc2.currentTime + 0.18);
+              var o2w = sc2.createOscillator(); o2w.connect(g2w);
+              o2w.type = 'sine'; o2w.frequency.setValueAtTime(1320, sc2.currentTime);
+              o2w.frequency.exponentialRampToValueAtTime(660, sc2.currentTime + 0.1);
+              o2w.start(sc2.currentTime); o2w.stop(sc2.currentTime + 0.1);
+            }
+          }
+        } else {
+          // Clear any lingering highlights
+          for (var gc = 0; gc < gd2.group.length; gc++) gd2.group[gc]._snapHighlight = null;
+        }
         self._tubeGroupDrag = null;
         self._tubeGroupPinchStart = null;
       }
-      if (self._tubeJointStretch) {
-        self._tubeJointStretch = null;
-        self._tubeGroupDragPaused = false;
-      }
+
       if (self._tubeDragging) {
         var snapResult = self.tubes.checkSnap(self._tubeDragging);
         if (snapResult && snapResult.dist < self.tubes.SNAP_DIST) {
