@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1599;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1600;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -1252,7 +1252,7 @@ class TubeManager {
       // Main wall line only — no glow/shadow
       ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
       ctx.quadraticCurveTo(cp.x, cp.y, p1.x, p1.y);
-      ctx.lineWidth = style === 'solid' ? 5 : 3;
+      ctx.lineWidth = style === 'solid' ? 5 : 4;
       ctx.strokeStyle = 'rgba(' + cr + ',' + cg + ',' + cb + ',' + (alpha * (style === 'solid' ? 0.95 : 0.75)) + ')';
       ctx.lineCap = 'round';
       ctx.stroke();
