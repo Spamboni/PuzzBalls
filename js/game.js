@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1615;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1616;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -4411,13 +4411,14 @@ class Game {
 
     this._drawFloor(floorY);
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
-    this.tubes.draw(ctx, 'behind', this.frame, this._tubeSelected);
+    var _selTubeForDraw = (this._tubeGroupDrag && this._editorTubeMode) ? null : this._tubeSelected;
+    this.tubes.draw(ctx, 'behind', this.frame, _selTubeForDraw);
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
     this._drawChute();
     if (this.barrier) this.barrier.draw(ctx);
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
-    this.tubes.draw(ctx, 'main', this.frame, this._tubeSelected);
+    this.tubes.draw(ctx, 'main', this.frame, _selTubeForDraw);
     // Draw group bounding box when group-dragging (if toggle is on)
     if (this._tubeGroupDrag && window._tubeBBoxOn !== false && this._editorTubeMode) {
       var _grp = this._tubeGroupDrag.group;
@@ -4451,7 +4452,7 @@ class Game {
     for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
     for (var i = 0; i < this.spawners.length;   i++) this.spawners[i].draw(ctx);
     for (var j = 0; j < this.objects.length;   j++) this._drawBall(this.objects[j]);
-    this.tubes.draw(ctx, 'above', this.frame, this._tubeSelected);
+    this.tubes.draw(ctx, 'above', this.frame, _selTubeForDraw);
     if (this.sling) this._drawSling();
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
@@ -4512,6 +4513,10 @@ class Game {
       this._editorBrickType   = 'breakable_brick';
       this._editorDragging    = null;
       this._editorSelected    = null;
+      // Restore tube mode from last active tab (tab memory)
+      var _wastubeTab = (this._editorActiveTab === 'tubes');
+      this._editorTubeMode = _wastubeTab;
+      window._tubeEditorMode = _wastubeTab;
       if (!this._undoHistory) { this._undoHistory = []; this._redoHistory = []; }
       if (this._editorTranslate === undefined) this._editorTranslate = false;
       // Default: stationary, no rotation, translate-on-rotate off
