@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1630;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1632;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -259,7 +259,6 @@ class TubePiece {
   }
 
   // ── Silhouette outline for highlight rendering ────────────────────────────────
-  // Uses _trimmedEdgeA/B (set during draw) so walls stop exactly at joint boundaries.
   // Free ends get full ellipse caps. Connected ends just stop — joint highlight covers the gap.
   _silhouettePath(ctx, offset) {
     var pts = this._path;
@@ -269,24 +268,20 @@ class TubePiece {
     // Cap ellipse uses base radius (not inflated) so highlight matches actual cap size
     var capRx = this.radius * 0.35, capRy = this.radius;
 
-    // Use trimmed edges if available (set during draw), else recompute
-    var baseA = this._trimmedEdgeA, baseB = this._trimmedEdgeB;
-    var eA, eB;
-    if (baseA && baseB && baseA.length >= 2 && baseB.length >= 2) {
-      var extra = offset;
-      eA = baseA.map(function(p, i, arr) {
-        var prev = arr[Math.max(0, i-1)], next = arr[Math.min(arr.length-1, i+1)];
-        var tx = next.x - prev.x, ty = next.y - prev.y, l = Math.hypot(tx,ty)||1;
-        return { x: p.x + (-ty/l)*extra, y: p.y + (tx/l)*extra };
-      });
-      eB = baseB.map(function(p, i, arr) {
-        var prev = arr[Math.max(0, i-1)], next = arr[Math.min(arr.length-1, i+1)];
-        var tx = next.x - prev.x, ty = next.y - prev.y, l = Math.hypot(tx,ty)||1;
-        return { x: p.x + (-ty/l)*(-extra), y: p.y + (tx/l)*(-extra) };
-      });
-    } else {
-      eA = this._offsetPath(pts, -r);
-      eB = this._offsetPath(pts,  r);
+    // Compute offset edges directly from full centerline path
+    var eA = this._offsetPath(pts, -r);
+    var eB = this._offsetPath(pts,  r);
+
+    // Trim at connected ends to match the tube wall trimming
+    if (this.connectedA && eA.length > 8) {
+      var trimA = Math.min(3, eA.length - 4);
+      eA = eA.slice(trimA);
+      eB = eB.slice(trimA);
+    }
+    if (this.connectedB && eA.length > 8) {
+      var trimB = Math.min(3, eA.length - 4);
+      eA = eA.slice(0, eA.length - trimB);
+      eB = eB.slice(0, eB.length - trimB);
     }
 
     var freeA = !this.connectedA, freeB = !this.connectedB;
@@ -721,17 +716,17 @@ class TubePiece {
     // ── Group drag highlight ──────────────────────────────────────────────────
     if (this._groupHighlight && this.type !== 'funnel') {
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      // Wide soft glow pass — same path, thicker and semi-transparent
+      // Build the path once
+      this._silhouettePath(ctx, 2);
+      // Wide soft glow pass first
       if (window.TUBE_DEBUG.selectGlow) {
         var glowAlpha = 0.12 * (window.TUBE_DEBUG.selectGlowMult || 1.0);
         glowAlpha = Math.min(glowAlpha, 1.0);
-        this._silhouettePath(ctx, 2);
         ctx.strokeStyle = 'rgba(0,238,255,' + glowAlpha + ')'; ctx.lineWidth = 12;
         ctx.stroke();
       }
-      // Crisp cyan outline on top
+      // Crisp cyan outline on top (same path, no rebuild)
       if (window.TUBE_DEBUG.selectOutline) {
-        this._silhouettePath(ctx, 2);
         ctx.strokeStyle = 'rgba(0,238,255,0.7)'; ctx.lineWidth = 1.5;
         ctx.stroke();
       }
