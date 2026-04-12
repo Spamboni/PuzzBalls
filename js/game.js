@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1588;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1589;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1580,7 +1580,7 @@ class Game {
       if (self._draggingTubeSlider && self._tubeSliderRect) {
         var tsr3 = self._tubeSliderRect;
         var tt3 = Math.max(0, Math.min(1, (pos.x - tsr3.x) / tsr3.w));
-        window._tubeSpeedMult = 0.1 + tt3 * 1.9;
+        window._tubeSpeedMult = 0.01 + tt3 * 1.99;
         return;
       }
       if (self._draggingZoneSlider && self._zoneSliderRect) {
