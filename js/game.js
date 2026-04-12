@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1636;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1637;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -169,7 +169,7 @@ class Game {
     this._tubeDragging  = null;
     this._editorTubeMode = false;
     this.splats = [];
-    this._viewScrollY     = 0;   // px the whole view is shifted up (unused currently)
+    this._dmgNumbers = [];  // floating damage number particles   // px the whole view is shifted up (unused currently)
     this._editorScrollY   = 0;   // px the editor panel is scrolled up
     this._aimMode   = 'pull'; // 'pull' = classic pull-back, 'push' = drag-up-to-aim
 
@@ -406,6 +406,7 @@ class Game {
     }
 
     this.sparks     = [];
+    this._dmgNumbers = [];
     this.won        = false;
     this.winTimer   = 0;
     this.collisions = 0;
@@ -2609,6 +2610,17 @@ class Game {
         var velFactor = Math.max(0.5, Math.min(speed / 8, 3.0));
         var dmg       = Math.round((bsBall.baseDamage || 20) * (bsBall.density || 1.0) * velFactor);
         var destroyed = brick.takeDamage(dmg);
+
+        // Spawn floating damage number
+        if (dmg > 0) {
+          var _dnAngle = Math.random() * Math.PI * 2;
+          var _dnSpd   = 3.5 + Math.random() * 2.5;
+          this._dmgNumbers.push({
+            x: ball.x + bnx * (ball.r + 2), y: ball.y + bny * (ball.r + 2),
+            vx: Math.cos(_dnAngle) * _dnSpd, vy: Math.sin(_dnAngle) * _dnSpd - 1.5,
+            val: dmg, age: 0, maxAge: 55,  // ~0.9s at 60fps
+          });
+        }
 
         if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
         // Play brick note if configured, otherwise normal impact sound
@@ -6766,6 +6778,21 @@ class Game {
       ctx.strokeStyle = 'rgba(255,200,60,'+(0.35+power*0.5)+')'; ctx.lineWidth=2; ctx.stroke();
     }
     ctx.restore();
+
+    // ── Launch velocity readout above ball ────────────────────────────────────
+    var _bs3 = BallSettings[obj.type] || BallSettings.bouncer;
+    var _launchSpd = Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (_bs3.velocity || 1);
+    ctx.save();
+    ctx.font = "bold 12px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    var _spdTxt = 'v ' + _launchSpd.toFixed(1);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillText(_spdTxt, obj.x + 1, obj.y - obj.r - 6 + 1);
+    ctx.fillStyle = '#ffee44';
+    ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 6;
+    ctx.fillText(_spdTxt, obj.x, obj.y - obj.r - 6);
+    ctx.shadowBlur = 0;
+    ctx.restore();
   }
 
   _drawHudClearButtons() {
@@ -7044,6 +7071,42 @@ class Game {
       ctx.beginPath(); ctx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
       ctx.fillStyle = s.color + Math.floor(s.life*220).toString(16).padStart(2,'0');
       ctx.shadowColor = s.color; ctx.shadowBlur = 5; ctx.fill(); ctx.shadowBlur = 0;
+    }
+
+    // ── Floating damage numbers ───────────────────────────────────────────────
+    if (!this._dmgNumbers) return;
+    var SOLID_FRAMES = 18;   // ~0.3s constant velocity + full opacity
+    var DECAY_FRAMES = 37;   // then exponential decay over ~0.6s
+    for (var di = this._dmgNumbers.length - 1; di >= 0; di--) {
+      var dn = this._dmgNumbers[di];
+      dn.age++;
+      if (dn.age > SOLID_FRAMES) {
+        var t = (dn.age - SOLID_FRAMES) / DECAY_FRAMES;
+        var decay = Math.pow(1 - t, 2);  // quadratic ease-out
+        dn.vx *= 0.88; dn.vy *= 0.88;
+        dn.x += dn.vx; dn.y += dn.vy;
+        var alpha = Math.max(0, decay);
+        if (alpha <= 0 || dn.age > SOLID_FRAMES + DECAY_FRAMES) {
+          this._dmgNumbers.splice(di, 1); continue;
+        }
+        ctx.save();
+        ctx.globalAlpha = alpha;
+      } else {
+        dn.x += dn.vx; dn.y += dn.vy;
+        ctx.save();
+        ctx.globalAlpha = 1.0;
+      }
+      ctx.font = "bold 13px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      // Drop shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillText(dn.val, dn.x + 1, dn.y + 1);
+      // Yellow number with subtle glow
+      ctx.fillStyle = '#ffdd22';
+      ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 6;
+      ctx.fillText(dn.val, dn.x, dn.y);
+      ctx.shadowBlur = 0;
+      ctx.restore();
     }
   }
 
