@@ -1,5 +1,5 @@
 window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {};
-window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1622;
+window.PUZZBALLS_FILE_VERSION['tubes.js'] = 1623;
 // ── Tube render debug flags (toggled by in-game debug panel) ──────────────────
 window.TUBE_DEBUG = window.TUBE_DEBUG || {
   bodyFill:     true,
@@ -255,60 +255,58 @@ class TubePiece {
   }
 
   // ── Build a single closed silhouette path around the tube outline ────────────
-  // Traces: edgeA start→end, half-ellipse cap at B end, edgeB reversed end→start,
-  // half-ellipse cap at A start. Connected ends get a straight across instead of cap.
+  // Traces: edgeA start→end, half-ellipse cap at B end, edgeB reversed, half-ellipse cap at A.
+  // Connected ends get a straight line across instead of a cap.
+  // Uses manual ellipse point generation so no ctx.save/restore breaks the path.
   _silhouettePath(ctx, offset) {
     var pts = this._path;
     if (!pts || pts.length < 2) return;
-    var r = this.radius + offset;
-    var eA = this._offsetPath(pts, -r);   // "left" wall
-    var eB = this._offsetPath(pts,  r);   // "right" wall
+    var r  = this.radius + offset;
+    var eA = this._offsetPath(pts, -r);
+    var eB = this._offsetPath(pts,  r);
     var sockA = this.socketA(), sockB = this.socketB();
-    var rx = (this.radius + offset) * 0.35;
-    var ry = this.radius + offset;
+    var rx = r * 0.35, ry = r;
+    var CAP_STEPS = 12;
+
+    // Helper: emit half-ellipse arc points in world space (outward half, from -PI/2 to +PI/2)
+    function capPoints(sock, reverse) {
+      var out = [];
+      var start = -Math.PI / 2, end = Math.PI / 2;
+      for (var s = 0; s <= CAP_STEPS; s++) {
+        var t = reverse
+          ? start + (end - start) * (1 - s / CAP_STEPS)
+          : start + (end - start) * (s / CAP_STEPS);
+        // Local ellipse point
+        var lx = rx * Math.cos(t), ly = ry * Math.sin(t);
+        // Rotate by socket angle into world space
+        var ca = Math.cos(sock.angle), sa = Math.sin(sock.angle);
+        out.push({
+          x: sock.x + ca * lx - sa * ly,
+          y: sock.y + sa * lx + ca * ly,
+        });
+      }
+      return out;
+    }
 
     ctx.beginPath();
-    // Walk edge A from start (socket A end) to end (socket B end)
     ctx.moveTo(eA[0].x, eA[0].y);
     for (var i = 1; i < eA.length; i++) ctx.lineTo(eA[i].x, eA[i].y);
 
-    // Cap or straight at socket B end
+    // B end cap or straight
     if (!this.connectedB) {
-      // Half-ellipse cap at B: sweeps from eA[last] around to eB[last]
-      // The cap center is sockB, oriented at sockB.angle
-      // eA[last] is at angle ~(sockB.angle + PI/2), eB[last] at ~(sockB.angle - PI/2)
-      // We draw a full ellipse arc from -PI/2 to +PI/2 (the outward half)
-      ctx.save();
-      ctx.translate(sockB.x, sockB.y);
-      ctx.rotate(sockB.angle);
-      // In local cap space: eA end is at (-rx, 0) approx, eB end at (rx, 0)
-      // Arc from PI/2 to -PI/2 going counterclockwise (the outward half)
-      ctx.restore();
-      // Use ellipse arc via bezier approximation in world space
-      // Simpler: just arc the actual ellipse in transformed context
-      ctx.save();
-      ctx.translate(sockB.x, sockB.y);
-      ctx.rotate(sockB.angle);
-      ctx.scale(rx / ry, 1);
-      ctx.arc(0, 0, ry, -Math.PI / 2, Math.PI / 2, false);
-      ctx.restore();
+      var capB = capPoints(sockB, false);
+      for (var i = 0; i < capB.length; i++) ctx.lineTo(capB[i].x, capB[i].y);
     } else {
-      // Straight line across the connected end
       ctx.lineTo(eB[eB.length - 1].x, eB[eB.length - 1].y);
     }
 
-    // Walk edge B reversed from end (socket B) back to start (socket A)
+    // Walk eB reversed
     for (var i = eB.length - 2; i >= 0; i--) ctx.lineTo(eB[i].x, eB[i].y);
 
-    // Cap or straight at socket A end
+    // A end cap or straight
     if (!this.connectedA) {
-      // Half-ellipse cap at A: sweeps from eB[0] around to eA[0]
-      ctx.save();
-      ctx.translate(sockA.x, sockA.y);
-      ctx.rotate(sockA.angle);
-      ctx.scale(rx / ry, 1);
-      ctx.arc(0, 0, ry, -Math.PI / 2, Math.PI / 2, false);
-      ctx.restore();
+      var capA = capPoints(sockA, false);
+      for (var i = 0; i < capA.length; i++) ctx.lineTo(capA[i].x, capA[i].y);
     } else {
       ctx.lineTo(eA[0].x, eA[0].y);
     }
