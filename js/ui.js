@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1636;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['ui.js'] = 1638;
 // ui.js — PuzzBalls in-game HUD + settings with preset system
 
 class UI {
@@ -528,7 +528,7 @@ class UI {
         pane.appendChild(resetSoundBtn);
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
-        _addSlider(pane,'Physics Steps','Settings','maxSubSteps',1,6,1,function(v){return v+' steps/frame';});
+        _addSlider(pane,'Physics Steps','Settings','maxSubSteps',1,12,1,function(v){return v+' steps/frame';});
       } else {
         var bs = BallSettings[t.id];
         _addSlider(pane,'Size',       null, null, 6, 30,  1,    function(v){return v+'px';},       t.id, 'size');
