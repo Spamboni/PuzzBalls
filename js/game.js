@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1646;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1647;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -658,19 +658,7 @@ class Game {
         }
       }
 
-      // ── HUD clear buttons (work at all times) ──────────────────────────────
-      if (self._hudClearBtns) {
-        for (var hci=0;hci<self._hudClearBtns.length;hci++) {
-          var hcb=self._hudClearBtns[hci];
-          if (pos.x>=hcb.x&&pos.x<=hcb.x+hcb.w&&pos.y>=hcb.y&&pos.y<=hcb.y+hcb.h) {
-            if (hcb.type===0) { self._undoPush && self._undoPush(); self.bricks=[]; }
-            else if (hcb.type===1) { self.objects.forEach(function(o){o.dead=true;}); self._chuteQueue=[]; self._chuteActive=[]; }
-            else if (hcb.type===2) { self._undoPush && self._undoPush(); self.tubes.tubes=[]; }
-            else if (hcb.type===3) { self.splats=[]; }
-            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
-          }
-        }
-      }
+      // ── HUD clear buttons removed — use editor CLR buttons instead ──────────
       // ── Editor mode ──────────────────────────────────────────────────────────
       if (self._editorMode) {
         var _vSY = self._editorScrollY || 0;
@@ -1404,6 +1392,7 @@ class Game {
 
       // ── HUD canvas sliders — grab on touch down ────────────────────────────
       if (!self._editorMode) {
+        self._editorBlockSliders = false;  // safety: always clear when editor is closed
         var _hudSliders = [
           { rect: self._sliderRect,      flag: '_draggingSlider' },
           { rect: self._brickSliderRect,  flag: '_draggingBrickSlider' },
@@ -4576,7 +4565,7 @@ class Game {
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
     if (vSY !== 0) ctx.restore();
-    this._drawHudClearButtons();
+    // Top HUD clear buttons removed — use editor CLR buttons instead
     if (!this._editorMode) {
       this._drawSpeedSlider();
       this._drawCornerButtons();
@@ -4604,6 +4593,21 @@ class Game {
   }
 
   _undoApply(snap) {
+    if (!snap) return;
+    if (!this._undoHistory) { this._undoHistory = []; this._redoHistory = []; }
+    // Push current state to redo stack before restoring
+    var redoSnap = this.bricks.map(function(b) {
+      return { x:b.x, y:b.y, w:b.w, h:b.h, r:b.r, _rotation:b._rotation,
+               maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
+               _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
+               _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot,
+               _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
+               _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
+    });
+    var redoTubeSnap = this.tubes ? this.tubes.toJSON() : [];
+    if (!this._redoHistory) this._redoHistory = [];
+    this._redoHistory.push({ bricks: redoSnap, tubes: redoTubeSnap });
     // Support both old format (array) and new format ({bricks, tubes})
     var brickSnap = Array.isArray(snap) ? snap : snap.bricks;
     var tubeSnap  = Array.isArray(snap) ? null : snap.tubes;
@@ -4620,9 +4624,35 @@ class Game {
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
     }).filter(Boolean);
-    // Restore tubes if snapshot includes them
     if (tubeSnap && this.tubes) this.tubes.fromJSON(tubeSnap);
     // Clear selection so stale highlight doesn't persist
+    this._editorSelected = null;
+    this._showBrickSettings = false;
+    this._tubeSelected = null;
+  }
+
+  _redoApply(snap) {
+    if (!snap) return;
+    // Redo: push current state back to undo, then apply snap
+    this._undoPush();
+    // _undoPush clears _redoHistory — restore it after
+    var savedRedo = this._redoHistory ? this._redoHistory.slice() : [];
+    var brickSnap = Array.isArray(snap) ? snap : snap.bricks;
+    var tubeSnap  = Array.isArray(snap) ? null : snap.tubes;
+    this.bricks = brickSnap.map(function(s) {
+      var b = s._ref;
+      if (!b) return null;
+      b.x=s.x; b.y=s.y; b.w=s.w; b.h=s.h; if(s.r)b.r=s.r;
+      b._rotation=s._rotation||0; b.maxHealth=s.maxHealth; b.health=s.maxHealth;
+      b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
+      b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
+      b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
+      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._translateOnRotate=s._translateOnRotate;
+      b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
+      return b;
+    }).filter(Boolean);
+    if (tubeSnap && this.tubes) this.tubes.fromJSON(tubeSnap);
+    this._redoHistory = savedRedo;
     this._editorSelected = null;
     this._showBrickSettings = false;
     this._tubeSelected = null;
@@ -7116,7 +7146,7 @@ class Game {
     ctx.fillStyle    = 'rgba(180,230,255,0.9)';
     ctx.font         = "bold 9px 'Share Tech Mono', monospace";
     ctx.textAlign    = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillText('SPEED ' + pct + '%', sx + sliderW / 2, sy - 1);
+    ctx.fillText('BALL SPEED ' + pct + '%', sx + sliderW / 2, sy - 1);
 
     ctx.restore();
 
