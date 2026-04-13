@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1668;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1669;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1021,6 +1021,8 @@ class Game {
               self._editorSelected._movable=!self._editorSelected._movable;
               self._editorMovable=self._editorSelected._movable;
             } else { self._editorMovable=!self._editorMovable; }
+            // Auto-open BRICK PHYSICS when movable, auto-close when static
+            window['_edCollapse_brickphys'] = !self._editorMovable;
             if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorMovable); return;
           }
         }
@@ -4908,6 +4910,9 @@ class Game {
       window._tubeEditorMode = _wastubeTab;
       if (!this._undoHistory) { this._undoHistory = []; this._redoHistory = []; }
       if (this._editorTranslate === undefined) this._editorTranslate = false;
+      // Default collapsed state for panels — only set if never opened before
+      if (window['_edCollapse_actions']   === undefined) window['_edCollapse_actions']   = true;
+      if (window['_edCollapse_brickphys'] === undefined) window['_edCollapse_brickphys'] = true;
       // Default: stationary, no rotation, translate-on-rotate off
       if (this._editorMovable === undefined) this._editorMovable = false;
       if (this._editorLastSettings === undefined) this._editorLastSettings = { _movable: false, _rotation: 0, _translateOnRotate: false };
@@ -4990,14 +4995,24 @@ class Game {
         var _endHitR = Math.max(20, _hw * 0.4 + 8);
         var _distR = Math.hypot(pos.x - _endRX, pos.y - _endRY);
         var _distL = Math.hypot(pos.x - _endLX, pos.y - _endLY);
+        // Don't allow dragging the end that IS the pivot point
+        var _pivKey2 = _pivKey;
+        var _pivIsRight = (_pivKey2 === 'MR' || _pivKey2 === 'TR' || _pivKey2 === 'BR');
+        var _pivIsLeft  = (_pivKey2 === 'ML' || _pivKey2 === 'TL' || _pivKey2 === 'BL');
         var _hitEnd = null;
-        if (_distR < _endHitR && _distR <= _distL) _hitEnd = 'right';
-        else if (_distL < _endHitR) _hitEnd = 'left';
+        if (!_pivIsRight && _distR < _endHitR && _distR <= _distL) _hitEnd = 'right';
+        else if (!_pivIsLeft && _distL < _endHitR) _hitEnd = 'left';
         if (_hitEnd) {
+          // Distance from pivot to the dragged end (in local brick coords along length axis)
+          var _pivToEnd = (_hitEnd === 'right') ? (_hw - _pOff.x) : (_hw + _pOff.x);
+          // Distance from pivot to the anchored end
+          var _pivToAnch = (_hitEnd === 'right') ? (_hw + _pOff.x) : (_hw - _pOff.x);
           this._editorPivotEndState = {
             brick: b, end: _hitEnd,
             pivotWX: _pvWX, pivotWY: _pvWY,
             origW: b.w, origRot: _bRot, origX: b.x, origY: b.y,
+            pivDistDragged: Math.max(1, _pivToEnd),
+            pivDistAnchored: _pivToAnch,
           };
           this._editorPivotBodyState = null;
           this._editorDragging = null;
@@ -5352,22 +5367,21 @@ class Game {
     // PIVOT END mode — drag one end, pivot stays fixed in world space
     if (this._editorPivotEndState) {
       var _pes = this._editorPivotEndState, _pb = _pes.brick;
-      // Vector from pivot to finger
       var _fpvX = pos.x - _pes.pivotWX, _fpvY = pos.y - _pes.pivotWY;
       var _fingerDist = Math.hypot(_fpvX, _fpvY);
-      if (_fingerDist < 4) return;  // too close to pivot — ignore
-      // New rotation = angle from pivot to finger (right end) or opposite (left end)
+      if (_fingerDist < 4) return;
+      // Rotation from pivot toward dragged end
       var _newRot = Math.atan2(_fpvY, _fpvX);
-      if (_pes.end === 'left') _newRot += Math.PI;  // left end = opposite direction
-      // Apply snap if active
+      if (_pes.end === 'left') _newRot += Math.PI;
       var _snapDeg2 = this._editorSnapDeg || 0;
       if (_snapDeg2 > 0) { var _sr2 = _snapDeg2*Math.PI/180; _newRot = Math.round(_newRot/_sr2)*_sr2; }
       _pb._rotation = _newRot;
-      // New half-width = distance from pivot to finger
-      var _newHW = Math.max(6, Math.min(450, _fingerDist));
-      _pb.w = _newHW * 2;
-      // Recenter: pivot world pos = center + rotated pivot offset
-      // So center = pivot world - rotated pivot offset
+      // Total width = fingerDist (pivot→dragged-end) + anchored end distance (scales with fingerDist)
+      // Ratio: anchored/dragged stays constant as derived from original geometry
+      var _ratio = _pes.pivDistAnchored / Math.max(1, _pes.pivDistDragged);
+      var _newW = Math.max(12, Math.min(900, _fingerDist * (1 + _ratio)));
+      _pb.w = _newW;
+      // Recenter: keep pivot fixed in world space using updated pivot offset
       var _pOff2 = this._getPivotOffset(_pb, _pb._pivot || 'CM');
       var _rotPOX = Math.cos(_newRot)*_pOff2.x - Math.sin(_newRot)*_pOff2.y;
       var _rotPOY = Math.sin(_newRot)*_pOff2.x + Math.cos(_newRot)*_pOff2.y;
