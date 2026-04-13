@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1666;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1667;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -126,6 +126,7 @@ var FLOOR_MARGIN     = 150;
 var Settings = {
   gravityMult:  1.0,
   frictionMult: 1.0,
+  selectionDashSpeed: 2.0,  // ant march speed — default middle range
 };
 
 function getSpawnX(index, total, W) {
