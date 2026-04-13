@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1675;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1677;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5093,9 +5093,13 @@ class Game {
           var _pivToEnd = (_hitEnd === 'right') ? (_hw - _pOff.x) : (_hw + _pOff.x);
           // Distance from pivot to the anchored end
           var _pivToAnch = (_hitEnd === 'right') ? (_hw + _pOff.x) : (_hw - _pOff.x);
+          // World position of the ANCHORED end — stays fixed throughout drag
+          var _anchWX = (_hitEnd === 'right') ? _endLX : _endRX;
+          var _anchWY = (_hitEnd === 'right') ? _endLY : _endRY;
           this._editorPivotEndState = {
             brick: b, end: _hitEnd,
             pivotWX: _pvWX, pivotWY: _pvWY,
+            anchorWX: _anchWX, anchorWY: _anchWY,
             origW: b.w, origRot: _bRot, origX: b.x, origY: b.y,
             pivDistDragged: Math.max(1, _pivToEnd),
             pivDistAnchored: _pivToAnch,
@@ -5275,24 +5279,18 @@ class Game {
         // Identify which finger is on which end
         var _pRight = (_ptf.f0end === 'right') ? p0 : p1;
         var _pLeft  = (_ptf.f0end === 'left')  ? p0 : p1;
-        var _hwR = Math.max(6, Math.min(450, Math.hypot(_pRight.x - _ptf.pivotWX, _pRight.y - _ptf.pivotWY)));
-        var _hwL = Math.max(6, Math.min(450, Math.hypot(_pLeft.x  - _ptf.pivotWX, _pLeft.y  - _ptf.pivotWY)));
-        if (_hwR < 4 || _hwL < 4) return;
-        // Rotation = angle from left-end finger to right-end finger (matches regular pinch convention)
+        var _newW2 = Math.hypot(_pRight.x - _pLeft.x, _pRight.y - _pLeft.y);
+        if (_newW2 < 12) return;
+        // Rotation = angle from left finger to right finger
         var _newRot2 = Math.atan2(_pRight.y - _pLeft.y, _pRight.x - _pLeft.x);
         var _snapDeg4 = this._editorSnapDeg || 0;
         if (_snapDeg4 > 0) { var _sr4 = _snapDeg4*Math.PI/180; _newRot2 = Math.round(_newRot2/_sr4)*_sr4; }
         _ptb._rotation = _newRot2;
-        _ptb.w = Math.max(12, _hwR + _hwL);
-        // Recenter: pivot world pos stays at _ptf.pivotWX/Y
-        var _pOff5 = this._getPivotOffset(_ptb, _ptb._pivot||'CM');
-        var _rpX = Math.cos(_newRot2)*_pOff5.x - Math.sin(_newRot2)*_pOff5.y;
-        var _rpY = Math.sin(_newRot2)*_pOff5.x + Math.cos(_newRot2)*_pOff5.y;
-        _ptb.x = _ptf.pivotWX - _rpX;
-        _ptb.y = _ptf.pivotWY - _rpY;
+        _ptb.w = Math.max(12, Math.min(900, _newW2));
+        // Center = midpoint between the two fingers
+        _ptb.x = (_pRight.x + _pLeft.x) / 2;
+        _ptb.y = Math.min((_pRight.y + _pLeft.y) / 2, this.floorY() - (_ptb.h||10)/2 - 4);
         _ptb._pivotAsymmetric = true;
-        _ptb._pivotWX = _ptf.pivotWX;
-        _ptb._pivotWY = _ptf.pivotWY;
         return;
       } else {
         // Corner/edge pivot — second finger ignored in pivot mode
@@ -5446,29 +5444,26 @@ class Game {
       this._setSliderVal(sl.key, sl.defKey, val, sl);
       return;
     }
-    // PIVOT END mode — drag one end, pivot stays fixed in world space
+    // PIVOT END mode — drag one end, anchored end stays fixed in world space
     if (this._editorPivotEndState) {
       var _pes = this._editorPivotEndState, _pb = _pes.brick;
-      var _fpvX = pos.x - _pes.pivotWX, _fpvY = pos.y - _pes.pivotWY;
-      var _fingerDist = Math.hypot(_fpvX, _fpvY);
-      if (_fingerDist < 4) return;
-      // Rotation from pivot toward dragged end
-      var _newRot = Math.atan2(_fpvY, _fpvX);
-      if (_pes.end === 'left') _newRot += Math.PI;
+      // Vector from anchored end to finger (dragged end)
+      var _axF = pos.x - _pes.anchorWX, _ayF = pos.y - _pes.anchorWY;
+      var _newW = Math.hypot(_axF, _ayF);
+      if (_newW < 6) return;
+      _newW = Math.max(12, Math.min(900, _newW));
+      // Rotation = angle from anchored end toward dragged finger
+      // Right end dragged: angle from left anchor to finger = brick rotation
+      // Left end dragged: angle from right anchor to finger = brick rotation + PI
+      var _axisAngle = Math.atan2(_ayF, _axF);
+      var _newRot = (_pes.end === 'right') ? _axisAngle : _axisAngle + Math.PI;
       var _snapDeg2 = this._editorSnapDeg || 0;
       if (_snapDeg2 > 0) { var _sr2 = _snapDeg2*Math.PI/180; _newRot = Math.round(_newRot/_sr2)*_sr2; }
       _pb._rotation = _newRot;
-      // Total width = fingerDist (pivot→dragged-end) + anchored end distance (scales with fingerDist)
-      // Ratio: anchored/dragged stays constant as derived from original geometry
-      var _ratio = _pes.pivDistAnchored / Math.max(1, _pes.pivDistDragged);
-      var _newW = Math.max(12, Math.min(900, _fingerDist * (1 + _ratio)));
       _pb.w = _newW;
-      // Recenter: keep pivot fixed in world space using updated pivot offset
-      var _pOff2 = this._getPivotOffset(_pb, _pb._pivot || 'CM');
-      var _rotPOX = Math.cos(_newRot)*_pOff2.x - Math.sin(_newRot)*_pOff2.y;
-      var _rotPOY = Math.sin(_newRot)*_pOff2.x + Math.cos(_newRot)*_pOff2.y;
-      _pb.x = _pes.pivotWX - _rotPOX;
-      _pb.y = Math.min(_pes.pivotWY - _rotPOY, this.floorY() - (_pb.h||10)/2 - 4);
+      // Center = midpoint between anchored end and dragged finger
+      _pb.x = _pes.anchorWX + Math.cos(_axisAngle) * _newW / 2;
+      _pb.y = Math.min(_pes.anchorWY + Math.sin(_axisAngle) * _newW / 2, this.floorY() - (_pb.h||10)/2 - 4);
       return;
     }
 
@@ -6481,13 +6476,14 @@ class Game {
       }
       ctx.restore(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
 
-      if (this._editorRotateState || (this._editorSelected && this._editorPivotActive)) {
-        var pivot4 = sb._pivot||'CM';
+      if (this._editorRotateState || (this._editorSelected && (this._editorPivotActive || this._pivotLockKey))) {
+        var pivot4 = this._pivotLockKey || sb._pivot || 'CM';
         var pOff4  = this._getPivotOffset(sb, pivot4);
         var pvX4   = sb.x+Math.cos(sb._rotation||0)*pOff4.x-Math.sin(sb._rotation||0)*pOff4.y;
         var pvY4   = sb.y+Math.sin(sb._rotation||0)*pOff4.x+Math.cos(sb._rotation||0)*pOff4.y;
-        ctx.save(); ctx.strokeStyle='#cc44ff'; ctx.lineWidth=1.5;
-        ctx.shadowColor='#cc44ff'; ctx.shadowBlur=8;
+        var _xhCol = this._pivotLockKey ? '#ff2244' : '#cc44ff';
+        ctx.save(); ctx.strokeStyle=_xhCol; ctx.lineWidth=1.5;
+        ctx.shadowColor=_xhCol; ctx.shadowBlur=8;
         ctx.beginPath(); ctx.arc(pvX4,pvY4,6,0,Math.PI*2); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(pvX4-9,pvY4);ctx.lineTo(pvX4+9,pvY4);
         ctx.moveTo(pvX4,pvY4-9);ctx.lineTo(pvX4,pvY4+9); ctx.stroke();
