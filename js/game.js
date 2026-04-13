@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1659;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1660;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5673,6 +5673,8 @@ class Game {
     }
 
     // ── SLIDER PANELS ─────────────────────────────────────────────────────────
+    var sb2 = this._editorSelected;
+    var bd2 = window.BrickDefaults || {};
     var slRH  = 26;  // row height per slider
     var slGap = 4;
 
@@ -6001,8 +6003,6 @@ class Game {
     ctx.strokeStyle = '#224466'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(padding, bpY, bpW, bpH_base, 3); ctx.stroke();
 
-    var sb2    = this._editorSelected;
-    var bd2    = window.BrickDefaults || {};
     var movActive2 = sb2 ? (sb2._movable||false) : (this._editorMovable||false);
     var transOn3   = sb2 ? (sb2._translateOnRotate!==false) : (this._editorTranslate!==false);
 
