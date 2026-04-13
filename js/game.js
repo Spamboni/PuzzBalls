@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1656;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1657;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -4970,11 +4970,13 @@ class Game {
     var sb = this._editorSelected;
 
     if (!this._editorPinchStart) {
-      // If a provisional single-touch undo was just pushed, replace it with the pinch undo
-      if (this._editorLastPushWasProvisional && this._undoHistory && this._undoHistory.length > 0) {
+      // If first finger dragged slightly before second finger joined (same touch sequence),
+      // collapse that micro-drag into the pinch by replacing its undo entry
+      if (this._editorDragInProgress && this._undoHistory && this._undoHistory.length > 0) {
         this._undoHistory.pop();
       }
       this._editorLastPushWasProvisional = false;
+      this._editorDragInProgress = false;
       // Push undo BEFORE the pinch modifies anything
       this._undoPush();
       // Store initial finger and brick state
@@ -5087,6 +5089,7 @@ class Game {
 
   _editorOnMove(pos) {
     this._editorLastPushWasProvisional = false;  // movement confirmed — undo push is real
+    this._editorDragInProgress = true;  // finger is still down and has moved
     // Slider drag in panel area
     if (this._editorDragSlider) {
       var sl = this._editorDragSlider;
@@ -5238,6 +5241,7 @@ class Game {
 
   _editorOnUp() {
     this._editorLastPushWasProvisional = false;
+    this._editorDragInProgress = false;
     this._editorDraggingJustPlaced = false;
     this._editorDragging    = null;
     this._editorStretchState = null;
