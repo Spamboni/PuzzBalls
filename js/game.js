@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1672;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1673;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -896,6 +896,8 @@ class Game {
             }
           }
         }
+        // CLR row buttons — long press only
+        if (self._editorClrBtns) {
           for (var cli2=0; cli2<self._editorClrBtns.length; cli2++) {
             var clb=self._editorClrBtns[cli2];
             if (_px>=clb.x&&_px<=clb.x+clb.w&&_py>=clb.y&&_py<=clb.y+clb.h) {
