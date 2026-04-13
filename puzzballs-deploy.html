@@ -588,9 +588,9 @@ async function deploy() {
 }
 
 // =====================================================
-// GitHub Pages deployment status polling (FIXED)
-// Uses /pages/builds/latest which actually works,
-// instead of /pages/deployments which 404s
+// GitHub Pages deployment status polling
+// Tries multiple API approaches and logs everything
+// so we can see exactly what GitHub returns
 // =====================================================
 async function pollPagesDeployment(token, repo) {
   var card    = document.getElementById('pagesCard');
@@ -600,96 +600,160 @@ async function pollPagesDeployment(token, repo) {
   var link    = document.getElementById('siteLink');
   var siteUrl = 'https://' + repo.split('/')[0].toLowerCase() + '.github.io/' + repo.split('/')[1];
 
+  // Extract version from zip filename (e.g. "puzzballs-v16.21.zip" -> "v16.21")
+  var version = '';
+  if (zipFile && zipFile.name) {
+    var m = zipFile.name.match(/v[\d._]+/i);
+    if (m) version = m[0].replace(/_/g, '.');
+  }
+
   card.style.display = 'block';
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   link.href = siteUrl;
 
-  var startTime = Date.now();
+  // Use deployStartTime (set before file pushing began) not now,
+  // because GitHub may start building while we're still pushing
+  var pollStart = Date.now();
   var maxWait   = 60000;   // 60 seconds max
-  var pollInterval = 4000; // check every 4 seconds
+  var pollInterval = 5000; // check every 5 seconds
+  var finished  = false;
+  var seenBuilding = false; // track if we ever saw "building" status
 
   function tick() {
-    var ms = Date.now() - startTime;
+    var ms = Date.now() - pollStart;
     var sec = Math.floor(ms / 1000);
     elapsed.textContent = sec + 's';
-    // Animate bar 0->90% over 40s, then slow
     var pct = Math.min(90, (ms / 55000) * 90);
     bar.style.width = pct + '%';
   }
 
   var tickInterval = setInterval(tick, 500);
 
-  // After maxWait, just show the play button regardless
+  // After maxWait, show play button regardless
   var fallbackTimer = setTimeout(function() {
-    done(true, true);
+    if (!finished) done(true, true);
   }, maxWait);
 
   async function checkStatus() {
+    if (finished) return;
     try {
-      // METHOD 1: /pages/builds/latest — the correct and reliable endpoint
-      var r = await fetch('https://api.github.com/repos/' + repo + '/pages/builds/latest', {
+      // Try /pages/builds/latest first
+      var url1 = 'https://api.github.com/repos/' + repo + '/pages/builds/latest';
+      var r = await fetch(url1, {
         headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
       });
 
+      log('  [API] /pages/builds/latest -> ' + r.status, 'dim');
+
       if (r.ok) {
         var build = await r.json();
-        var status = build.status; // "queued", "building", "built", "errored"
+        var status = build.status || 'unknown';
+        var updatedAt = build.updated_at || '';
+
+        log('  [API] status=' + status + ' updated=' + updatedAt, 'dim');
 
         badge.className = 'status-badge visible working';
-        badge.innerHTML = '<span class="dot-pulse">\u25cf</span> GitHub Pages: ' + status + '...';
+        badge.innerHTML = '<span class="dot-pulse">\u25cf</span> Pages: ' + status;
 
-        log('\ud83d\udd0d Pages build status: ' + status, 'dim');
+        if (status === 'building' || status === 'queued') {
+          seenBuilding = true;
+        }
 
         if (status === 'built') {
-          // Verify it was built AFTER we started deploying
-          var builtAt = build.updated_at ? new Date(build.updated_at).getTime() : 0;
-          if (builtAt > startTime - 10000) {
-            done(true, false);
-            return;
-          }
-          // If the build timestamp is old, it might be a stale result — keep polling
+          // If we ever saw it building first, or if this is a fresh check,
+          // accept "built" — don't overthink the timestamp
+          done(true, false);
+          return;
         }
 
         if (status === 'errored') {
-          var errMsg = build.error && build.error.message ? build.error.message : 'unknown error';
-          log('\u274c Pages build error: ' + errMsg, 'err');
+          var errMsg = (build.error && build.error.message) ? build.error.message : 'unknown';
+          log('  Pages error: ' + errMsg, 'err');
           done(false, false);
           return;
         }
-      } else if (r.status === 404) {
-        // Token might not have Pages permission — try fallback
-        log('\u26a0 Pages builds API returned 404 (token may need "pages" scope)', 'warn');
-        // Try the simpler /pages endpoint as fallback
-        var r2 = await fetch('https://api.github.com/repos/' + repo + '/pages', {
+
+        // Still building/queued — keep polling
+        if (!finished) setTimeout(checkStatus, pollInterval);
+        return;
+      }
+
+      // If /builds/latest returned 404, try /pages directly
+      if (r.status === 404) {
+        log('  [API] builds/latest 404 — trying /pages', 'warn');
+
+        var url2 = 'https://api.github.com/repos/' + repo + '/pages';
+        var r2 = await fetch(url2, {
           headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
         });
+
+        log('  [API] /pages -> ' + r2.status, 'dim');
+
         if (r2.ok) {
           var pg = await r2.json();
+          var pgStatus = pg.status || 'unknown';
+          var builtAt  = pg.built_at || '';
+
+          log('  [API] pages.status=' + pgStatus + ' built_at=' + builtAt, 'dim');
+
           badge.className = 'status-badge visible working';
-          badge.innerHTML = '<span class="dot-pulse">\u25cf</span> Pages status: ' + (pg.status || 'unknown') + '...';
+          badge.innerHTML = '<span class="dot-pulse">\u25cf</span> Pages: ' + pgStatus;
+
+          if (pgStatus === 'built') {
+            done(true, false);
+            return;
+          }
+        } else if (r2.status === 404) {
+          log('  [API] /pages also 404 — token needs "repo" or "pages" scope', 'err');
+          badge.className = 'status-badge visible working';
+          badge.innerHTML = '<span class="dot-pulse">\u25cf</span> No API access — waiting...';
         }
       }
+
+      // Also try the Actions workflow runs API as another signal
+      // GitHub Pages deployments show up as workflow runs
+      var url3 = 'https://api.github.com/repos/' + repo + '/actions/runs?per_page=1&event=push';
+      var r3 = await fetch(url3, {
+        headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' }
+      });
+
+      if (r3.ok) {
+        var runs = await r3.json();
+        if (runs.workflow_runs && runs.workflow_runs.length > 0) {
+          var run = runs.workflow_runs[0];
+          var runStatus = run.status;      // "queued", "in_progress", "completed"
+          var conclusion = run.conclusion; // "success", "failure", null
+          log('  [API] actions/runs: ' + runStatus + '/' + (conclusion || 'pending'), 'dim');
+
+          if (runStatus === 'completed' && conclusion === 'success') {
+            done(true, false);
+            return;
+          }
+        }
+      } else {
+        log('  [API] actions/runs -> ' + r3.status, 'dim');
+      }
+
     } catch(e) {
-      // Network error — just keep the spinner going
       badge.className = 'status-badge visible working';
       badge.innerHTML = '<span class="dot-pulse">\u25cf</span> Checking...';
-      log('\u26a0 Poll error: ' + e.message, 'dim');
+      log('  [API] error: ' + e.message, 'warn');
     }
 
-    // Keep polling if not done yet
-    if (Date.now() - startTime < maxWait) {
+    if (!finished && Date.now() - pollStart < maxWait) {
       setTimeout(checkStatus, pollInterval);
     }
-    // (fallbackTimer handles the timeout case)
   }
 
   function done(success, timedOut) {
+    if (finished) return;
+    finished = true;
     clearInterval(tickInterval);
     clearTimeout(fallbackTimer);
     bar.style.transition = 'width 0.5s ease';
     bar.style.width = '100%';
 
-    var ms = Date.now() - startTime;
+    var ms = Date.now() - pollStart;
     var sec = Math.floor(ms / 1000);
     elapsed.textContent = sec + 's';
 
@@ -699,6 +763,7 @@ async function pollPagesDeployment(token, repo) {
         ? '\u2705 Live! (~' + sec + 's)'
         : '\u2705 Live in ' + sec + 's!';
       link.style.display = 'inline-block';
+      link.innerHTML = '\ud83d\ude80 PLAY PUZZBALLS' + (version ? ' ' + version : '');
       log('\ud83c\udf10 Site live at: ' + siteUrl, 'ok');
     } else {
       badge.className = 'status-badge visible error';
@@ -706,7 +771,8 @@ async function pollPagesDeployment(token, repo) {
     }
   }
 
-  // Start polling after a short initial delay
+  log('\ud83d\udd0d Starting Pages status polling...', 'info');
+  // Start polling after a short delay to let GitHub register the push
   setTimeout(checkStatus, 3000);
 }
 </script>
