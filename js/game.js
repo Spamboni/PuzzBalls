@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1667;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1668;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -853,6 +853,10 @@ class Game {
               self._editorToolMode=mb2.id;
               self._editorSelectMode=(mb2.id!=='build');
               self._editorSelected=null;
+              self._editorPivotActive=false;
+              self._editorPivotEndState=null;
+              self._editorPivotBodyState=null;
+              self._editorPivotTwoFingerStart=null;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
             }
           }
@@ -1042,13 +1046,25 @@ class Game {
             }
           }
         }
-        // Rotation slider pivot grid (TRANSFORM panel)
+        // Rotation slider pivot grid (TRANSFORM panel) — tap to activate, tap again to deactivate
         if (self._editorRotPivRects) {
           for (var rpi=0; rpi<self._editorRotPivRects.length; rpi++) {
             var rpr2=self._editorRotPivRects[rpi];
             if (_px>=rpr2.x&&_px<=rpr2.x+rpr2.w&&_py>=rpr2.y&&_py<=rpr2.y+rpr2.h) {
-              if (self._editorSelected) self._editorSelected._pivot=rpr2.val;
-              self._editorPivot=rpr2.val;
+              if (self._editorPivotActive && self._editorPivot === rpr2.val) {
+                // Same button tapped again — deactivate pivot mode
+                self._editorPivotActive = false;
+                self._editorPivot = 'CM';
+                if (self._editorSelected) self._editorSelected._pivot = 'CM';
+              } else {
+                // New button or activating — set pivot and activate
+                self._editorPivotActive = true;
+                self._editorPivot = rpr2.val;
+                if (self._editorSelected) self._editorSelected._pivot = rpr2.val;
+              }
+              // Cancel any active pivot states
+              self._editorPivotEndState = null;
+              self._editorPivotBodyState = null;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
             }
           }
@@ -4961,6 +4977,44 @@ class Game {
       this._undoPush();
       this._editorLastPushWasProvisional = true;  // may be replaced if pinch follows
 
+      // ── Pivot mode (activated via rot pivot grid) ───────────────────────────
+      if (this._editorPivotActive && !(b instanceof CircularBrick)) {
+        var _pivKey = b._pivot || 'CM';
+        var _pOff = this._getPivotOffset(b, _pivKey);
+        var _bRot = b._rotation || 0;
+        var _pvWX = b.x + Math.cos(_bRot)*_pOff.x - Math.sin(_bRot)*_pOff.y;
+        var _pvWY = b.y + Math.sin(_bRot)*_pOff.x + Math.cos(_bRot)*_pOff.y;
+        var _hw = (b.w || 40) / 2;
+        var _endRX = b.x + Math.cos(_bRot)*_hw, _endRY = b.y + Math.sin(_bRot)*_hw;
+        var _endLX = b.x - Math.cos(_bRot)*_hw, _endLY = b.y - Math.sin(_bRot)*_hw;
+        var _endHitR = Math.max(20, _hw * 0.4 + 8);
+        var _distR = Math.hypot(pos.x - _endRX, pos.y - _endRY);
+        var _distL = Math.hypot(pos.x - _endLX, pos.y - _endLY);
+        var _hitEnd = null;
+        if (_distR < _endHitR && _distR <= _distL) _hitEnd = 'right';
+        else if (_distL < _endHitR) _hitEnd = 'left';
+        if (_hitEnd) {
+          this._editorPivotEndState = {
+            brick: b, end: _hitEnd,
+            pivotWX: _pvWX, pivotWY: _pvWY,
+            origW: b.w, origRot: _bRot, origX: b.x, origY: b.y,
+          };
+          this._editorPivotBodyState = null;
+          this._editorDragging = null;
+          return;
+        } else {
+          // Body tap — rotate only around pivot
+          this._editorPivotBodyState = {
+            brick: b, pivotWX: _pvWX, pivotWY: _pvWY,
+            startAngle: Math.atan2(pos.y - _pvWY, pos.x - _pvWX),
+            origRot: _bRot, origX: b.x, origY: b.y,
+          };
+          this._editorPivotEndState = null;
+          this._editorDragging = null;
+          return;
+        }
+      }
+
       if (toolMode === 'stretch') {
         // Determine which end was tapped (in brick local space)
         var bRot4 = b._rotation || 0;
@@ -4992,21 +5046,6 @@ class Game {
           startLocalY: localY5,
           origH: b.h || 22,
           origX: b.x, origY: b.y,
-        };
-        this._editorDragging = null;
-        return;
-      }
-
-      if (toolMode === 'rotate') {
-        // Use existing pivot point or brick center
-        var pivot = b._pivot || 'CM';
-        var pOff = this._getPivotOffset(b, pivot);
-        this._editorRotateState = {
-          brick: b,
-          pivotWorldX: b.x + pOff.x,
-          pivotWorldY: b.y + pOff.y,
-          startAngle: Math.atan2(pos.y - (b.y + pOff.y), pos.x - (b.x + pOff.x)),
-          origRotation: b._rotation || 0,
         };
         this._editorDragging = null;
         return;
@@ -5095,6 +5134,74 @@ class Game {
     var p0 = { x: (t0.clientX - rect.left) * _escX, y: (t0.clientY - rect.top) * _escY - vSY };
     var p1 = { x: (t1.clientX - rect.left) * _escX, y: (t1.clientY - rect.top) * _escY - vSY };
     var sb = this._editorSelected;
+
+    // ── Pivot two-finger: ML/MR pivots allow independent end dragging ─────────
+    if (this._editorPivotActive && !(sb instanceof CircularBrick)) {
+      var _pivK = sb._pivot || 'CM';
+      // Only ML and MR support two-finger independent end drag
+      // (corner/edge pivots lock that end, so only one free end makes sense)
+      var _twoFingerPivots = { 'ML':true, 'MR':true };
+      if (_twoFingerPivots[_pivK]) {
+        if (!this._editorPivotTwoFingerStart) {
+          if (!this._editorDragInProgress) this._undoPush();
+          this._editorLastPushWasProvisional = false;
+          this._editorDragInProgress = false;
+          // Each finger gets the nearest end
+          var _bRot = sb._rotation || 0;
+          var _hw2 = (sb.w||40)/2;
+          var _eRX = sb.x + Math.cos(_bRot)*_hw2, _eRY = sb.y + Math.sin(_bRot)*_hw2;
+          var _eLX = sb.x - Math.cos(_bRot)*_hw2, _eLY = sb.y - Math.sin(_bRot)*_hw2;
+          var _d0R = Math.hypot(p0.x-_eRX, p0.y-_eRY), _d0L = Math.hypot(p0.x-_eLX, p0.y-_eLY);
+          var _d1R = Math.hypot(p1.x-_eRX, p1.y-_eRY), _d1L = Math.hypot(p1.x-_eLX, p1.y-_eLY);
+          // Assign fingers to ends — each finger gets nearest uncontested end
+          var _f0end = (_d0R < _d0L) ? 'right' : 'left';
+          var _f1end = (_f0end === 'right') ? 'left' : 'right';
+          // Compute pivot world pos
+          var _pOff4 = this._getPivotOffset(sb, _pivK);
+          var _pvWX2 = sb.x + Math.cos(_bRot)*_pOff4.x - Math.sin(_bRot)*_pOff4.y;
+          var _pvWY2 = sb.y + Math.sin(_bRot)*_pOff4.x + Math.cos(_bRot)*_pOff4.y;
+          // Check both fingers are on opposite sides of pivot
+          var _p0side = Math.cos(_bRot)*(p0.x-_pvWX2) + Math.sin(_bRot)*(p0.y-_pvWY2);
+          var _p1side = Math.cos(_bRot)*(p1.x-_pvWX2) + Math.sin(_bRot)*(p1.y-_pvWY2);
+          if (_p0side * _p1side > 0) return;  // same side of pivot — ignore second finger
+          this._editorPivotTwoFingerStart = {
+            brick: sb, f0end: _f0end, f1end: _f1end, pivotWX: _pvWX2, pivotWY: _pvWY2,
+          };
+          return;
+        }
+        // Apply two-finger independent end drag
+        var _ptf = this._editorPivotTwoFingerStart, _ptb = _ptf.brick;
+        var _applyEnd = function(fingerPos, endSide, pivWX, pivWY) {
+          var _fvX = fingerPos.x - pivWX, _fvY = fingerPos.y - pivWY;
+          var _fd = Math.hypot(_fvX, _fvY);
+          if (_fd < 4) return;
+          var _rot = Math.atan2(_fvY, _fvX);
+          if (endSide === 'left') _rot += Math.PI;
+          return { rot: _rot, hw: Math.max(6, Math.min(450, _fd)) };
+        };
+        var _r0 = _applyEnd(p0, _ptf.f0end, _ptf.pivotWX, _ptf.pivotWY);
+        var _r1 = _applyEnd(p1, _ptf.f1end, _ptf.pivotWX, _ptf.pivotWY);
+        if (_r0 && _r1) {
+          // Average rotation of both end vectors
+          var _avgRot = Math.atan2(
+            Math.sin(_r0.rot) + Math.sin(_r1.rot + Math.PI),
+            Math.cos(_r0.rot) + Math.cos(_r1.rot + Math.PI)
+          );
+          _ptb._rotation = _avgRot;
+          _ptb.w = Math.max(12, (_r0.hw + _r1.hw));
+          // Recenter around pivot
+          var _pOff5 = this._getPivotOffset(_ptb, _ptb._pivot||'CM');
+          var _rpX = Math.cos(_avgRot)*_pOff5.x - Math.sin(_avgRot)*_pOff5.y;
+          var _rpY = Math.sin(_avgRot)*_pOff5.x + Math.cos(_avgRot)*_pOff5.y;
+          _ptb.x = _ptf.pivotWX - _rpX;
+          _ptb.y = _ptf.pivotWY - _rpY;
+        }
+        return;
+      } else {
+        // Corner/edge pivot — second finger ignored in pivot mode
+        return;
+      }
+    }
 
     if (!this._editorPinchStart) {
       // If first finger dragged slightly before second finger joined (same touch sequence),
@@ -5242,6 +5349,51 @@ class Game {
       this._setSliderVal(sl.key, sl.defKey, val, sl);
       return;
     }
+    // PIVOT END mode — drag one end, pivot stays fixed in world space
+    if (this._editorPivotEndState) {
+      var _pes = this._editorPivotEndState, _pb = _pes.brick;
+      // Vector from pivot to finger
+      var _fpvX = pos.x - _pes.pivotWX, _fpvY = pos.y - _pes.pivotWY;
+      var _fingerDist = Math.hypot(_fpvX, _fpvY);
+      if (_fingerDist < 4) return;  // too close to pivot — ignore
+      // New rotation = angle from pivot to finger (right end) or opposite (left end)
+      var _newRot = Math.atan2(_fpvY, _fpvX);
+      if (_pes.end === 'left') _newRot += Math.PI;  // left end = opposite direction
+      // Apply snap if active
+      var _snapDeg2 = this._editorSnapDeg || 0;
+      if (_snapDeg2 > 0) { var _sr2 = _snapDeg2*Math.PI/180; _newRot = Math.round(_newRot/_sr2)*_sr2; }
+      _pb._rotation = _newRot;
+      // New half-width = distance from pivot to finger
+      var _newHW = Math.max(6, Math.min(450, _fingerDist));
+      _pb.w = _newHW * 2;
+      // Recenter: pivot world pos = center + rotated pivot offset
+      // So center = pivot world - rotated pivot offset
+      var _pOff2 = this._getPivotOffset(_pb, _pb._pivot || 'CM');
+      var _rotPOX = Math.cos(_newRot)*_pOff2.x - Math.sin(_newRot)*_pOff2.y;
+      var _rotPOY = Math.sin(_newRot)*_pOff2.x + Math.cos(_newRot)*_pOff2.y;
+      _pb.x = _pes.pivotWX - _rotPOX;
+      _pb.y = Math.min(_pes.pivotWY - _rotPOY, this.floorY() - (_pb.h||10)/2 - 4);
+      return;
+    }
+
+    // PIVOT BODY mode — rotate only around pivot, no length change
+    if (this._editorPivotBodyState) {
+      var _pbs = this._editorPivotBodyState, _pbb = _pbs.brick;
+      var _curBodyAngle = Math.atan2(pos.y - _pbs.pivotWY, pos.x - _pbs.pivotWX);
+      var _deltaBodyAngle = _curBodyAngle - _pbs.startAngle;
+      var _snapDeg3 = this._editorSnapDeg || 0;
+      var _newBodyRot = _pbs.origRot + _deltaBodyAngle;
+      if (_snapDeg3 > 0) { var _sr3 = _snapDeg3*Math.PI/180; _newBodyRot = Math.round(_newBodyRot/_sr3)*_sr3; }
+      _pbb._rotation = _newBodyRot;
+      // Keep pivot fixed: recenter brick
+      var _pOff3 = this._getPivotOffset(_pbb, _pbb._pivot || 'CM');
+      var _rotPOX3 = Math.cos(_newBodyRot)*_pOff3.x - Math.sin(_newBodyRot)*_pOff3.y;
+      var _rotPOY3 = Math.sin(_newBodyRot)*_pOff3.x + Math.cos(_newBodyRot)*_pOff3.y;
+      _pbb.x = _pbs.pivotWX - _rotPOX3;
+      _pbb.y = Math.min(_pbs.pivotWY - _rotPOY3, this.floorY() - (_pbb.h||10)/2 - 4);
+      return;
+    }
+
     // STRETCH mode
     if (this._editorStretchState) {
       var ss = this._editorStretchState, sb = ss.brick;
@@ -5371,6 +5523,9 @@ class Game {
     this._editorLastPushWasProvisional = false;
     this._editorDragInProgress = false;
     this._editorDraggingJustPlaced = false;
+    this._editorPivotEndState = null;
+    this._editorPivotBodyState = null;
+    this._editorPivotTwoFingerStart = null;
     this._editorDragging    = null;
     this._editorStretchState = null;
     this._editorWidthState   = null;
@@ -5862,14 +6017,16 @@ class Game {
       var rPivX = padding+rotW2+6, rPivY = cY+2;
       var rpW=14, rpG=2;
       var curRotPiv = sb2 ? (sb2._pivot||'CM') : (this._editorPivot||'CM');
+      var _pivActive = this._editorPivotActive || false;
       this._editorRotPivRects = [];
       var rpRows = ['T','M','B'], rpCols = ['L','C','R'];
       for (var rpc=0; rpc<3; rpc++) {
         for (var rpr=0; rpr<3; rpr++) {
-          var rpKey = rpRows[rpr] + rpCols[rpc];  // row+col = TL,TC,TR,ML,CM,MR,BL,BC,BR
+          var rpKey = rpRows[rpr] + rpCols[rpc];
           var rpx=rPivX+rpc*(rpW+rpG), rpy=rPivY+rpr*(rpW*0.65+rpG);
-          var rpAct=curRotPiv===rpKey;
+          var rpAct = _pivActive && curRotPiv===rpKey;
           var rpCol = (rpKey==='CM') ? '#ffcc44' : '#44ccff';
+          ctx.globalAlpha = _pivActive ? 1.0 : 0.4;
           ctx.fillStyle=rpAct?rpCol+'44':'rgba(0,10,30,0.6)';
           ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.fill();
           ctx.strokeStyle=rpAct?rpCol:'#334455'; ctx.lineWidth=rpAct?1.2:0.5;
@@ -5877,6 +6034,7 @@ class Game {
           ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.stroke();
           ctx.shadowBlur=0;
           if(rpAct){ctx.fillStyle=rpCol;ctx.beginPath();ctx.arc(rpx+rpW/2,rpy+rpW*0.32,1.5,0,Math.PI*2);ctx.fill();}
+          ctx.globalAlpha=1.0;
           this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW,h:rpW*0.65,val:rpKey});
         }
       }
@@ -5971,11 +6129,6 @@ class Game {
         c.beginPath(); c.roundRect(-9,-5,18,10,2); c.stroke();
         c.beginPath(); c.moveTo(-9,-2);c.lineTo(-14,0);c.lineTo(-9,2);c.moveTo(-9,0);c.lineTo(-14,0); c.stroke();
         c.beginPath(); c.moveTo(9,-2);c.lineTo(14,0);c.lineTo(9,2);c.moveTo(9,0);c.lineTo(14,0); c.stroke(); }},
-      { id:'rotate',  col:'#cc44ff', icon: function(c,col) {
-        c.strokeStyle=col; c.lineWidth=1.8;
-        c.beginPath(); c.arc(0,0,7,0.5,Math.PI*2-0.5); c.stroke();
-        c.fillStyle=col; c.beginPath(); c.moveTo(5,5);c.lineTo(9,2);c.lineTo(5,-1); c.fill();
-        c.beginPath(); c.arc(0,0,2,0,Math.PI*2); c.fill(); }},
     ];
     var edMode = this._editorToolMode || 'build';
     var toolW  = 36;
@@ -6020,34 +6173,6 @@ class Game {
         this._editorTypeBtns.push(stRect);
       }
 
-    } else if (edMode === 'rotate') {
-      // 3x3 pivot grid — fixed 14px cells, left-aligned to tool button row
-      var bigPivW = 14, bigPivH = 9, bigPivG = 2;
-      var bigPivRows2 = ['T','M','B'], bigPivCols2 = ['L','C','R'];
-      var curEdPiv = this._editorSelected ? (this._editorSelected._pivot||'CM') : (this._editorPivot||'CM');
-      this._editorPivotRects = [];
-      for (var bpc = 0; bpc < 3; bpc++) {
-        for (var bpr = 0; bpr < 3; bpr++) {
-          var bpKey = bigPivRows2[bpr] + bigPivCols2[bpc];  // row+col = TL,TC,TR...
-          var bpCol = (bpKey === 'CM') ? '#ffcc44' : '#44ccff';
-          var bpx = padding + bpc*(bigPivW+bigPivG);
-          var bpy = cY + 2 + bpr*(bigPivH+bigPivG);
-          var bpAct = curEdPiv === bpKey;
-          ctx.fillStyle = bpAct ? bpCol+'33' : 'rgba(0,10,30,0.7)';
-          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,2); ctx.fill();
-          ctx.strokeStyle = bpAct ? bpCol : '#334455';
-          ctx.lineWidth = bpAct ? 1.5 : 0.6;
-          if (bpAct) { ctx.shadowColor=bpCol; ctx.shadowBlur=6; }
-          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,2); ctx.stroke();
-          ctx.shadowBlur = 0;
-          if (bpAct) {
-            ctx.fillStyle = bpCol;
-            ctx.beginPath(); ctx.arc(bpx+bigPivW/2, bpy+bigPivH/2, 2, 0, Math.PI*2); ctx.fill();
-          }
-          this._editorPivotRects.push({x:bpx,y:bpy,w:bigPivW,h:bigPivH,val:bpKey,enabled:true});
-        }
-      }
-      // Keep the small pivot grid in behavior panel in sync — point to same array
     }
     // SEL and SCL modes: row 5 is empty (cY still advances by r5H)
     // ── SNAP PANEL: 2 cols × 3 rows ─────────────────────────────────────────
@@ -6226,10 +6351,12 @@ class Game {
       var sb = this._editorSelected;
       var toolMode2 = this._editorToolMode || 'build';
       var modeColors = { build:'rgba(255,255,100,0.85)', select:'rgba(255,200,0,0.85)',
-                         scale:'rgba(0,255,136,0.85)', rotate:'rgba(200,68,255,0.85)' };
+                         scale:'rgba(0,255,136,0.85)' };
+      // Pivot active: use purple tint to indicate pivot mode
+      var _selCol = this._editorPivotActive ? 'rgba(200,68,255,0.9)' : (modeColors[toolMode2] || 'rgba(255,255,100,0.85)');
       var _dashSpeed = (window.Settings && window.Settings.selectionDashSpeed) || 1.0;
       var _dashOffset = -(this.frame * _dashSpeed * 0.4) % 16;
-      ctx.strokeStyle = modeColors[toolMode2] || 'rgba(255,255,100,0.85)';
+      ctx.strokeStyle = _selCol;
       ctx.lineWidth = 2; ctx.setLineDash([4,4]); ctx.lineDashOffset = _dashOffset;
       ctx.save();
       if (sb._rotation) { ctx.translate(sb.x,sb.y); ctx.rotate(sb._rotation); ctx.translate(-sb.x,-sb.y); }
@@ -6240,7 +6367,7 @@ class Game {
       }
       ctx.restore(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
 
-      if (toolMode2==='rotate' || this._editorRotateState || this._editorSelected) {
+      if (this._editorRotateState || (this._editorSelected && this._editorPivotActive)) {
         var pivot4 = sb._pivot||'CM';
         var pOff4  = this._getPivotOffset(sb, pivot4);
         var pvX4   = sb.x+Math.cos(sb._rotation||0)*pOff4.x-Math.sin(sb._rotation||0)*pOff4.y;
