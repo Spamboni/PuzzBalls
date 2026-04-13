@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1652;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1653;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1347,6 +1347,7 @@ class Game {
           if (_px>=sl2.trackX-10&&_px<=sl2.trackX+sl2.trackW+10&&_py>=sl2.y-8&&_py<=sl2.y+sl2.h+8) {
             var t2=Math.max(0,Math.min(1,(_px-sl2.trackX)/sl2.trackW));
             var v2=sl2.min+t2*(sl2.max-sl2.min);
+            self._undoPush();  // capture state before slider change
             sd2.apply(v2);
             self._editorDraggingSlider={key:sd2.key,apply:sd2.apply,sl:sl2};
             if(window.Sound&&Sound.uiSlider)Sound.uiSlider();
@@ -1993,8 +1994,6 @@ class Game {
         self._editorScrollPending  = false;
         self._editorScrollStart    = undefined;
         self._tubePinchStart = null;
-        // If two-finger pinch was active, push undo for the transform
-        if (_hadPinch) self._undoPush();
         self._editorOnUp();
         return;
       }
@@ -4828,6 +4827,8 @@ class Game {
       this._editorSelected = b;
       this._showBrickSettings = true;
       this._editorMovable = b._movable || false;
+      // Push undo BEFORE modifying — captures state at start of this interaction
+      this._undoPush();
 
       if (toolMode === 'stretch') {
         // Determine which end was tapped (in brick local space)
@@ -4965,6 +4966,8 @@ class Game {
     var sb = this._editorSelected;
 
     if (!this._editorPinchStart) {
+      // Push undo BEFORE the pinch modifies anything
+      this._undoPush();
       // Store initial finger and brick state
       this._editorPinchStart = {
         p0: { x: p0.x, y: p0.y }, p1: { x: p1.x, y: p1.y },
@@ -5224,11 +5227,6 @@ class Game {
   }
 
   _editorOnUp() {
-    if (this._editorDragging || this._editorDragSlider || this._editorStretchState || this._editorWidthState || this._editorRotateState) {
-      if (!this._editorDraggingJustPlaced) {
-        this._undoPush();
-      }
-    }
     this._editorDraggingJustPlaced = false;
     this._editorDragging    = null;
     this._editorStretchState = null;
