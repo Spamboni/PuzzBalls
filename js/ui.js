@@ -99,7 +99,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0, maxSubSteps: 3, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:0, maxSplats:20 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, maxSubSteps: 3, selectionDashSpeed: 1.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:0, maxSplats:20 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
@@ -529,6 +529,10 @@ class UI {
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
         _addSlider(pane,'Physics Steps','Settings','maxSubSteps',1,12,1,function(v){return v+' steps/frame';});
+        _addSlider(pane,'Selection Parade','Settings','selectionDashSpeed',0.05,8.0,0.05,function(v){
+          if(v<=0.1) return 'snail'; if(v<=0.5) return 'slow'; if(v<=1.5) return Math.round(v*100)+'%';
+          if(v<=4) return 'fast'; return 'ludicrous';
+        });
       } else {
         var bs = BallSettings[t.id];
         _addSlider(pane,'Size',       null, null, 6, 30,  1,    function(v){return v+'px';},       t.id, 'size');
