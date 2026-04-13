@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1647;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1649;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -4633,10 +4633,22 @@ class Game {
 
   _redoApply(snap) {
     if (!snap) return;
-    // Redo: push current state back to undo, then apply snap
-    this._undoPush();
-    // _undoPush clears _redoHistory — restore it after
-    var savedRedo = this._redoHistory ? this._redoHistory.slice() : [];
+    if (!this._undoHistory) { this._undoHistory = []; }
+    if (!this._redoHistory) { this._redoHistory = []; }
+    // Push current state onto undo stack directly (bypass _undoPush which would wipe redo)
+    var undoSnap = this.bricks.map(function(b) {
+      return { x:b.x, y:b.y, w:b.w, h:b.h, r:b.r, _rotation:b._rotation,
+               maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
+               _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
+               _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot,
+               _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
+               _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
+    });
+    var undoTubeSnap = this.tubes ? this.tubes.toJSON() : [];
+    this._undoHistory.push({ bricks: undoSnap, tubes: undoTubeSnap });
+    if (this._undoHistory.length > 50) this._undoHistory.shift();
+    // Now restore the redo snapshot
     var brickSnap = Array.isArray(snap) ? snap : snap.bricks;
     var tubeSnap  = Array.isArray(snap) ? null : snap.tubes;
     this.bricks = brickSnap.map(function(s) {
@@ -4652,7 +4664,7 @@ class Game {
       return b;
     }).filter(Boolean);
     if (tubeSnap && this.tubes) this.tubes.fromJSON(tubeSnap);
-    this._redoHistory = savedRedo;
+    // Do NOT clear _redoHistory here — caller already popped the used entry
     this._editorSelected = null;
     this._showBrickSettings = false;
     this._tubeSelected = null;
@@ -5439,7 +5451,7 @@ class Game {
 
     // ── ROW 2: CLR BRICKS | CLR TUBES | CLR AFFECTORS | CLR RAMPS | CLR MOTORS
     var r2H = 20;
-    var clrLabels = ['CLR BRICKS','CLR TUBES','CLR AFFECT','CLR RAMPS','CLR MOTORS'];
+    var clrLabels = ['CLR BRICKS','CLR TUBES','CLR AFFCTRS','CLR RAMPS','CLR MOTORS'];
     var clrCols   = ['#ff6600','#00ffaa','#ff44cc','#ffcc00','#4488ff'];
     var clrW = Math.floor((contentW - 4*3) / 5);
     this._editorClrBtns = [];
@@ -5479,7 +5491,7 @@ class Game {
 
     // ── ROW 3: Tab bar — proper tabs attached to panel below ─────────────────
     var tabH = 24;
-    var tabLabels = ['🧱 BRICKS','🔧 TUBES','⚡ AFFECT','📐 RAMPS','⚙ MOTORS'];
+    var tabLabels = ['🧱 BRICKS','🔧 TUBES','⚡ AFFECTORS','📐 RAMPS','⚙ MOTORS'];
     var tabCols   = ['#00ccff','#00ff88','#ff44cc','#ffcc00','#4488ff'];
     var activeTab = this._editorActiveTab || 'bricks';
     var tabW2 = Math.floor((contentW - 4*2) / 5);
