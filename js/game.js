@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1661;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1662;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1029,13 +1029,24 @@ class Game {
             if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorTranslate); return;
           }
         }
-        // Pivot rects
+        // Pivot rects (behavior panel + ROT mode big grid)
         if (self._editorPivotRects) {
           for (var piv=0; piv<self._editorPivotRects.length; piv++) {
             var pr2=self._editorPivotRects[piv];
             if (pr2.enabled&&_px>=pr2.x&&_px<=pr2.x+pr2.w&&_py>=pr2.y&&_py<=pr2.y+pr2.h) {
               if (self._editorSelected) self._editorSelected._pivot=pr2.val;
               self._editorPivot=pr2.val;
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
+            }
+          }
+        }
+        // Rotation slider pivot grid (TRANSFORM panel)
+        if (self._editorRotPivRects) {
+          for (var rpi=0; rpi<self._editorRotPivRects.length; rpi++) {
+            var rpr2=self._editorRotPivRects[rpi];
+            if (_px>=rpr2.x&&_px<=rpr2.x+rpr2.w&&_py>=rpr2.y&&_py<=rpr2.y+rpr2.h) {
+              if (self._editorSelected) self._editorSelected._pivot=rpr2.val;
+              self._editorPivot=rpr2.val;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
             }
           }
@@ -5712,27 +5723,31 @@ class Game {
 
     if (!ph1.collapsed) {
       var p1W2 = Math.floor((contentW-4)/2);
-      this._editorSliders.blen = slider('LEN', LENval, 5, 900, padding, cY, p1W2, {rowH:slRH,col:'#00ccff'});
-      this._editorSliders.bwid = slider('WID', WIDval, 2, 200, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff'});
+      this._editorSliders.blen = slider('LEN', LENval, 5, 450, padding, cY, p1W2, {rowH:slRH,col:'#00ccff'});
+      this._editorSliders.bwid = slider('WID', WIDval, 2, 450, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff'});
       cY += slRH + slGap;
 
       var rotW2 = Math.floor((contentW)*0.6);
       this._editorSliders.rot = slider('ROT', ROTval, -180, 180, padding, cY, rotW2, {rowH:slRH,col:'#cc44ff'});
-      // pivot grid beside rotation slider
+      // pivot grid beside rotation slider — controls the point the brick rotates around
       var rPivX = padding+rotW2+6, rPivY = cY+2;
       var rpW=14, rpG=2;
-      this._editorRotPivRects = this._editorRotPivRects||[];
+      var curRotPiv = sb2 ? (sb2._pivot||'CM') : (this._editorPivot||'CM');
       this._editorRotPivRects = [];
+      var rpRows = ['T','M','B'], rpCols = ['L','C','R'];
       for (var rpc=0; rpc<3; rpc++) {
         for (var rpr=0; rpr<3; rpr++) {
-          var rpKey=pivCols[rpc]+pivRows2[rpr];
+          var rpKey = rpRows[rpr] + rpCols[rpc];  // row+col = TL,TC,TR,ML,CM,MR,BL,BC,BR
           var rpx=rPivX+rpc*(rpW+rpG), rpy=rPivY+rpr*(rpW*0.65+rpG);
-          var rpAct=curPiv3===rpKey;
-          ctx.fillStyle=rpAct?pivColors3[rpc]+'44':'rgba(0,10,30,0.6)';
+          var rpAct=curRotPiv===rpKey;
+          var rpCol = (rpKey==='CM') ? '#ffcc44' : '#44ccff';
+          ctx.fillStyle=rpAct?rpCol+'44':'rgba(0,10,30,0.6)';
           ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.fill();
-          ctx.strokeStyle=rpAct?pivColors3[rpc]:'#334455'; ctx.lineWidth=rpAct?1.2:0.5;
+          ctx.strokeStyle=rpAct?rpCol:'#334455'; ctx.lineWidth=rpAct?1.2:0.5;
+          if(rpAct){ctx.shadowColor=rpCol;ctx.shadowBlur=4;}
           ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.stroke();
-          if(rpAct){ctx.fillStyle=pivColors3[rpc];ctx.beginPath();ctx.arc(rpx+rpW/2,rpy+rpW*0.32,1.5,0,Math.PI*2);ctx.fill();}
+          ctx.shadowBlur=0;
+          if(rpAct){ctx.fillStyle=rpCol;ctx.beginPath();ctx.arc(rpx+rpW/2,rpy+rpW*0.32,1.5,0,Math.PI*2);ctx.fill();}
           this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW,h:rpW*0.65,val:rpKey});
         }
       }
@@ -5880,12 +5895,12 @@ class Game {
       // Big 3x3 pivot grid — editor rotation pivot
       var bigPivW = Math.floor((contentW - 8) / 3);
       var bigPivH = Math.floor((r5H * 2 - 8) / 3) - 1;
-      var bigPivCols = ['L','C','R'], bigPivRows = ['T','M','B'];
+      var bigPivRows2 = ['T','M','B'], bigPivCols2 = ['L','C','R'];
       var curEdPiv = this._editorSelected ? (this._editorSelected._pivot||'CM') : (this._editorPivot||'CM');
       this._editorPivotRects = [];
       for (var bpc = 0; bpc < 3; bpc++) {
         for (var bpr = 0; bpr < 3; bpr++) {
-          var bpKey = bigPivCols[bpc] + bigPivRows[bpr];
+          var bpKey = bigPivRows2[bpr] + bigPivCols2[bpc];  // row+col = TL,TC,TR...
           var bpCol = (bpKey === 'CM') ? '#ffcc44' : '#44ccff';
           var bpx = padding + bpc*(bigPivW+4);
           var bpy = cY + 2 + bpr*(bigPivH+3);
@@ -6033,9 +6048,10 @@ class Game {
     // pivCols, pivRows2, pivColors3, curPiv3 declared above near slider panels
     var pivEnabled2 = transOn3;
     this._editorPivotRects = [];
+    var _pvRows = ['T','M','B'], _pvCols = ['L','C','R'];
     for (var pc=0; pc<3; pc++) {
       for (var pr=0; pr<3; pr++) {
-        var pivKey=pivCols[pc]+pivRows2[pr];
+        var pivKey = _pvRows[pr] + _pvCols[pc];  // row+col = TL,TC,TR,ML,CM,MR,BL,BC,BR
         var px9=pivX3+pc*(pW9+pG9), py9=pivY3+pr*(pW9*0.7+pG9);
         var pAct9=pivEnabled2&&curPiv3===pivKey;
         var pCol9 = (pivKey==='CM') ? '#ffcc44' : '#44ccff';
