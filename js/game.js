@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1640;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1641;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -842,8 +842,13 @@ class Game {
           for (var snbi=0; snbi<self._editorSnapBoxBtns.length; snbi++) {
             var snb=self._editorSnapBoxBtns[snbi];
             if (_px>=snb.x&&_px<=snb.x+snb.w&&_py>=snb.y&&_py<=snb.y+snb.h) {
-              if (snb.snapKey==='snapGrid') {
-                // Short tap = toggle, long press = enter grid spacing
+              if (snb.snapKey==='grid') {
+                // Toggle grid visibility
+                window._showEditorGrid = !(window._showEditorGrid !== false);
+                if(window.Sound&&Sound.uiToggle)Sound.uiToggle(window._showEditorGrid);
+              }
+              else if (snb.snapKey==='snapGrid') {
+                // Short tap = toggle snap, long press = enter grid size
                 _startLongPress('snapgrid', 600, function() {
                   var cur = window._snapGridSize || 20;
                   self._neonPrompt('Grid snap size (px):', String(cur), function(r) {
@@ -871,7 +876,6 @@ class Game {
                 if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
               }
               else if (snb.snapKey==='lenSnap') {
-                // Short tap = toggle, long press = enter snap value
                 _startLongPress('lensnap', 600, function() {
                   var cur = window._editorLenSnap || 10;
                   self._neonPrompt('Length snap (px):', String(cur), function(r) {
@@ -885,7 +889,6 @@ class Game {
                 if(window.Sound&&Sound.uiToggle)Sound.uiToggle((window._editorLenSnap||0)>0);
               }
               else if (snb.snapKey==='widSnap') {
-                // Short tap = toggle, long press = enter snap value
                 _startLongPress('widsnap', 600, function() {
                   var cur = window._editorWidSnap || 5;
                   self._neonPrompt('Width snap (px):', String(cur), function(r) {
@@ -902,7 +905,7 @@ class Game {
             }
           }
         }
-        // Legacy snap btn refs (may still be used by tube editor)
+        // Legacy snap btn refs (disabled — null guards below)
         if (self._editorSnapBtn) {
           var rsb=self._editorSnapBtn;
           if (_px>=rsb.x&&_px<=rsb.x+rsb.w&&_py>=rsb.y&&_py<=rsb.y+rsb.h) {
@@ -1709,7 +1712,7 @@ class Game {
       if (!self._editorBlockSliders && self._draggingSlider && self._sliderRect) {
         var sr = self._sliderRect;
         var t  = Math.max(0, Math.min(1, (pos.x - sr.x) / sr.w));
-        self.speedMult = 0.125 + t * 0.875;
+        self.speedMult = t;
         return;
       }
       if (!self.sling) return;
@@ -5404,22 +5407,12 @@ class Game {
       this._editorModeBtns.push(tlRect);
     }
 
-    // Snap buttons — right side of row 4, no mini grid
-    var snapRightX = padding + tools.length * (toolW+3) + 6;
-    var snapW = Math.floor((W - snapRightX - padding) / 3) - 2;
-    this._editorGridPivRects = [];  // grid piv moved to row 5 under ROT mode
-
-    var gsOn = window._snapToGrid||false;
-    this._editorSnapGridBtn = btn('GRID SNAP', snapRightX, cY, snapW, r4H, '#00ccff', gsOn, {fs:7});
-
-    var rotSnapOn = (this._editorSnapDeg||0) > 0;
-    var _rslR={0:'ROT FREE',15:'ROT 15',30:'ROT 30',45:'ROT 45',90:'ROT 90'};
-    this._editorSnapBtn = btn(_rslR[this._editorSnapDeg||0]||'ROT FREE',
-      snapRightX+snapW+2, cY, snapW, r4H, '#ffaa00', rotSnapOn, {fs:7});
-
-    var lsOn = window._editorLenSnap > 0;
-    this._editorLenSnapBtn = btn('LEN SNAP', snapRightX+(snapW+2)*2, cY, snapW, r4H, '#00ff88', lsOn, {fs:7});
-    this._editorWidSnapBtn = null;
+    // Snap buttons removed from row 4 — now in snap panel below row 5
+    this._editorSnapGridBtn = null;
+    this._editorSnapBtn     = null;
+    this._editorLenSnapBtn  = null;
+    this._editorWidSnapBtn  = null;
+    this._editorGridPivRects = [];
 
     cY += r4H + 3;
 
@@ -5477,65 +5470,91 @@ class Game {
       // Keep the small pivot grid in behavior panel in sync — point to same array
     }
     // SEL and SCL modes: row 5 is empty (cY still advances by r5H)
-    // ── SNAP SETTINGS BOX: 2 cols × 3 rows, right of sub-type buttons ──────────
+    // ── SNAP PANEL: 2 cols × 3 rows ─────────────────────────────────────────
+    // Left col: LEN SNAP, WID SNAP, ROT SNAP
+    // Right col: GRID (toggle), GRID SNAP (toggle), 3×3 pivot grid
     var snapBoxX = padding + 4*(stW+3) + 6;
     var snapBoxW = W - snapBoxX - padding;
-    var snapBtnW = Math.floor((snapBoxW - 4) / 2);
-    var snapBtnH = Math.floor((r5H * 2 + 4) / 3) - 2;  // 3 rows fit in 2× sub-type height
+    var snapColW = Math.floor((snapBoxW - 6) / 2);
+    // Height: 3 rows — calculate to match 3 equal rows
+    var snapRowH = Math.floor((r5H * 2 + 4) / 3) - 1;
+    var snapGap  = 3;
+    var snapTotalH = 3 * snapRowH + 2 * snapGap + 4;
 
     // Box background
     ctx.fillStyle = 'rgba(0,8,22,0.85)';
-    ctx.beginPath(); ctx.roundRect(snapBoxX, cY, snapBoxW, r5H*2+4, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(snapBoxX, cY, snapBoxW, snapTotalH, 3); ctx.fill();
     ctx.strokeStyle = '#223344'; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.roundRect(snapBoxX, cY, snapBoxW, r5H*2+4, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(snapBoxX, cY, snapBoxW, snapTotalH, 3); ctx.stroke();
 
-    var _rsl={0:'ROT FREE',15:'ROT 15',30:'ROT 30',45:'ROT 45',90:'ROT 90'};
-    var snapItems = [
-      { key:'snapGrid', label:'GRID SNAP', col:'#00ccff', active: window._snapToGrid||false },
-      { key:'gridPiv',  label:'GRD PIV',   col:'#00aaff', active: false },
-      { key:'rotSnap',  label: _rsl[window._editorSnapDeg||0]||'ROT FREE', col:'#ffaa00', active: (window._editorSnapDeg||0)>0 },
-      { key:'lenSnap',  label:'LEN SNAP',  col:'#00ff88', active: (window._editorLenSnap||0)>0 },
-      { key:'widSnap',  label:'WID SNAP',  col:'#ff8844', active: (window._editorWidSnap||0)>0 },
-    ];
-    // Draw 2 cols: col0 = rows 0,2,4; col1 = rows 1,3
+    var _rsl = {0:'ROT FREE',15:'ROT 15°',30:'ROT 30°',45:'ROT 45°',90:'ROT 90°'};
+    var snapBtnX = snapBoxX + 2;
+    var snapBtnX2 = snapBoxX + 2 + snapColW + 2;  // right col x
+    var snapRow0Y = cY + 2;
+    var snapRow1Y = cY + 2 + snapRowH + snapGap;
+    var snapRow2Y = cY + 2 + (snapRowH + snapGap) * 2;
+
+    // ── Left column: 3 snap toggle buttons ───────────────────────────────────
+    var lenOn  = (window._editorLenSnap || 0) > 0;
+    var widOn  = (window._editorWidSnap || 0) > 0;
+    var rotOn  = (this._editorSnapDeg || 0) > 0;
+    var lenLbl = lenOn ? ('LEN ' + (window._editorLenSnap||10) + 'px') : 'LEN\nSNAP';
+    var widLbl = widOn ? ('WID ' + (window._editorWidSnap||5)  + 'px') : 'WID\nSNAP';
+    var rotLbl = _rsl[this._editorSnapDeg||0] || 'ROT\nFREE';
+
     var snapBoxBtns = [];
-    for (var sni = 0; sni < snapItems.length; sni++) {
-      var si = snapItems[sni];
-      var snCol2 = sni % 2;
-      var snRow2 = Math.floor(sni / 2);
-      var snx = snapBoxX + 2 + snCol2 * (snapBtnW + 2);
-      var sny = cY + 2 + snRow2 * (snapBtnH + 2);
-      var snRect = btn(si.label, snx, sny, snapBtnW, snapBtnH, si.col, si.active, {fs:6});
-      snRect.snapKey = si.key;
-      snapBoxBtns.push(snRect);
-    }
+    var lsRect = btn(lenLbl, snapBtnX, snapRow0Y, snapColW, snapRowH, '#00ff88', lenOn, {fs:6, multiline:true});
+    lsRect.snapKey = 'lenSnap'; snapBoxBtns.push(lsRect);
+    var wsRect = btn(widLbl, snapBtnX, snapRow1Y, snapColW, snapRowH, '#ff8844', widOn, {fs:6, multiline:true});
+    wsRect.snapKey = 'widSnap'; snapBoxBtns.push(wsRect);
+    var rsRect = btn(rotLbl, snapBtnX, snapRow2Y, snapColW, snapRowH, '#ffaa00', rotOn, {fs:6, multiline:true});
+    rsRect.snapKey = 'rotSnap'; snapBoxBtns.push(rsRect);
     this._editorSnapBoxBtns = snapBoxBtns;
 
-    // 3×3 grid pivot (mini, inside box beside GRID SNAP)
-    // Drawn as tiny cells inside the GRD PIV slot area
-    var gpBoxX = snapBoxX + 2 + snapBtnW + 2;
-    var gpBoxY = cY + 2 + (snapBtnH + 2);  // row 1
-    var gpW2 = Math.floor((snapBtnW - 4) / 3) - 1;
-    var gpG2 = 1;
+    // ── Right column top: GRID toggle + GRID SNAP toggle ─────────────────────
+    var gridOn = window._snapToGrid || false;
+    var gsRect = btn('GRID', snapBtnX2, snapRow0Y, snapColW, snapRowH, '#00ccff', gridOn, {fs:7});
+    gsRect.snapKey = 'grid'; snapBoxBtns.push(gsRect);
+    var gsnOn = window._snapToGrid || false;
+    var gsnRect = btn('GRID\nSNAP', snapBtnX2, snapRow1Y, snapColW, snapRowH, '#00aaff', gsnOn, {fs:6, multiline:true});
+    gsnRect.snapKey = 'snapGrid'; snapBoxBtns.push(gsnRect);
+
+    // ── Right column bottom: 3×3 pivot grid ──────────────────────────────────
+    var gpBoxX = snapBtnX2;
+    var gpBoxY = snapRow2Y;
+    var gpBoxW = snapColW;
+    var gpBoxH = snapRowH;
+    // draw cell background
+    ctx.fillStyle = 'rgba(0,10,30,0.7)';
+    ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpBoxW, gpBoxH, 2); ctx.fill();
+    ctx.strokeStyle = '#334455'; ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpBoxW, gpBoxH, 2); ctx.stroke();
+    var gpCellW = Math.floor((gpBoxW - 6) / 3);
+    var gpCellH = Math.floor((gpBoxH - 6) / 3);
+    var gpG = 2;
     var curGridPiv = window._editorGridSnapPivot || 'CM';
     var gridPivCols = ['L','C','R'], gridPivRowsB = ['T','M','B'];
     this._editorGridPivRects = [];
     for (var gpc = 0; gpc < 3; gpc++) {
       for (var gpr = 0; gpr < 3; gpr++) {
         var gpKey2 = gridPivCols[gpc] + gridPivRowsB[gpr];
-        var gpx2 = gpBoxX + 2 + gpc*(gpW2+gpG2);
-        var gpy2 = gpBoxY + 2 + gpr*(gpW2*0.7+gpG2);
+        var gpx2   = gpBoxX + 3 + gpc * (gpCellW + gpG);
+        var gpy2   = gpBoxY + 3 + gpr * (gpCellH + gpG);
         var gpAct2 = curGridPiv === gpKey2;
-        ctx.fillStyle = gpAct2 ? 'rgba(0,200,255,0.3)' : 'rgba(0,10,30,0.7)';
-        ctx.beginPath(); ctx.roundRect(gpx2,gpy2,gpW2,gpW2*0.7,1); ctx.fill();
-        ctx.strokeStyle = gpAct2?'#00ccff':'#334455'; ctx.lineWidth = gpAct2?1.2:0.5;
-        ctx.beginPath(); ctx.roundRect(gpx2,gpy2,gpW2,gpW2*0.7,1); ctx.stroke();
-        if (gpAct2){ctx.fillStyle='#00ccff';ctx.beginPath();ctx.arc(gpx2+gpW2/2,gpy2+gpW2*0.35,1.5,0,Math.PI*2);ctx.fill();}
-        this._editorGridPivRects.push({x:gpx2,y:gpy2,w:gpW2,h:gpW2*0.7,val:gpKey2});
+        ctx.fillStyle   = gpAct2 ? 'rgba(0,200,255,0.35)' : 'rgba(0,15,40,0.8)';
+        ctx.beginPath(); ctx.roundRect(gpx2, gpy2, gpCellW, gpCellH, 1); ctx.fill();
+        ctx.strokeStyle = gpAct2 ? '#00ccff' : '#334455';
+        ctx.lineWidth   = gpAct2 ? 1.2 : 0.5;
+        ctx.beginPath(); ctx.roundRect(gpx2, gpy2, gpCellW, gpCellH, 1); ctx.stroke();
+        if (gpAct2) {
+          ctx.fillStyle = '#00ccff';
+          ctx.beginPath(); ctx.arc(gpx2 + gpCellW/2, gpy2 + gpCellH/2, 2, 0, Math.PI*2); ctx.fill();
+        }
+        this._editorGridPivRects.push({x:gpx2, y:gpy2, w:gpCellW, h:gpCellH, val:gpKey2});
       }
     }
 
-    cY += r5H*2 + 4 + 8;   // sub-type + snap box height + gap
+    cY += snapTotalH + 8;   // snap panel height + gap
 
     // ── Extra gap row between buttons and sliders ──────────────────────────────
     cY += r5H;   // full button-height gap as requested
@@ -6670,19 +6689,23 @@ class Game {
     }
     // ── Always-on velocity indicator above ball ───────────────────────────────
     if (window._showVelocityIndicator !== false) {
-      var _spd = Math.hypot(obj.vx || 0, obj.vy || 0);
-      var _spdStr = _spd.toFixed(1);
-      ctx.save();
-      ctx.font = "bold 11px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      var _velY = obj.y - obj.r - 4;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillText(_spdStr, obj.x + 1, _velY + 1);
-      ctx.fillStyle = '#00ff44';
-      ctx.shadowColor = '#00cc33'; ctx.shadowBlur = 5;
-      ctx.fillText(_spdStr, obj.x, _velY);
-      ctx.shadowBlur = 0;
-      ctx.restore();
+      // Suppress during active sling — the pre-launch readout in _drawSling takes over
+      var _isSlung = this.sling && this.sling.obj === obj;
+      if (!_isSlung) {
+        var _spd = Math.hypot(obj.vx || 0, obj.vy || 0);
+        var _spdStr = _spd.toFixed(1);
+        ctx.save();
+        ctx.font = "bold 13px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        var _velY = obj.y - obj.r - 4;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillText(_spdStr, obj.x + 1, _velY + 1);
+        ctx.fillStyle = '#00ff44';
+        ctx.shadowColor = '#00cc33'; ctx.shadowBlur = 5;
+        ctx.fillText(_spdStr, obj.x, _velY);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
     }
   }
 
@@ -6910,13 +6933,13 @@ class Game {
     ctx.strokeStyle = '#030a18'; ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Labels
+    // Labels — sit above pill, clear of thumb
     ctx.fillStyle    = 'rgba(0,180,255,0.6)';
     ctx.font         = "bold 8px 'Share Tech Mono', monospace";
-    ctx.textAlign    = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText('1/8', sx - 8, trackY);
+    ctx.textAlign    = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('0%', sx, sy - 1);
     ctx.textAlign = 'right';
-    ctx.fillText('1x', sx + sliderW + 8, trackY);
+    ctx.fillText('100%', sx + sliderW, sy - 1);
 
     // Current speed label
     var pct = Math.round(this.speedMult * 100);
