@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1670;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1671;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5228,35 +5228,27 @@ class Game {
         }
         // Apply two-finger independent end drag
         var _ptf = this._editorPivotTwoFingerStart, _ptb = _ptf.brick;
-        var _applyEnd = function(fingerPos, endSide, pivWX, pivWY) {
-          var _fvX = fingerPos.x - pivWX, _fvY = fingerPos.y - pivWY;
-          var _fd = Math.hypot(_fvX, _fvY);
-          if (_fd < 4) return;
-          var _rot = Math.atan2(_fvY, _fvX);
-          if (endSide === 'left') _rot += Math.PI;
-          return { rot: _rot, hw: Math.max(6, Math.min(450, _fd)) };
-        };
-        var _r0 = _applyEnd(p0, _ptf.f0end, _ptf.pivotWX, _ptf.pivotWY);
-        var _r1 = _applyEnd(p1, _ptf.f1end, _ptf.pivotWX, _ptf.pivotWY);
-        if (_r0 && _r1) {
-          // Average rotation of both end vectors
-          var _avgRot = Math.atan2(
-            Math.sin(_r0.rot) + Math.sin(_r1.rot + Math.PI),
-            Math.cos(_r0.rot) + Math.cos(_r1.rot + Math.PI)
-          );
-          _ptb._rotation = _avgRot;
-          _ptb.w = Math.max(12, (_r0.hw + _r1.hw));
-          // Recenter around pivot
-          var _pOff5 = this._getPivotOffset(_ptb, _ptb._pivot||'CM');
-          var _rpX = Math.cos(_avgRot)*_pOff5.x - Math.sin(_avgRot)*_pOff5.y;
-          var _rpY = Math.sin(_avgRot)*_pOff5.x + Math.cos(_avgRot)*_pOff5.y;
-          _ptb.x = _ptf.pivotWX - _rpX;
-          _ptb.y = _ptf.pivotWY - _rpY;
-          // Mark as asymmetrically stretched so length slider centers on pivot
-          _ptb._pivotAsymmetric = true;
-          _ptb._pivotWX = _ptf.pivotWX;
-          _ptb._pivotWY = _ptf.pivotWY;
-        }
+        // Identify which finger is on which end
+        var _pRight = (_ptf.f0end === 'right') ? p0 : p1;
+        var _pLeft  = (_ptf.f0end === 'left')  ? p0 : p1;
+        var _hwR = Math.max(6, Math.min(450, Math.hypot(_pRight.x - _ptf.pivotWX, _pRight.y - _ptf.pivotWY)));
+        var _hwL = Math.max(6, Math.min(450, Math.hypot(_pLeft.x  - _ptf.pivotWX, _pLeft.y  - _ptf.pivotWY)));
+        if (_hwR < 4 || _hwL < 4) return;
+        // Rotation = angle from left-end finger to right-end finger (matches regular pinch convention)
+        var _newRot2 = Math.atan2(_pRight.y - _pLeft.y, _pRight.x - _pLeft.x);
+        var _snapDeg4 = this._editorSnapDeg || 0;
+        if (_snapDeg4 > 0) { var _sr4 = _snapDeg4*Math.PI/180; _newRot2 = Math.round(_newRot2/_sr4)*_sr4; }
+        _ptb._rotation = _newRot2;
+        _ptb.w = Math.max(12, _hwR + _hwL);
+        // Recenter: pivot world pos stays at _ptf.pivotWX/Y
+        var _pOff5 = this._getPivotOffset(_ptb, _ptb._pivot||'CM');
+        var _rpX = Math.cos(_newRot2)*_pOff5.x - Math.sin(_newRot2)*_pOff5.y;
+        var _rpY = Math.sin(_newRot2)*_pOff5.x + Math.cos(_newRot2)*_pOff5.y;
+        _ptb.x = _ptf.pivotWX - _rpX;
+        _ptb.y = _ptf.pivotWY - _rpY;
+        _ptb._pivotAsymmetric = true;
+        _ptb._pivotWX = _ptf.pivotWX;
+        _ptb._pivotWY = _ptf.pivotWY;
         return;
       } else {
         // Corner/edge pivot — second finger ignored in pivot mode
