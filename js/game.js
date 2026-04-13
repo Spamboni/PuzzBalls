@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1658;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1659;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5672,6 +5672,133 @@ class Game {
       ctx.filter = 'none'; ctx.restore(); return;
     }
 
+    // ── SLIDER PANELS ─────────────────────────────────────────────────────────
+    var slRH  = 26;  // row height per slider
+    var slGap = 4;
+
+    // Read values
+    var LENval   = sb2?(sb2.w||sb2.r*2||70):(bd2.rectW||70);
+    var WIDval   = sb2?(sb2.h||sb2.r*2||22):(bd2.rectH||22);
+    var ROTval   = sb2?((sb2._rotation||0)*180/Math.PI):0;
+    while (ROTval>180) ROTval-=360; while (ROTval<-180) ROTval+=360;
+    var HPval    = (sb2&&sb2.maxHealth!==undefined)?sb2.maxHealth:(bd2.rectHP||100);
+    var REGval   = (sb2&&sb2.regenAfter!==undefined)?sb2.regenAfter:(bd2.rectRegen||2000);
+    var DENSval  = (sb2&&sb2._density!==undefined)?sb2._density:(bd2.density||1.0);
+    var DISTval  = (sb2&&sb2._maxTravel!==undefined)?sb2._maxTravel:(bd2.maxTravel||60);
+    var DECELval = (sb2&&sb2._decel!==undefined)?sb2._decel:(bd2.decel||0.88);
+    var ROTSPDval= (sb2&&sb2._rotSpeed!==undefined)?sb2._rotSpeed:(bd2.rotSpeed||0.3);
+    var ROTDECval= (sb2&&sb2._rotDecel!==undefined)?sb2._rotDecel:(bd2.rotDecel||0.88);
+    var WBOUNCEval=(sb2&&sb2._wallBounce!==undefined)?sb2._wallBounce:(bd2.wallBounce||0.45);
+    var SPINDISTval=(sb2&&sb2._spinDist!==undefined)?sb2._spinDist:(bd2.spinDist||0.5);
+    var HPinf    = (sb2&&sb2._invincible)||false;
+    var noRegen  = (sb2&&sb2._noRegen)||false;
+
+    this._editorSliders = {};
+
+    // ── Panel 1: TRANSFORM ────────────────────────────────────────────────────
+    var ph1 = panelHeader('TRANSFORM', 'transform', padding, cY, contentW, '#00ccff');
+    this._editorPanelHeaders = this._editorPanelHeaders || [];
+    this._editorPanelHeaders[0] = ph1;
+    cY += ph1.h + 2;
+
+    if (!ph1.collapsed) {
+      var p1W2 = Math.floor((contentW-4)/2);
+      this._editorSliders.blen = slider('LEN', LENval, 5, 900, padding, cY, p1W2, {rowH:slRH,col:'#00ccff'});
+      this._editorSliders.bwid = slider('WID', WIDval, 2, 200, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff'});
+      cY += slRH + slGap;
+
+      var rotW2 = Math.floor((contentW)*0.6);
+      this._editorSliders.rot = slider('ROT', ROTval, -180, 180, padding, cY, rotW2, {rowH:slRH,col:'#cc44ff'});
+      // pivot grid beside rotation slider
+      var rPivX = padding+rotW2+6, rPivY = cY+2;
+      var rpW=14, rpG=2;
+      this._editorRotPivRects = this._editorRotPivRects||[];
+      this._editorRotPivRects = [];
+      for (var rpc=0; rpc<3; rpc++) {
+        for (var rpr=0; rpr<3; rpr++) {
+          var rpKey=pivCols[rpc]+pivRows2[rpr];
+          var rpx=rPivX+rpc*(rpW+rpG), rpy=rPivY+rpr*(rpW*0.65+rpG);
+          var rpAct=curPiv3===rpKey;
+          ctx.fillStyle=rpAct?pivColors3[rpc]+'44':'rgba(0,10,30,0.6)';
+          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.fill();
+          ctx.strokeStyle=rpAct?pivColors3[rpc]:'#334455'; ctx.lineWidth=rpAct?1.2:0.5;
+          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.stroke();
+          if(rpAct){ctx.fillStyle=pivColors3[rpc];ctx.beginPath();ctx.arc(rpx+rpW/2,rpy+rpW*0.32,1.5,0,Math.PI*2);ctx.fill();}
+          this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW,h:rpW*0.65,val:rpKey});
+        }
+      }
+      cY += slRH + slGap;
+    }
+
+    // ── Panel 2: BRICK SETTINGS ───────────────────────────────────────────────
+    var ph2 = panelHeader('BRICK SETTINGS', 'brickset', padding, cY, contentW, '#ffaa00');
+    this._editorPanelHeaders[1] = ph2;
+    cY += ph2.h + 2;
+
+    if (!ph2.collapsed) {
+      var p2W = Math.floor((contentW-8)/3);
+      this._editorSliders.hp    = slider('HP',    HPval,   10, 400, padding,          cY, p2W, {rowH:slRH,col:'#ff4444'});
+      this._editorSliders.regen = slider('REGEN', noRegen?0:Math.max(200,REGval), 200, 10000, padding+p2W+4, cY, p2W, {rowH:slRH,col:'#ff8844'});
+      this._editorSliders.dens  = slider('DENS',  DENSval, 0.5, 5.0, padding+(p2W+4)*2, cY, p2W, {rowH:slRH,col:'#ffcc44'});
+
+      // ∞ HP button and ✕ REGEN button
+      var hpInfX  = this._editorSliders.hp.valX    + this._editorSliders.hp.valW + 1;
+      var regenCX = this._editorSliders.regen.valX + this._editorSliders.regen.valW + 1;
+      this._editorInfHPBtn    = btn(HPinf?'∞':'∞',   hpInfX,  cY+slRH/2-8, 16, 16, '#ff8800', HPinf, {fs:9});
+      this._editorNoRegenBtn  = btn(noRegen?'✕':'∞', regenCX, cY+slRH/2-8, 16, 16, noRegen?'#ff4444':'#ff8800', noRegen, {fs:9});
+      cY += slRH + slGap;
+    }
+
+    // ── Panel 3: BRICK PHYSICS ────────────────────────────────────────────────
+    var ph3 = panelHeader('BRICK PHYSICS', 'brickphys', padding, cY, contentW, '#cc44ff');
+    this._editorPanelHeaders[2] = ph3;
+    cY += ph3.h + 2;
+
+    if (!ph3.collapsed) {
+      var p3W2 = Math.floor((contentW-8)/3);
+      var p3W3 = Math.floor((contentW-4)/2);
+      var grayed3 = !movActive2;
+      this._editorSliders.dist    = slider('DIST',     DISTval,         0, 900, padding,           cY, p3W2, {rowH:slRH,col:'#00ccff',grayed:grayed3});
+      this._editorSliders.decel   = slider('DECEL',    1-DECELval,   0.01, 0.5, padding+p3W2+4,    cY, p3W2, {rowH:slRH,col:'#00aaff',grayed:grayed3});
+      this._editorSliders.spinDist= slider('SPIN/DIST',SPINDISTval,     0, 1.0, padding+(p3W2+4)*2,cY, p3W2, {rowH:slRH,col:'#44ccff',grayed:grayed3});
+      cY += slRH + slGap;
+      this._editorSliders.rotspd  = slider('RSPIN',    ROTSPDval,     0.0, 1.0, padding,           cY, p3W3, {rowH:slRH,col:'#ff8844',grayed:grayed3});
+      this._editorSliders.rotdec  = slider('RDECEL',   1-ROTDECval, 0.05,0.95, padding+p3W3+4,     cY, p3W3, {rowH:slRH,col:'#ff6644',grayed:grayed3});
+      cY += slRH + slGap;
+      this._editorSliders.wbounce = slider('BNCE',     WBOUNCEval,    0.0, 1.0, padding,           cY, contentW, {rowH:slRH,col:'#4488ff'});
+      cY += slRH + slGap;
+    }
+
+    // ── DEFAULT mode: RESET ALL button + VAL window highlights ───────────────
+    this._editorDefaultAllBtn = null;
+    if (this._editorDefaultMode) {
+      // RESET ALL button
+      var dabW = Math.floor((contentW)/2), dabH = 26;
+      var dabX = padding + (contentW-dabW)/2;
+      ctx.fillStyle = 'rgba(255,100,0,0.3)';
+      ctx.beginPath(); ctx.roundRect(dabX, cY+4, dabW, dabH, 4); ctx.fill();
+      ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 2;
+      ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.roundRect(dabX, cY+4, dabW, dabH, 4); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffaa44'; ctx.font = "bold 10px '" + mono + "'";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('⟳ RESET ALL', dabX + dabW/2, cY+4+dabH/2);
+      this._editorDefaultAllBtn = { x:dabX, y:cY+4, w:dabW, h:dabH };
+      cY += dabH + 8;
+
+      // Highlight all VAL windows orange
+      var _allSliderKeys = ['blen','bwid','rot','hp','regen','dens','dist','decel','rotspd','rotdec','wbounce','spinDist'];
+      for (var dhi=0; dhi<_allSliderKeys.length; dhi++) {
+        var dhsl = this._editorSliders[_allSliderKeys[dhi]];
+        if (!dhsl || !dhsl.valX) continue;
+        ctx.fillStyle = 'rgba(255,140,0,0.35)';
+        ctx.beginPath(); ctx.roundRect(dhsl.valX, dhsl.valY, dhsl.valW, dhsl.valH, 2); ctx.fill();
+        ctx.strokeStyle = '#ff8800'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(dhsl.valX, dhsl.valY, dhsl.valW, dhsl.valH, 2); ctx.stroke();
+      }
+    }
+
     // ── ROW 4: Tool buttons + Snap controls ──────────────────────────────────
     var r4H = 26;
     var snapStartY = cY;  // snap panel top-aligns here
@@ -5945,135 +6072,6 @@ class Game {
     var defMode = this._editorDefaultMode || false;
     this._editorDefaultBtn = btn(defMode?'CANCEL\nDEF':'DEFAULT', ppX+4, bpY+5+bRowH*2+8,
       bpW-8, bRowH*1.4, '#ffcc00', defMode, {fs:8});
-
-    cY = bpY + bpH_base + 5;
-
-    // ── SLIDER PANELS ─────────────────────────────────────────────────────────
-    var slRH  = 26;  // row height per slider
-    var slGap = 4;
-
-    // Read values
-    var LENval   = sb2?(sb2.w||sb2.r*2||70):(bd2.rectW||70);
-    var WIDval   = sb2?(sb2.h||sb2.r*2||22):(bd2.rectH||22);
-    var ROTval   = sb2?((sb2._rotation||0)*180/Math.PI):0;
-    while (ROTval>180) ROTval-=360; while (ROTval<-180) ROTval+=360;
-    var HPval    = (sb2&&sb2.maxHealth!==undefined)?sb2.maxHealth:(bd2.rectHP||100);
-    var REGval   = (sb2&&sb2.regenAfter!==undefined)?sb2.regenAfter:(bd2.rectRegen||2000);
-    var DENSval  = (sb2&&sb2._density!==undefined)?sb2._density:(bd2.density||1.0);
-    var DISTval  = (sb2&&sb2._maxTravel!==undefined)?sb2._maxTravel:(bd2.maxTravel||60);
-    var DECELval = (sb2&&sb2._decel!==undefined)?sb2._decel:(bd2.decel||0.88);
-    var ROTSPDval= (sb2&&sb2._rotSpeed!==undefined)?sb2._rotSpeed:(bd2.rotSpeed||0.3);
-    var ROTDECval= (sb2&&sb2._rotDecel!==undefined)?sb2._rotDecel:(bd2.rotDecel||0.88);
-    var WBOUNCEval=(sb2&&sb2._wallBounce!==undefined)?sb2._wallBounce:(bd2.wallBounce||0.45);
-    var SPINDISTval=(sb2&&sb2._spinDist!==undefined)?sb2._spinDist:(bd2.spinDist||0.5);
-    var HPinf    = (sb2&&sb2._invincible)||false;
-    var noRegen  = (sb2&&sb2._noRegen)||false;
-
-    this._editorSliders = {};
-
-    // ── Panel 1: TRANSFORM ────────────────────────────────────────────────────
-    var ph1 = panelHeader('TRANSFORM', 'transform', padding, cY, contentW, '#00ccff');
-    this._editorPanelHeaders = this._editorPanelHeaders || [];
-    this._editorPanelHeaders[0] = ph1;
-    cY += ph1.h + 2;
-
-    if (!ph1.collapsed) {
-      var p1W2 = Math.floor((contentW-4)/2);
-      this._editorSliders.blen = slider('LEN', LENval, 5, 900, padding, cY, p1W2, {rowH:slRH,col:'#00ccff'});
-      this._editorSliders.bwid = slider('WID', WIDval, 2, 200, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff'});
-      cY += slRH + slGap;
-
-      var rotW2 = Math.floor((contentW)*0.6);
-      this._editorSliders.rot = slider('ROT', ROTval, -180, 180, padding, cY, rotW2, {rowH:slRH,col:'#cc44ff'});
-      // pivot grid beside rotation slider
-      var rPivX = padding+rotW2+6, rPivY = cY+2;
-      var rpW=14, rpG=2;
-      this._editorRotPivRects = this._editorRotPivRects||[];
-      this._editorRotPivRects = [];
-      for (var rpc=0; rpc<3; rpc++) {
-        for (var rpr=0; rpr<3; rpr++) {
-          var rpKey=pivCols[rpc]+pivRows2[rpr];
-          var rpx=rPivX+rpc*(rpW+rpG), rpy=rPivY+rpr*(rpW*0.65+rpG);
-          var rpAct=curPiv3===rpKey;
-          ctx.fillStyle=rpAct?pivColors3[rpc]+'44':'rgba(0,10,30,0.6)';
-          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.fill();
-          ctx.strokeStyle=rpAct?pivColors3[rpc]:'#334455'; ctx.lineWidth=rpAct?1.2:0.5;
-          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.stroke();
-          if(rpAct){ctx.fillStyle=pivColors3[rpc];ctx.beginPath();ctx.arc(rpx+rpW/2,rpy+rpW*0.32,1.5,0,Math.PI*2);ctx.fill();}
-          this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW,h:rpW*0.65,val:rpKey});
-        }
-      }
-      cY += slRH + slGap;
-    }
-
-    // ── Panel 2: BRICK SETTINGS ───────────────────────────────────────────────
-    var ph2 = panelHeader('BRICK SETTINGS', 'brickset', padding, cY, contentW, '#ffaa00');
-    this._editorPanelHeaders[1] = ph2;
-    cY += ph2.h + 2;
-
-    if (!ph2.collapsed) {
-      var p2W = Math.floor((contentW-8)/3);
-      this._editorSliders.hp    = slider('HP',    HPval,   10, 400, padding,          cY, p2W, {rowH:slRH,col:'#ff4444'});
-      this._editorSliders.regen = slider('REGEN', noRegen?0:Math.max(200,REGval), 200, 10000, padding+p2W+4, cY, p2W, {rowH:slRH,col:'#ff8844'});
-      this._editorSliders.dens  = slider('DENS',  DENSval, 0.5, 5.0, padding+(p2W+4)*2, cY, p2W, {rowH:slRH,col:'#ffcc44'});
-
-      // ∞ HP button and ✕ REGEN button
-      var hpInfX  = this._editorSliders.hp.valX    + this._editorSliders.hp.valW + 1;
-      var regenCX = this._editorSliders.regen.valX + this._editorSliders.regen.valW + 1;
-      this._editorInfHPBtn    = btn(HPinf?'∞':'∞',   hpInfX,  cY+slRH/2-8, 16, 16, '#ff8800', HPinf, {fs:9});
-      this._editorNoRegenBtn  = btn(noRegen?'✕':'∞', regenCX, cY+slRH/2-8, 16, 16, noRegen?'#ff4444':'#ff8800', noRegen, {fs:9});
-      cY += slRH + slGap;
-    }
-
-    // ── Panel 3: BRICK PHYSICS ────────────────────────────────────────────────
-    var ph3 = panelHeader('BRICK PHYSICS', 'brickphys', padding, cY, contentW, '#cc44ff');
-    this._editorPanelHeaders[2] = ph3;
-    cY += ph3.h + 2;
-
-    if (!ph3.collapsed) {
-      var p3W2 = Math.floor((contentW-8)/3);
-      var p3W3 = Math.floor((contentW-4)/2);
-      var grayed3 = !movActive2;
-      this._editorSliders.dist    = slider('DIST',     DISTval,         0, 900, padding,           cY, p3W2, {rowH:slRH,col:'#00ccff',grayed:grayed3});
-      this._editorSliders.decel   = slider('DECEL',    1-DECELval,   0.01, 0.5, padding+p3W2+4,    cY, p3W2, {rowH:slRH,col:'#00aaff',grayed:grayed3});
-      this._editorSliders.spinDist= slider('SPIN/DIST',SPINDISTval,     0, 1.0, padding+(p3W2+4)*2,cY, p3W2, {rowH:slRH,col:'#44ccff',grayed:grayed3});
-      cY += slRH + slGap;
-      this._editorSliders.rotspd  = slider('RSPIN',    ROTSPDval,     0.0, 1.0, padding,           cY, p3W3, {rowH:slRH,col:'#ff8844',grayed:grayed3});
-      this._editorSliders.rotdec  = slider('RDECEL',   1-ROTDECval, 0.05,0.95, padding+p3W3+4,     cY, p3W3, {rowH:slRH,col:'#ff6644',grayed:grayed3});
-      cY += slRH + slGap;
-      this._editorSliders.wbounce = slider('BNCE',     WBOUNCEval,    0.0, 1.0, padding,           cY, contentW, {rowH:slRH,col:'#4488ff'});
-      cY += slRH + slGap;
-    }
-
-    // ── DEFAULT mode: RESET ALL button + VAL window highlights ───────────────
-    this._editorDefaultAllBtn = null;
-    if (this._editorDefaultMode) {
-      // RESET ALL button
-      var dabW = Math.floor((contentW)/2), dabH = 26;
-      var dabX = padding + (contentW-dabW)/2;
-      ctx.fillStyle = 'rgba(255,100,0,0.3)';
-      ctx.beginPath(); ctx.roundRect(dabX, cY+4, dabW, dabH, 4); ctx.fill();
-      ctx.strokeStyle = '#ff6600'; ctx.lineWidth = 2;
-      ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 10;
-      ctx.beginPath(); ctx.roundRect(dabX, cY+4, dabW, dabH, 4); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#ffaa44'; ctx.font = "bold 10px '" + mono + "'";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('⟳ RESET ALL', dabX + dabW/2, cY+4+dabH/2);
-      this._editorDefaultAllBtn = { x:dabX, y:cY+4, w:dabW, h:dabH };
-      cY += dabH + 8;
-
-      // Highlight all VAL windows orange
-      var _allSliderKeys = ['blen','bwid','rot','hp','regen','dens','dist','decel','rotspd','rotdec','wbounce','spinDist'];
-      for (var dhi=0; dhi<_allSliderKeys.length; dhi++) {
-        var dhsl = this._editorSliders[_allSliderKeys[dhi]];
-        if (!dhsl || !dhsl.valX) continue;
-        ctx.fillStyle = 'rgba(255,140,0,0.35)';
-        ctx.beginPath(); ctx.roundRect(dhsl.valX, dhsl.valY, dhsl.valW, dhsl.valH, 2); ctx.fill();
-        ctx.strokeStyle = '#ff8800'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.roundRect(dhsl.valX, dhsl.valY, dhsl.valW, dhsl.valH, 2); ctx.stroke();
-      }
-    }
 
     // ── Note picker popup ─────────────────────────────────────────────────────
     if (this._editorNotePopup && sb2) this._drawNotePopup(ctx, sb2);
