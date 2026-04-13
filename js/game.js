@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1673;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1674;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -878,13 +878,14 @@ class Game {
             var rplb=self._editorRotPivRects[rpli];
             if (_px>=rplb.x&&_px<=rplb.x+rplb.w&&_py>=rplb.y&&_py<=rplb.y+rplb.h) {
               var _rpKey=rplb.val;
+              self._pivotBtnPendingTap = _rpKey;
               _clrPressState = { target:'pivlock_'+_rpKey, startTime:Date.now(), duration:700, col:'#ff2244', btn:rplb };
               self._clrPressState = _clrPressState;
               _startClrTone('#ff2244');
               (function(key) {
                 _startLongPress('pivlock_'+key, 700, function() {
+                  self._pivotBtnPendingTap = null;  // long press consumed — suppress tap
                   _playClrConfirm();
-                  // Toggle lock: if same key already locked, unlock; else lock to this key
                   if (self._pivotLockKey === key) {
                     self._pivotLockKey = null;
                   } else {
@@ -1073,32 +1074,7 @@ class Game {
             }
           }
         }
-        // Rotation slider pivot grid (TRANSFORM panel) — tap to activate, tap again to deactivate
-        if (self._editorRotPivRects) {
-          for (var rpi=0; rpi<self._editorRotPivRects.length; rpi++) {
-            var rpr2=self._editorRotPivRects[rpi];
-            if (_px>=rpr2.x&&_px<=rpr2.x+rpr2.w&&_py>=rpr2.y&&_py<=rpr2.y+rpr2.h) {
-              var _tapKey = rpr2.val;
-              if (self._pivotLockKey === _tapKey) {
-                // Tap on locked button — turn off lock (pivot stays active for current brick)
-                self._pivotLockKey = null;
-              } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
-                // Same button tapped again — deactivate pivot mode
-                self._editorPivotActive = false;
-                self._editorPivot = 'CM';
-                if (self._editorSelected) self._editorSelected._pivot = 'CM';
-              } else {
-                // New button or activating — set pivot and activate
-                self._editorPivotActive = true;
-                self._editorPivot = _tapKey;
-                if (self._editorSelected) self._editorSelected._pivot = _tapKey;
-              }
-              self._editorPivotEndState = null;
-              self._editorPivotBodyState = null;
-              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
-            }
-          }
-        }
+        // Rotation slider pivot grid now handled in onUp (supports both tap and long-press)
         // Note button
         if (self._editorNoteBtn&&self._editorSelected) {
           var nb2=self._editorNoteBtn;
@@ -1975,6 +1951,37 @@ class Game {
       e.preventDefault();
       _cancelLongPress();
       _stopClrTone();
+
+      // Pivot button short tap — fires if long-press didn't complete
+      if (self._pivotBtnPendingTap) {
+        var _tapKey = self._pivotBtnPendingTap;
+        self._pivotBtnPendingTap = null;
+        // Any tap deactivates lock regardless of which button
+        if (self._pivotLockKey) {
+          self._pivotLockKey = null;
+          // If tapping a different button, activate that pivot normally
+          if (_tapKey !== self._editorPivot || !self._editorPivotActive) {
+            self._editorPivotActive = true;
+            self._editorPivot = _tapKey;
+            if (self._editorSelected) self._editorSelected._pivot = _tapKey;
+          }
+          // else: tapping same button while locked just unlocks, pivot stays active
+        } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
+          // Same button, not locked — deactivate pivot
+          self._editorPivotActive = false;
+          self._editorPivot = 'CM';
+          if (self._editorSelected) self._editorSelected._pivot = 'CM';
+        } else {
+          // New button or not active — activate
+          self._editorPivotActive = true;
+          self._editorPivot = _tapKey;
+          if (self._editorSelected) self._editorSelected._pivot = _tapKey;
+        }
+        self._editorPivotEndState = null;
+        self._editorPivotBodyState = null;
+        if (window.Sound && Sound.uiTap) Sound.uiTap(0.15);
+        return;
+      }
       // VEL button: if it was a short tap (long press didn't fire), do the toggle
       if (self._velPendingToggle) {
         self._velPendingToggle = false;
