@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1671;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1672;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -854,6 +854,7 @@ class Game {
               self._editorSelectMode=(mb2.id!=='build');
               self._editorSelected=null;
               self._editorPivotActive=false;
+              self._pivotLockKey=null;
               self._editorPivotEndState=null;
               self._editorPivotBodyState=null;
               self._editorPivotTwoFingerStart=null;
@@ -871,8 +872,30 @@ class Game {
             }
           }
         }
-        // CLR row buttons — long press only
-        if (self._editorClrBtns) {
+        // Rot pivot buttons — short tap toggles pivot mode, long press sets pivot lock
+        if (self._editorRotPivRects) {
+          for (var rpli=0; rpli<self._editorRotPivRects.length; rpli++) {
+            var rplb=self._editorRotPivRects[rpli];
+            if (_px>=rplb.x&&_px<=rplb.x+rplb.w&&_py>=rplb.y&&_py<=rplb.y+rplb.h) {
+              var _rpKey=rplb.val;
+              _clrPressState = { target:'pivlock_'+_rpKey, startTime:Date.now(), duration:700, col:'#ff2244', btn:rplb };
+              self._clrPressState = _clrPressState;
+              _startClrTone('#ff2244');
+              (function(key) {
+                _startLongPress('pivlock_'+key, 700, function() {
+                  _playClrConfirm();
+                  // Toggle lock: if same key already locked, unlock; else lock to this key
+                  if (self._pivotLockKey === key) {
+                    self._pivotLockKey = null;
+                  } else {
+                    self._pivotLockKey = key;
+                  }
+                });
+              })(_rpKey);
+              return;
+            }
+          }
+        }
           for (var cli2=0; cli2<self._editorClrBtns.length; cli2++) {
             var clb=self._editorClrBtns[cli2];
             if (_px>=clb.x&&_px<=clb.x+clb.w&&_py>=clb.y&&_py<=clb.y+clb.h) {
@@ -1053,7 +1076,11 @@ class Game {
           for (var rpi=0; rpi<self._editorRotPivRects.length; rpi++) {
             var rpr2=self._editorRotPivRects[rpi];
             if (_px>=rpr2.x&&_px<=rpr2.x+rpr2.w&&_py>=rpr2.y&&_py<=rpr2.y+rpr2.h) {
-              if (self._editorPivotActive && self._editorPivot === rpr2.val) {
+              var _tapKey = rpr2.val;
+              if (self._pivotLockKey === _tapKey) {
+                // Tap on locked button — turn off lock (pivot stays active for current brick)
+                self._pivotLockKey = null;
+              } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
                 // Same button tapped again — deactivate pivot mode
                 self._editorPivotActive = false;
                 self._editorPivot = 'CM';
@@ -1061,10 +1088,9 @@ class Game {
               } else {
                 // New button or activating — set pivot and activate
                 self._editorPivotActive = true;
-                self._editorPivot = rpr2.val;
-                if (self._editorSelected) self._editorSelected._pivot = rpr2.val;
+                self._editorPivot = _tapKey;
+                if (self._editorSelected) self._editorSelected._pivot = _tapKey;
               }
-              // Cancel any active pivot states
               self._editorPivotEndState = null;
               self._editorPivotBodyState = null;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.15); return;
@@ -5016,6 +5042,14 @@ class Game {
       this._editorSelected = b;
       this._showBrickSettings = true;
       this._editorMovable = b._movable || false;
+
+      // ── Pivot lock: inherit locked pivot key and activate pivot mode ──────────
+      if (this._pivotLockKey) {
+        b._pivot = this._pivotLockKey;
+        this._editorPivot = this._pivotLockKey;
+        this._editorPivotActive = true;
+      }
+
       // Push undo BEFORE modifying — captures state at start of this interaction
       this._undoPush();
       this._editorLastPushWasProvisional = true;  // may be replaced if pinch follows
@@ -5217,10 +5251,6 @@ class Game {
           var _pOff4 = this._getPivotOffset(sb, _pivK);
           var _pvWX2 = sb.x + Math.cos(_bRot)*_pOff4.x - Math.sin(_bRot)*_pOff4.y;
           var _pvWY2 = sb.y + Math.sin(_bRot)*_pOff4.x + Math.cos(_bRot)*_pOff4.y;
-          // Check both fingers are on opposite sides of pivot
-          var _p0side = Math.cos(_bRot)*(p0.x-_pvWX2) + Math.sin(_bRot)*(p0.y-_pvWY2);
-          var _p1side = Math.cos(_bRot)*(p1.x-_pvWX2) + Math.sin(_bRot)*(p1.y-_pvWY2);
-          if (_p0side * _p1side > 0) return;  // same side of pivot — ignore second finger
           this._editorPivotTwoFingerStart = {
             brick: sb, f0end: _f0end, f1end: _f1end, pivotWX: _pvWX2, pivotWY: _pvWY2,
           };
@@ -6070,24 +6100,42 @@ class Game {
       var rpW=14, rpG=2;
       var curRotPiv = sb2 ? (sb2._pivot||'CM') : (this._editorPivot||'CM');
       var _pivActive = this._editorPivotActive || false;
+      var _pivLockKey = this._pivotLockKey || null;
       this._editorRotPivRects = [];
       var rpRows = ['T','M','B'], rpCols = ['L','C','R'];
       for (var rpc=0; rpc<3; rpc++) {
         for (var rpr=0; rpr<3; rpr++) {
           var rpKey = rpRows[rpr] + rpCols[rpc];
           var rpx=rPivX+rpc*(rpW+rpG), rpy=rPivY+rpr*(rpW*0.65+rpG);
+          var rpW2 = rpW, rpH2 = rpW*0.65;
           var rpAct = _pivActive && curRotPiv===rpKey;
-          var rpCol = (rpKey==='CM') ? '#ffcc44' : '#44ccff';
-          ctx.globalAlpha = _pivActive ? 1.0 : 0.4;
-          ctx.fillStyle=rpAct?rpCol+'44':'rgba(0,10,30,0.6)';
-          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.fill();
-          ctx.strokeStyle=rpAct?rpCol:'#334455'; ctx.lineWidth=rpAct?1.2:0.5;
-          if(rpAct){ctx.shadowColor=rpCol;ctx.shadowBlur=4;}
-          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW,rpW*0.65,1); ctx.stroke();
+          var rpLocked = (_pivLockKey === rpKey);
+          // Lock state = red; active = normal color; inactive = dimmed
+          var rpCol = rpLocked ? '#ff2244' : (rpKey==='CM') ? '#ffcc44' : '#44ccff';
+          ctx.globalAlpha = (_pivActive || rpLocked) ? 1.0 : 0.4;
+          ctx.fillStyle = rpLocked ? 'rgba(255,20,50,0.25)' : rpAct ? rpCol+'44' : 'rgba(0,10,30,0.6)';
+          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW2,rpH2,1); ctx.fill();
+          ctx.strokeStyle = rpLocked ? '#ff2244' : rpAct ? rpCol : '#334455';
+          ctx.lineWidth = (rpAct||rpLocked) ? 1.4 : 0.5;
+          if(rpAct||rpLocked){ctx.shadowColor=rpCol;ctx.shadowBlur=rpLocked?6:4;}
+          ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW2,rpH2,1); ctx.stroke();
           ctx.shadowBlur=0;
-          if(rpAct){ctx.fillStyle=rpCol;ctx.beginPath();ctx.arc(rpx+rpW/2,rpy+rpW*0.32,1.5,0,Math.PI*2);ctx.fill();}
+          if(rpAct||rpLocked){
+            ctx.fillStyle=rpCol;
+            ctx.beginPath();ctx.arc(rpx+rpW2/2,rpy+rpH2*0.5,1.5,0,Math.PI*2);ctx.fill();
+          }
+          // Fill-bar during long-press hold
+          var _cpsRpiv = this._clrPressState;
+          if (_cpsRpiv && _cpsRpiv.target === 'pivlock_'+rpKey) {
+            var _rpProg = Math.min(1, (Date.now() - _cpsRpiv.startTime) / 700);
+            ctx.save();
+            ctx.beginPath(); ctx.roundRect(rpx, rpy, rpW2*_rpProg, rpH2, 1); ctx.clip();
+            ctx.fillStyle = 'rgba(255,30,60,0.55)';
+            ctx.fillRect(rpx, rpy, rpW2, rpH2);
+            ctx.restore();
+          }
           ctx.globalAlpha=1.0;
-          this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW,h:rpW*0.65,val:rpKey});
+          this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW2,h:rpH2,val:rpKey});
         }
       }
       cY += slRH + slGap + 8;  // extra 8px gap so pivot grid doesn't clip into next panel
