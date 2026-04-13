@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1639;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1640;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -6804,6 +6804,25 @@ class Game {
     }
     ctx.restore();
 
+    // ── Pre-launch velocity readout above ball (shown while pulling) ──────────
+    // Only show if velocity indicator is on, or always show during sling
+    var _bs3 = BallSettings[obj.type] || BallSettings.bouncer;
+    var _launchSpd = Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (_bs3.velocity || 1);
+    ctx.save();
+    ctx.font = "bold 13px 'Share Tech Mono',monospace";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    var _velLabelY = obj.y - obj.r - 6;
+    var _spdTxt = '→ ' + _launchSpd.toFixed(1);
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillText(_spdTxt, obj.x + 1, _velLabelY + 1);
+    // bright green with glow
+    ctx.fillStyle = '#00ff44';
+    ctx.shadowColor = '#00cc33'; ctx.shadowBlur = 8;
+    ctx.fillText(_spdTxt, obj.x, _velLabelY);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
   }
 
   _drawHudClearButtons() {
@@ -6833,8 +6852,8 @@ class Game {
     var ctx    = this.ctx;
     var W      = this.W;
     var H      = this.H;
-    var leftReserve  = 3 * 32 + 16;
-    var rightReserve = 2 * 32 + 16;
+    var leftReserve  = 3 * 32 + 36;   // extra 20px breathing room left of buttons
+    var rightReserve = 2 * 32 + 36;   // extra padding on right side too
     var sliderW = W - leftReserve - rightReserve;
     var sliderH = 28;
     var sx     = leftReserve;
