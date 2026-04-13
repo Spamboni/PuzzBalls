@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1650;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1651;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -629,8 +629,8 @@ class Game {
           if (pos.x >= cmr.x && pos.x <= cmr.x + cmr.w && pos.y >= cmr.y && pos.y <= cmr.y + cmr.h) {
             if (cmr.key === '_showVelocityIndicator') {
               // Short tap = toggle, long press = open size slider
-              self._velPressState = { btn: cmr, startTime: Date.now(), duration: 350 };
-              _startLongPress('velsize', 350, function() {
+              self._velPressState = { btn: cmr, startTime: Date.now(), duration: 467 };
+              _startLongPress('velsize', 467, function() {
                 _playClrConfirm();
                 self._velSliderOpen = !self._velSliderOpen;
                 self._velPressState = null;
@@ -655,8 +655,17 @@ class Game {
           }
         }
       }
-      // Vel size slider overlay — grab or dismiss
+      // Vel size slider overlay — close X, grab, or dismiss
       if (self._velSliderOpen && self._velSliderRect) {
+        // Check close button first
+        if (self._velCloseBtn) {
+          var _vcb = self._velCloseBtn;
+          if (pos.x >= _vcb.x && pos.x <= _vcb.x + _vcb.w && pos.y >= _vcb.y && pos.y <= _vcb.y + _vcb.h) {
+            self._velSliderOpen = false;
+            if (window.Sound && Sound.uiTap) Sound.uiTap(0.15);
+            return;
+          }
+        }
         var _vsr2 = self._velSliderRect;
         if (pos.x >= _vsr2.x - 8 && pos.x <= _vsr2.x + _vsr2.w + 8 &&
             pos.y >= _vsr2.y - 8 && pos.y <= _vsr2.y + _vsr2.h + 8) {
@@ -6948,7 +6957,7 @@ class Game {
       var _isSlung = this.sling && this.sling.obj === obj;
       if (!_isSlung) {
         var _spd = Math.hypot(obj.vx || 0, obj.vy || 0);
-        var _spdStr = _spd.toFixed(1);
+        var _spdStr = String(Math.round(_spd));
         var _vfs = window._velFontSize || 13;
         ctx.save();
         ctx.font = "bold " + _vfs + "px 'Share Tech Mono',monospace";
@@ -7087,11 +7096,12 @@ class Game {
     // Only show if velocity indicator is on, or always show during sling
     var _bs3 = BallSettings[obj.type] || BallSettings.bouncer;
     var _launchSpd = Math.min(dist, SLING_MAX_PULL) * SLING_POWER * (_bs3.velocity || 1);
+    var _vfsSling = window._velFontSize || 13;
     ctx.save();
-    ctx.font = "bold 13px 'Share Tech Mono',monospace";
+    ctx.font = "bold " + _vfsSling + "px 'Share Tech Mono',monospace";
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     var _velLabelY = obj.y - obj.r - 6;
-    var _spdTxt = '→ ' + _launchSpd.toFixed(1);
+    var _spdTxt = '→ ' + Math.round(_launchSpd);
     // shadow
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillText(_spdTxt, obj.x + 1, _velLabelY + 1);
@@ -7358,13 +7368,21 @@ class Game {
 
         // Vel size slider overlay popup
         if (this._velSliderOpen) {
-          var _vSlW = 120, _vSlH = 22, _vSlX = mx - _vSlW/2 + btnW/2, _vSlY = rowBY - _vSlH - 8;
+          var _vSlW = 130, _vSlH = 22;
+          // Position above the top button row (rowAY) with some padding
+          var _vSlY = rowAY - _vSlH - 14;
+          var _vSlX = mx - _vSlW/2 + btnW/2;
           // Clamp to screen
           _vSlX = Math.max(4, Math.min(W - _vSlW - 4, _vSlX));
           this._velSliderRect = { x: _vSlX, y: _vSlY, w: _vSlW, h: _vSlH };
+
+          // Close button (red X), top-right of pill
+          var _vXR = 9, _vXX = _vSlX + _vSlW + 6 + _vXR, _vXY = _vSlY + _vSlH/2;
+          this._velCloseBtn = { x: _vXX - _vXR - 2, y: _vSlY - 4, w: (_vXR+2)*2, h: _vSlH + 8 };
+
           ctx.save();
           // Background pill
-          ctx.fillStyle = 'rgba(0,12,28,0.92)';
+          ctx.fillStyle = 'rgba(0,12,28,0.94)';
           ctx.beginPath(); ctx.roundRect(_vSlX - 6, _vSlY - 4, _vSlW + 12, _vSlH + 8, 7); ctx.fill();
           ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.roundRect(_vSlX - 6, _vSlY - 4, _vSlW + 12, _vSlH + 8, 7); ctx.stroke();
@@ -7386,9 +7404,19 @@ class Game {
           ctx.fillStyle = '#00ff88'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
           ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
           ctx.fillText('VEL SIZE ' + _vfs2 + 'px', _vSlX + _vSlW/2, _vSlY - 5);
+          // Close X button
+          ctx.beginPath(); ctx.arc(_vXX, _vXY, _vXR, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(180,30,30,0.9)'; ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 6;
+          ctx.fill(); ctx.shadowBlur = 0;
+          ctx.strokeStyle = '#ff6666'; ctx.lineWidth = 1; ctx.stroke();
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+          var _xi = 4;
+          ctx.beginPath(); ctx.moveTo(_vXX-_xi, _vXY-_xi); ctx.lineTo(_vXX+_xi, _vXY+_xi); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(_vXX+_xi, _vXY-_xi); ctx.lineTo(_vXX-_xi, _vXY+_xi); ctx.stroke();
           ctx.restore();
         } else {
           this._velSliderRect = null;
+          this._velCloseBtn = null;
         }
       }
     }
