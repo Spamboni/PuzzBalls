@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1662;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1663;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1273,7 +1273,24 @@ class Game {
         var sliderDefs = [
           { key:'blen',    apply:function(v){if(self._editorSelected){self._editorSelected.w=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectW=v;} },
           { key:'bwid',    apply:function(v){if(self._editorSelected){self._editorSelected.h=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;} },
-          { key:'rot',     apply:function(v){if(self._editorSelected)self._editorSelected._rotation=v*Math.PI/180;} },
+          { key:'rot',     apply:function(v){
+            if(self._editorSelected){
+              var b=self._editorSelected;
+              var oldRot=b._rotation||0, newRot=v*Math.PI/180;
+              // Translate brick to keep pivot point stationary
+              var piv=b._pivot||'CM';
+              var pOff=self._getPivotOffset(b,piv);
+              // World position of pivot before rotation
+              var pvX=b.x+Math.cos(oldRot)*pOff.x-Math.sin(oldRot)*pOff.y;
+              var pvY=b.y+Math.sin(oldRot)*pOff.x+Math.cos(oldRot)*pOff.y;
+              // World position of pivot after rotation (using offset in new rotation)
+              var pvX2=b.x+Math.cos(newRot)*pOff.x-Math.sin(newRot)*pOff.y;
+              var pvY2=b.y+Math.sin(newRot)*pOff.x+Math.cos(newRot)*pOff.y;
+              // Shift brick so pivot stays fixed
+              b.x+=pvX-pvX2; b.y+=pvY-pvY2;
+              b._rotation=newRot;
+            }
+          } },
           { key:'hp',      apply:function(v){if(self._editorSelected){self._editorSelected.maxHealth=v;self._editorSelected.health=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectHP=v;} },
           { key:'regen',   apply:function(v){if(self._editorSelected)self._editorSelected.regenAfter=v;} },
           { key:'dens',    apply:function(v){if(self._editorSelected)self._editorSelected._density=v;window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.density=v;} },
@@ -5751,7 +5768,7 @@ class Game {
           this._editorRotPivRects.push({x:rpx,y:rpy,w:rpW,h:rpW*0.65,val:rpKey});
         }
       }
-      cY += slRH + slGap;
+      cY += slRH + slGap + 8;  // extra 8px gap so pivot grid doesn't clip into next panel
     }
 
     // ── Panel 2: BRICK SETTINGS ───────────────────────────────────────────────
@@ -5892,9 +5909,8 @@ class Game {
       }
 
     } else if (edMode === 'rotate') {
-      // Big 3x3 pivot grid — editor rotation pivot
-      var bigPivW = Math.floor((contentW - 8) / 3);
-      var bigPivH = Math.floor((r5H * 2 - 8) / 3) - 1;
+      // 3x3 pivot grid — fixed 14px cells, left-aligned to tool button row
+      var bigPivW = 14, bigPivH = 9, bigPivG = 2;
       var bigPivRows2 = ['T','M','B'], bigPivCols2 = ['L','C','R'];
       var curEdPiv = this._editorSelected ? (this._editorSelected._pivot||'CM') : (this._editorPivot||'CM');
       this._editorPivotRects = [];
@@ -5902,19 +5918,19 @@ class Game {
         for (var bpr = 0; bpr < 3; bpr++) {
           var bpKey = bigPivRows2[bpr] + bigPivCols2[bpc];  // row+col = TL,TC,TR...
           var bpCol = (bpKey === 'CM') ? '#ffcc44' : '#44ccff';
-          var bpx = padding + bpc*(bigPivW+4);
-          var bpy = cY + 2 + bpr*(bigPivH+3);
+          var bpx = padding + bpc*(bigPivW+bigPivG);
+          var bpy = cY + 2 + bpr*(bigPivH+bigPivG);
           var bpAct = curEdPiv === bpKey;
           ctx.fillStyle = bpAct ? bpCol+'33' : 'rgba(0,10,30,0.7)';
-          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,3); ctx.fill();
+          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,2); ctx.fill();
           ctx.strokeStyle = bpAct ? bpCol : '#334455';
-          ctx.lineWidth = bpAct ? 2 : 0.8;
-          if (bpAct) { ctx.shadowColor=bpCol; ctx.shadowBlur=8; }
-          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,3); ctx.stroke();
+          ctx.lineWidth = bpAct ? 1.5 : 0.6;
+          if (bpAct) { ctx.shadowColor=bpCol; ctx.shadowBlur=6; }
+          ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,2); ctx.stroke();
           ctx.shadowBlur = 0;
           if (bpAct) {
             ctx.fillStyle = bpCol;
-            ctx.beginPath(); ctx.arc(bpx+bigPivW/2, bpy+bigPivH/2, 5, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(bpx+bigPivW/2, bpy+bigPivH/2, 2, 0, Math.PI*2); ctx.fill();
           }
           this._editorPivotRects.push({x:bpx,y:bpy,w:bigPivW,h:bigPivH,val:bpKey,enabled:true});
         }
@@ -5973,25 +5989,23 @@ class Game {
     var gsnRect = btn('GRID\nSNAP', snapBtnX2, snapRow1Y, snapColW, snapRowH, '#00aaff', gsnOn, {fs:6, multiline:true});
     gsnRect.snapKey = 'snapGrid'; snapBoxBtns.push(gsnRect);
 
-    // ── Right column bottom: 3×3 pivot grid ──────────────────────────────────
-    var gpBoxX = snapBtnX2;
+    // ── Right column bottom: 3×3 pivot grid — fixed 14px cells, left-aligned to right col ──
+    var gpCellW = 14, gpCellH = 9, gpG = 2;
+    var gpGridW = 3*gpCellW + 2*gpG + 4;
+    var gpGridH = 3*gpCellH + 2*gpG + 4;
+    var gpBoxX = snapBtnX2;  // left-aligned to right column
     var gpBoxY = snapRow2Y;
-    var gpBoxW = snapColW;
-    var gpBoxH = snapRowH;
     // draw cell background
     ctx.fillStyle = 'rgba(0,10,30,0.7)';
-    ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpBoxW, gpBoxH, 2); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpGridW, gpGridH, 2); ctx.fill();
     ctx.strokeStyle = '#334455'; ctx.lineWidth = 0.6;
-    ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpBoxW, gpBoxH, 2); ctx.stroke();
-    var gpCellW = Math.floor((gpBoxW - 6) / 3);
-    var gpCellH = Math.floor((gpBoxH - 6) / 3);
-    var gpG = 2;
+    ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpGridW, gpGridH, 2); ctx.stroke();
     var curGridPiv = window._editorGridSnapPivot || 'CM';
-    var gridPivCols = ['L','C','R'], gridPivRowsB = ['T','M','B'];
+    var gridPivRows = ['T','M','B'], gridPivCols2 = ['L','C','R'];
     this._editorGridPivRects = [];
     for (var gpc = 0; gpc < 3; gpc++) {
       for (var gpr = 0; gpr < 3; gpr++) {
-        var gpKey2 = gridPivCols[gpc] + gridPivRowsB[gpr];
+        var gpKey2 = gridPivRows[gpr] + gridPivCols2[gpc];  // row+col format
         var gpx2   = gpBoxX + 3 + gpc * (gpCellW + gpG);
         var gpy2   = gpBoxY + 3 + gpr * (gpCellH + gpG);
         var gpAct2 = curGridPiv === gpKey2;
@@ -6041,10 +6055,10 @@ class Game {
     this._editorNoteBtn = btn('🎵', padding+4+statW*2+6, bRow1Y, bRowH, bRowH,
       noteOn2?'#cc44ff':'#446688', noteOn2||false);
 
-    // 3x3 pivot grid
+    // 3x3 pivot grid — same cell size as rotation pivot (14px)
     var pivX3  = padding + 4;
     var pivY3  = bRow1Y + bRowH + 4;
-    var pW9=22, pG9=3;
+    var pW9=14, pG9=2;
     // pivCols, pivRows2, pivColors3, curPiv3 declared above near slider panels
     var pivEnabled2 = transOn3;
     this._editorPivotRects = [];
@@ -6112,7 +6126,7 @@ class Game {
       }
       ctx.restore(); ctx.setLineDash([]);
 
-      if (toolMode2==='rotate'||this._editorRotateState) {
+      if (toolMode2==='rotate' || this._editorRotateState || this._editorSelected) {
         var pivot4 = sb._pivot||'CM';
         var pOff4  = this._getPivotOffset(sb, pivot4);
         var pvX4   = sb.x+Math.cos(sb._rotation||0)*pOff4.x-Math.sin(sb._rotation||0)*pOff4.y;
