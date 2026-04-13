@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1643;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1644;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -4805,8 +4805,9 @@ class Game {
     var _escX = this.canvas.width / rect.width, _escY = this.canvas.height / rect.height;
     var vSY  = this._editorScrollY || 0;
     var t0 = touches[0], t1 = touches[1];
-    var p0 = { x: (t0.clientX - rect.left) * _escX, y: (t0.clientY - rect.top) * _escY };
-    var p1 = { x: (t1.clientX - rect.left) * _escX, y: (t1.clientY - rect.top) * _escY };
+    // Apply scroll offset so coords are in editor-content space (matching where bricks are drawn)
+    var p0 = { x: (t0.clientX - rect.left) * _escX, y: (t0.clientY - rect.top) * _escY - vSY };
+    var p1 = { x: (t1.clientX - rect.left) * _escX, y: (t1.clientY - rect.top) * _escY - vSY };
     var sb = this._editorSelected;
 
     if (!this._editorPinchStart) {
