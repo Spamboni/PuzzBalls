@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1644;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1645;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -697,6 +697,8 @@ class Game {
         if (self._editorUndoBtn) {
           var u=self._editorUndoBtn;
           if (_px>=u.x&&_px<=u.x+u.w&&_py>=u.y&&_py<=u.y+u.h) {
+            self._btnFlash = { btn: u, col: '#0088ff', t: Date.now() };
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
             self._undoApply&&self._undoApply(self._undoHistory&&self._undoHistory.pop()); return;
           }
         }
@@ -704,6 +706,8 @@ class Game {
         if (self._editorRedoBtn) {
           var rd=self._editorRedoBtn;
           if (_px>=rd.x&&_px<=rd.x+rd.w&&_py>=rd.y&&_py<=rd.y+rd.h) {
+            self._btnFlash = { btn: rd, col: '#0088ff', t: Date.now() };
+            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
             self._redoApply&&self._redoApply(self._redoHistory&&self._redoHistory.pop()); return;
           }
         }
@@ -712,12 +716,12 @@ class Game {
           var db=self._editorDelBtn;
           if (_px>=db.x&&_px<=db.x+db.w&&_py>=db.y&&_py<=db.y+db.h) {
             if (self._editorBrickDeleteMode) {
-              // Already in delete mode — tap to turn off
               self._editorBrickDeleteMode=false;
               self._tubeDeleteMode=false;
+              self._btnFlash = { btn: db, col: '#ff2222', t: Date.now() };
               if(window.Sound&&Sound.uiToggle)Sound.uiToggle(false);
             } else if (self._editorSelected || self._tubeSelected) {
-              // Has a selection — instant delete it
+              self._btnFlash = { btn: db, col: '#ff2222', t: Date.now() };
               self._undoPush();
               if (self._editorSelected) {
                 var idx2=self.bricks.indexOf(self._editorSelected);
@@ -730,10 +734,10 @@ class Game {
               }
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
             } else {
-              // No selection — long press to enable persistent delete mode
               _startLongPress('del', 500, function() {
                 self._editorBrickDeleteMode=true;
                 self._tubeDeleteMode=true;
+                self._btnFlash = { btn: self._editorDelBtn, col: '#ff2222', t: Date.now() };
                 if(window.Sound&&Sound.uiToggle)Sound.uiToggle(true);
               });
             }
@@ -5349,6 +5353,26 @@ class Game {
 
     cY = r1Y + r1H + 6;
 
+    // ── Button tap-flash overlay (UNDO/REDO/DEL) ─────────────────────────────
+    if (this._btnFlash) {
+      var _bf = this._btnFlash;
+      var _bfAge = Date.now() - _bf.t;
+      var _bfDur = 220;
+      if (_bfAge < _bfDur) {
+        var _bfAlpha = 1 - (_bfAge / _bfDur);
+        ctx.save();
+        ctx.globalAlpha = _bfAlpha * 0.55;
+        ctx.fillStyle = _bf.col;
+        ctx.shadowColor = _bf.col; ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.roundRect(_bf.btn.x, _bf.btn.y, _bf.btn.w, _bf.btn.h, 4); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      } else {
+        this._btnFlash = null;
+      }
+    }
+
     // ── ROW 2: CLR BRICKS | CLR TUBES | CLR AFFECTORS | CLR RAMPS | CLR MOTORS
     var r2H = 20;
     var clrLabels = ['CLR BRICKS','CLR TUBES','CLR AFFECT','CLR RAMPS','CLR MOTORS'];
@@ -5481,6 +5505,7 @@ class Game {
 
     // ── ROW 4: Tool buttons + Snap controls ──────────────────────────────────
     var r4H = 26;
+    var snapStartY = cY;  // snap panel top-aligns here
     var tools = [
       { id:'build',   col:'#4488ff', icon: function(c,col) {
         c.fillStyle=col+'66'; c.beginPath(); c.roundRect(-9,-5,18,10,2); c.fill();
@@ -5549,26 +5574,26 @@ class Game {
     } else if (edMode === 'rotate') {
       // Big 3x3 pivot grid — editor rotation pivot
       var bigPivW = Math.floor((contentW - 8) / 3);
-      var bigPivH = Math.floor((r5H - 4) / 3) - 2;
+      var bigPivH = Math.floor((r5H * 2 - 8) / 3) - 1;
       var bigPivCols = ['L','C','R'], bigPivRows = ['T','M','B'];
-      var bigPivColors = ['#ffcc44','#44ccff','#ff8844'];
       var curEdPiv = this._editorSelected ? (this._editorSelected._pivot||'CM') : (this._editorPivot||'CM');
       this._editorPivotRects = [];
       for (var bpc = 0; bpc < 3; bpc++) {
         for (var bpr = 0; bpr < 3; bpr++) {
           var bpKey = bigPivCols[bpc] + bigPivRows[bpr];
+          var bpCol = (bpKey === 'CM') ? '#ffcc44' : '#44ccff';
           var bpx = padding + bpc*(bigPivW+4);
-          var bpy = cY + 2 + bpr*(bigPivH+2);
+          var bpy = cY + 2 + bpr*(bigPivH+3);
           var bpAct = curEdPiv === bpKey;
-          ctx.fillStyle = bpAct ? bigPivColors[bpc]+'33' : 'rgba(0,10,30,0.7)';
+          ctx.fillStyle = bpAct ? bpCol+'33' : 'rgba(0,10,30,0.7)';
           ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,3); ctx.fill();
-          ctx.strokeStyle = bpAct ? bigPivColors[bpc] : '#334455';
+          ctx.strokeStyle = bpAct ? bpCol : '#334455';
           ctx.lineWidth = bpAct ? 2 : 0.8;
-          if (bpAct) { ctx.shadowColor=bigPivColors[bpc]; ctx.shadowBlur=8; }
+          if (bpAct) { ctx.shadowColor=bpCol; ctx.shadowBlur=8; }
           ctx.beginPath(); ctx.roundRect(bpx,bpy,bigPivW,bigPivH,3); ctx.stroke();
           ctx.shadowBlur = 0;
           if (bpAct) {
-            ctx.fillStyle = bigPivColors[bpc];
+            ctx.fillStyle = bpCol;
             ctx.beginPath(); ctx.arc(bpx+bigPivW/2, bpy+bigPivH/2, 5, 0, Math.PI*2); ctx.fill();
           }
           this._editorPivotRects.push({x:bpx,y:bpy,w:bigPivW,h:bigPivH,val:bpKey,enabled:true});
@@ -5580,26 +5605,28 @@ class Game {
     // ── SNAP PANEL: 2 cols × 3 rows ─────────────────────────────────────────
     // Left col: LEN SNAP, WID SNAP, ROT SNAP
     // Right col: GRID (toggle), GRID SNAP (toggle), 3×3 pivot grid
-    var snapBoxX = padding + 4*(stW+3) + 6;
+    // Anchored to right of tool buttons, top-aligned with row 4
+    var _toolsRightX = padding + tools.length * (toolW + 3) + 6;
+    var snapBoxX = _toolsRightX;
     var snapBoxW = W - snapBoxX - padding;
     var snapColW = Math.floor((snapBoxW - 6) / 2);
-    // Height: 3 rows — calculate to match 3 equal rows
-    var snapRowH = Math.floor((r5H * 2 + 4) / 3) - 1;
-    var snapGap  = 3;
-    var snapTotalH = 3 * snapRowH + 2 * snapGap + 4;
+    // Tall rows — use available vertical space (row4 + row5 + gap)
+    var snapTotalH = r4H + 3 + r5H * 2 + 4;  // match height of rows 4+5
+    var snapRowH   = Math.floor((snapTotalH - 8) / 3) - 2;
+    var snapGap    = Math.floor((snapTotalH - 8 - 3 * snapRowH) / 2);
 
     // Box background
     ctx.fillStyle = 'rgba(0,8,22,0.85)';
-    ctx.beginPath(); ctx.roundRect(snapBoxX, cY, snapBoxW, snapTotalH, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(snapBoxX, snapStartY, snapBoxW, snapTotalH, 3); ctx.fill();
     ctx.strokeStyle = '#223344'; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.roundRect(snapBoxX, cY, snapBoxW, snapTotalH, 3); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(snapBoxX, snapStartY, snapBoxW, snapTotalH, 3); ctx.stroke();
 
     var _rsl = {0:'ROT FREE',15:'ROT 15°',30:'ROT 30°',45:'ROT 45°',90:'ROT 90°'};
     var snapBtnX = snapBoxX + 2;
     var snapBtnX2 = snapBoxX + 2 + snapColW + 2;  // right col x
-    var snapRow0Y = cY + 2;
-    var snapRow1Y = cY + 2 + snapRowH + snapGap;
-    var snapRow2Y = cY + 2 + (snapRowH + snapGap) * 2;
+    var snapRow0Y = snapStartY + 2;
+    var snapRow1Y = snapStartY + 2 + snapRowH + snapGap;
+    var snapRow2Y = snapStartY + 2 + (snapRowH + snapGap) * 2;
 
     // ── Left column: 3 snap toggle buttons ───────────────────────────────────
     var lenOn  = (window._editorLenSnap || 0) > 0;
@@ -5648,13 +5675,14 @@ class Game {
         var gpx2   = gpBoxX + 3 + gpc * (gpCellW + gpG);
         var gpy2   = gpBoxY + 3 + gpr * (gpCellH + gpG);
         var gpAct2 = curGridPiv === gpKey2;
-        ctx.fillStyle   = gpAct2 ? 'rgba(0,200,255,0.35)' : 'rgba(0,15,40,0.8)';
+        var gpCol2 = (gpKey2 === 'CM') ? '#ffcc44' : '#44ccff';
+        ctx.fillStyle   = gpAct2 ? gpCol2 + '44' : 'rgba(0,15,40,0.8)';
         ctx.beginPath(); ctx.roundRect(gpx2, gpy2, gpCellW, gpCellH, 1); ctx.fill();
-        ctx.strokeStyle = gpAct2 ? '#00ccff' : '#334455';
+        ctx.strokeStyle = gpAct2 ? gpCol2 : '#334455';
         ctx.lineWidth   = gpAct2 ? 1.2 : 0.5;
         ctx.beginPath(); ctx.roundRect(gpx2, gpy2, gpCellW, gpCellH, 1); ctx.stroke();
         if (gpAct2) {
-          ctx.fillStyle = '#00ccff';
+          ctx.fillStyle = gpCol2;
           ctx.beginPath(); ctx.arc(gpx2 + gpCellW/2, gpy2 + gpCellH/2, 2, 0, Math.PI*2); ctx.fill();
         }
         this._editorGridPivRects.push({x:gpx2, y:gpy2, w:gpCellW, h:gpCellH, val:gpKey2});
@@ -5711,12 +5739,13 @@ class Game {
         var pivKey=pivCols[pc]+pivRows2[pr];
         var px9=pivX3+pc*(pW9+pG9), py9=pivY3+pr*(pW9*0.7+pG9);
         var pAct9=pivEnabled2&&curPiv3===pivKey;
+        var pCol9 = (pivKey==='CM') ? '#ffcc44' : '#44ccff';
         ctx.globalAlpha=pivEnabled2?1.0:0.28;
-        ctx.fillStyle=pAct9?pivColors3[pc]+'44':'rgba(0,10,30,0.6)';
+        ctx.fillStyle=pAct9?pCol9+'44':'rgba(0,10,30,0.6)';
         ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.7,2); ctx.fill();
-        ctx.strokeStyle=pAct9?pivColors3[pc]:'#334455'; ctx.lineWidth=pAct9?1.5:0.6;
+        ctx.strokeStyle=pAct9?pCol9:'#334455'; ctx.lineWidth=pAct9?1.5:0.6;
         ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.7,2); ctx.stroke();
-        if(pAct9){ctx.fillStyle=pivColors3[pc];ctx.beginPath();ctx.arc(px9+pW9/2,py9+pW9*0.35,2.5,0,Math.PI*2);ctx.fill();}
+        if(pAct9){ctx.fillStyle=pCol9;ctx.beginPath();ctx.arc(px9+pW9/2,py9+pW9*0.35,2.5,0,Math.PI*2);ctx.fill();}
         ctx.globalAlpha=1.0;
         this._editorPivotRects.push({x:px9,y:py9,w:pW9,h:pW9*0.6,val:pivKey,enabled:pivEnabled2});
       }
