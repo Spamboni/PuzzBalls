@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1669;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1670;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1291,7 +1291,45 @@ class Game {
         }
         // ── Sliders ────────────────────────────────────────────────────────────
         var sliderDefs = [
-          { key:'blen',    apply:function(v){if(self._editorSelected){self._editorSelected.w=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectW=v;} },
+          { key:'blen',    apply:function(v){
+            v = Math.max(5, Math.min(900, v));
+            window.BrickDefaults = window.BrickDefaults||{}; window.BrickDefaults.rectW = v;
+            if (!self._editorSelected) return;
+            var b = self._editorSelected;
+            var bRot = b._rotation || 0;
+            var pivK = b._pivot || 'CM';
+            var oldW = b.w || 40;
+            if (!self._editorPivotActive) {
+              // No pivot mode — uniform resize keeping center
+              b.w = v; return;
+            }
+            var _endPivots = { 'TL':true,'ML':true,'BL':true, 'TR':true,'MR':true,'BR':true };
+            var _pivIsLeft  = (pivK==='TL'||pivK==='ML'||pivK==='BL');
+            var _pivIsRight = (pivK==='TR'||pivK==='MR'||pivK==='BR');
+            if (_pivIsLeft || _pivIsRight) {
+              // End pivot: keep pivot end fixed, stretch free end
+              var pOff = self._getPivotOffset(b, pivK);
+              var pvWX = b.x + Math.cos(bRot)*pOff.x - Math.sin(bRot)*pOff.y;
+              var pvWY = b.y + Math.sin(bRot)*pOff.x + Math.cos(bRot)*pOff.y;
+              b.w = v;
+              // Recenter so pivot stays at pvWX/pvWY
+              var pOff2 = self._getPivotOffset(b, pivK);
+              b.x = pvWX - (Math.cos(bRot)*pOff2.x - Math.sin(bRot)*pOff2.y);
+              b.y = pvWY - (Math.sin(bRot)*pOff2.x + Math.cos(bRot)*pOff2.y);
+            } else {
+              // Mid/center pivot — uniform scale centered on pivot world position
+              var pOff3 = self._getPivotOffset(b, pivK);
+              var pvWX3 = b.x + Math.cos(bRot)*pOff3.x - Math.sin(bRot)*pOff3.y;
+              var pvWY3 = b.y + Math.sin(bRot)*pOff3.x + Math.cos(bRot)*pOff3.y;
+              b.w = v;
+              b._pivotAsymmetric = false;  // slider resets asymmetry
+              // For symmetric pivots (CM,TC,BC) offset is 0 so center = pivot world
+              // For ML/MR offset is ±hw — recenter keeps pivot fixed
+              var pOff4 = self._getPivotOffset(b, pivK);
+              b.x = pvWX3 - (Math.cos(bRot)*pOff4.x - Math.sin(bRot)*pOff4.y);
+              b.y = pvWY3 - (Math.sin(bRot)*pOff4.x + Math.cos(bRot)*pOff4.y);
+            }
+          } },
           { key:'bwid',    apply:function(v){if(self._editorSelected){self._editorSelected.h=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;} },
           { key:'rot',     apply:function(v){
             if(self._editorSelected){
@@ -5153,10 +5191,14 @@ class Game {
     // ── Pivot two-finger: ML/MR pivots allow independent end dragging ─────────
     if (this._editorPivotActive && !(sb instanceof CircularBrick)) {
       var _pivK = sb._pivot || 'CM';
-      // Only ML and MR support two-finger independent end drag
-      // (corner/edge pivots lock that end, so only one free end makes sense)
-      var _twoFingerPivots = { 'ML':true, 'MR':true };
+      // Mid pivots (not locked to one end) support two-finger independent end drag
+      // ML, MR = side midpoints; CM, TC, BC = center column (both ends free)
+      var _twoFingerPivots = { 'ML':true, 'MR':true, 'CM':true, 'TC':true, 'BC':true };
       if (_twoFingerPivots[_pivK]) {
+        // Cancel any in-progress single-finger end drag — upgrade to two-finger
+        if (this._editorPivotEndState) {
+          this._editorPivotEndState = null;
+        }
         if (!this._editorPivotTwoFingerStart) {
           if (!this._editorDragInProgress) this._undoPush();
           this._editorLastPushWasProvisional = false;
@@ -5210,6 +5252,10 @@ class Game {
           var _rpY = Math.sin(_avgRot)*_pOff5.x + Math.cos(_avgRot)*_pOff5.y;
           _ptb.x = _ptf.pivotWX - _rpX;
           _ptb.y = _ptf.pivotWY - _rpY;
+          // Mark as asymmetrically stretched so length slider centers on pivot
+          _ptb._pivotAsymmetric = true;
+          _ptb._pivotWX = _ptf.pivotWX;
+          _ptb._pivotWY = _ptf.pivotWY;
         }
         return;
       } else {
