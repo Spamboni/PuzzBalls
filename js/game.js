@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1653;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1654;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -526,7 +526,10 @@ class Game {
       // Two-finger = start pinch — init state immediately
       if (e.touches && e.touches.length >= 2) {
         self._lastPinchAngle = undefined;
-        self._editorPinchStart = null;
+        // Only reset pinch state if not mid-gesture in brick editor
+        if (!self._editorMode || !self._editorSelected) {
+          self._editorPinchStart = null;
+        }
         self._tubePinchStart = null;
 
         if (self._editorTubeMode) {
@@ -592,7 +595,7 @@ class Game {
             }
           }
         } else if (!self._editorTubeMode && self._editorSelected) {
-          self._editorPinchStart = null;
+          // Don't reset _editorPinchStart here — let _editorHandleTouch manage it
           self._editorDraggingJustPlaced = false;  // pinch after placement = real interaction
         }
         return;
@@ -1724,7 +1727,7 @@ class Game {
           }
           return;
         }
-        self._editorPinchStart = null;
+        self._editorPinchStart = null;  // only cleared on full lift (onUp)
         self._tubePinchStart = null;
         // Universal scroll — promote pending to active after 6px, then scroll
         if (self._editorScrollPending || self._editorScrollDragging) {
