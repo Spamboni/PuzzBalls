@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1642;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1643;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -744,11 +744,14 @@ class Game {
         if (self._editorClearBtn) {
           var ca=self._editorClearBtn;
           if (_px>=ca.x&&_px<=ca.x+ca.w&&_py>=ca.y&&_py<=ca.y+ca.h) {
+            _clrPressState = { target:'clrall', startTime:Date.now(), duration:700, col:'#ff4400', btn:ca };
+            self._clrPressState = _clrPressState;
+            _startClrTone('#ff4400');
             _startLongPress('clrall', 700, function() {
+              _playClrConfirm();
               self._undoPush();
               self.bricks=[]; self.tubes.tubes=[]; self.objects=[];
               self._editorSelected=null;
-              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.4);
             }); return;
           }
         }
@@ -825,14 +828,17 @@ class Game {
           for (var cli2=0; cli2<self._editorClrBtns.length; cli2++) {
             var clb=self._editorClrBtns[cli2];
             if (_px>=clb.x&&_px<=clb.x+clb.w&&_py>=clb.y&&_py<=clb.y+clb.h) {
+              _clrPressState = { target:'clr'+clb.type, startTime:Date.now(), duration:700, col:clb._col||'#ff6600', btn:clb };
+              self._clrPressState = _clrPressState;
+              _startClrTone(clb._col||'#ff6600');
               (function(type) {
                 _startLongPress('clr'+type, 700, function() {
+                  _playClrConfirm();
                   self._undoPush();
                   if (type===0) self.bricks=[];
                   else if (type===1) self.tubes.tubes=[];
                   else if (type===2) self.objects=[];
                   self._editorSelected=null;
-                  if(window.Sound&&Sound.uiTap)Sound.uiTap(0.35);
                 });
               })(clb.type);
               return;
@@ -1738,17 +1744,59 @@ class Game {
 
     // Long press state
     var _lpTimer = null, _lpTarget = null;
+    var _clrPressState = null;  // { target, startTime, duration, col, btn } for fill-bar feedback
+    self._clrPressState = null; // mirror on self for _drawEditor access
     function _startLongPress(target, delay, cb) {
-      _lpTimer = setTimeout(function() { cb(); _lpTimer = null; _lpTarget = null; }, delay || 600);
+      _lpTimer = setTimeout(function() {
+        cb();
+        if (_clrPressState && _clrPressState.target === target) { _clrPressState = null; self._clrPressState = null; }
+        _lpTimer = null; _lpTarget = null;
+      }, delay || 600);
       _lpTarget = target;
     }
     function _cancelLongPress() {
       if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; _lpTarget = null; }
+      _clrPressState = null; self._clrPressState = null;
+    }
+    // Rising tone during hold — starts quiet/low, grows louder/higher
+    var _clrToneNode = null, _clrToneGain = null;
+    function _startClrTone(col) {
+      var c = window.Sound && Sound.getCtx && Sound.getCtx();
+      if (!c) return;
+      _stopClrTone();
+      var vol = (window.AudioSettings && window.AudioSettings.masterVol) || 1;
+      var osc = c.createOscillator(); var gain = c.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(180, c.currentTime);
+      osc.frequency.linearRampToValueAtTime(520, c.currentTime + 0.7);
+      gain.gain.setValueAtTime(0.0, c.currentTime);
+      gain.gain.linearRampToValueAtTime(0.18 * vol, c.currentTime + 0.7);
+      osc.connect(gain); gain.connect(c.destination);
+      osc.start(); _clrToneNode = osc; _clrToneGain = gain;
+    }
+    function _stopClrTone() {
+      if (_clrToneNode) { try { _clrToneNode.stop(); } catch(e){} _clrToneNode = null; _clrToneGain = null; }
+    }
+    function _playClrConfirm() {
+      _stopClrTone();
+      var c = window.Sound && Sound.getCtx && Sound.getCtx();
+      if (!c) return;
+      var vol = (window.AudioSettings && window.AudioSettings.masterVol) || 1;
+      var now = c.currentTime;
+      [600, 900, 1200].forEach(function(f, i) {
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = 'square'; o.frequency.value = f;
+        var t = now + i * 0.04;
+        g.gain.setValueAtTime(0.15 * vol, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+        o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.12);
+      });
     }
 
     function onUp(e) {
       e.preventDefault();
       _cancelLongPress();
+      _stopClrTone();
       self._draggingSlider = false;
       self._draggingBrickSlider = false;
       self._editorDraggingSlider = null;
@@ -5269,6 +5317,23 @@ class Game {
     var btnW1 = Math.floor((contentW) / 6);
 
     this._editorClearBtn      = btn('CLR ALL', padding,                  r1Y, btnW1, r1H, '#ff4400', false);
+    // Fill-bar overlay for CLR ALL when held
+    var _cpsR1 = this._clrPressState;
+    if (_cpsR1 && _cpsR1.target === 'clrall' && _cpsR1.btn) {
+      var _elR1  = Date.now() - _cpsR1.startTime;
+      var _prR1  = Math.min(1, _elR1 / _cpsR1.duration);
+      var _fbR1  = this._editorClearBtn;
+      ctx.save();
+      ctx.beginPath(); ctx.roundRect(_fbR1.x, _fbR1.y, _fbR1.w * _prR1, _fbR1.h, 3);
+      var _gR1 = ctx.createLinearGradient(_fbR1.x, 0, _fbR1.x + _fbR1.w, 0);
+      _gR1.addColorStop(0, '#ff4400aa'); _gR1.addColorStop(0.7, '#ff4400ff'); _gR1.addColorStop(1, '#ffffff88');
+      ctx.fillStyle = _gR1; ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
+      var _puR1 = 0.5 + 0.5 * Math.sin(Date.now() * 0.015);
+      ctx.strokeStyle = '#ff4400'; ctx.lineWidth = 1.5 + _puR1;
+      ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 8 * _puR1;
+      ctx.beginPath(); ctx.roundRect(_fbR1.x, _fbR1.y, _fbR1.w, _fbR1.h, 3); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.restore();
+    }
     this._editorDelBtn        = btn((this._editorBrickDeleteMode?'✕DEL':'DEL'),
                                     padding + btnW1 + 2,                 r1Y, btnW1, r1H,
                                     '#ff2222', this._editorBrickDeleteMode||false);
@@ -5294,8 +5359,34 @@ class Game {
       this._editorClrBtns.push(btn(clrLabels[ci2], cbx, cY, clrW, r2H, clrCols[ci2], false, {fs:7}));
       this._editorClrBtns[ci2].type = ci2;
       this._editorClrBtns[ci2]._needsLongPress = true;
+      this._editorClrBtns[ci2]._col = clrCols[ci2];
     }
     cY += r2H + 5;
+
+    // ── Long-press fill bar overlay on active clr button ─────────────────────
+    var _cps = this._clrPressState;
+    if (_cps && _cps.btn) {
+      var _elapsed = Date.now() - _cps.startTime;
+      var _prog    = Math.min(1, _elapsed / _cps.duration);
+      var _fb      = _cps.btn;
+      ctx.save();
+      // Glow fill sweeping left to right
+      ctx.beginPath(); ctx.roundRect(_fb.x, _fb.y, _fb.w * _prog, _fb.h, 3);
+      var _fbGrad = ctx.createLinearGradient(_fb.x, 0, _fb.x + _fb.w, 0);
+      _fbGrad.addColorStop(0,   _cps.col + 'aa');
+      _fbGrad.addColorStop(0.7, _cps.col + 'ff');
+      _fbGrad.addColorStop(1,   '#ffffff88');
+      ctx.fillStyle = _fbGrad;
+      ctx.shadowColor = _cps.col; ctx.shadowBlur = 10;
+      ctx.fill(); ctx.shadowBlur = 0;
+      // Pulsing border on whole button
+      var _pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.015);
+      ctx.strokeStyle = _cps.col; ctx.lineWidth = 1.5 + _pulse;
+      ctx.shadowColor = _cps.col; ctx.shadowBlur = 8 * _pulse;
+      ctx.beginPath(); ctx.roundRect(_fb.x, _fb.y, _fb.w, _fb.h, 3); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
 
     // ── ROW 3: Tab bar — proper tabs attached to panel below ─────────────────
     var tabH = 24;
