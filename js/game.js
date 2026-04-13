@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1645;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1646;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -697,21 +697,29 @@ class Game {
         if (self._editorUndoBtn) {
           var u=self._editorUndoBtn;
           if (_px>=u.x&&_px<=u.x+u.w&&_py>=u.y&&_py<=u.y+u.h) {
-            self._btnFlash = { btn: u, col: '#0088ff', t: Date.now() };
-            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
-            self._undoApply&&self._undoApply(self._undoHistory&&self._undoHistory.pop()); return;
+            var hasUndo = self._undoHistory && self._undoHistory.length > 0;
+            self._btnFlash = { btn: u, col: hasUndo ? '#0088ff' : '#444444', t: Date.now() };
+            if (hasUndo) {
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+              self._undoApply&&self._undoApply(self._undoHistory.pop());
+            } else { _playErrorTone(); }
+            return;
           }
         }
         // REDO
         if (self._editorRedoBtn) {
           var rd=self._editorRedoBtn;
           if (_px>=rd.x&&_px<=rd.x+rd.w&&_py>=rd.y&&_py<=rd.y+rd.h) {
-            self._btnFlash = { btn: rd, col: '#0088ff', t: Date.now() };
-            if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
-            self._redoApply&&self._redoApply(self._redoHistory&&self._redoHistory.pop()); return;
+            var hasRedo = self._redoHistory && self._redoHistory.length > 0;
+            self._btnFlash = { btn: rd, col: hasRedo ? '#0088ff' : '#444444', t: Date.now() };
+            if (hasRedo) {
+              if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2);
+              self._redoApply&&self._redoApply(self._redoHistory.pop());
+            } else { _playErrorTone(); }
+            return;
           }
         }
-        // DEL button — tap deletes selected (brick or tube), long-press toggles persistent delete mode
+        // DEL button — tap deletes selected, long-press toggles persistent delete mode
         if (self._editorDelBtn) {
           var db=self._editorDelBtn;
           if (_px>=db.x&&_px<=db.x+db.w&&_py>=db.y&&_py<=db.y+db.h) {
@@ -734,6 +742,9 @@ class Game {
               }
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3);
             } else {
+              // Nothing selected — error tone, but long-press still arms delete mode
+              self._btnFlash = { btn: db, col: '#444444', t: Date.now() };
+              _playErrorTone();
               _startLongPress('del', 500, function() {
                 self._editorBrickDeleteMode=true;
                 self._tubeDeleteMode=true;
@@ -1795,6 +1806,19 @@ class Game {
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
         o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.12);
       });
+    }
+    function _playErrorTone() {
+      var c = window.Sound && Sound.getCtx && Sound.getCtx();
+      if (!c) return;
+      var vol = (window.AudioSettings && window.AudioSettings.masterVol) || 1;
+      var now = c.currentTime;
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(280, now);
+      o.frequency.exponentialRampToValueAtTime(100, now + 0.18);
+      g.gain.setValueAtTime(0.12 * vol, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      o.connect(g); g.connect(c.destination); o.start(now); o.stop(now + 0.22);
     }
 
     function onUp(e) {
@@ -4598,6 +4622,10 @@ class Game {
     }).filter(Boolean);
     // Restore tubes if snapshot includes them
     if (tubeSnap && this.tubes) this.tubes.fromJSON(tubeSnap);
+    // Clear selection so stale highlight doesn't persist
+    this._editorSelected = null;
+    this._showBrickSettings = false;
+    this._tubeSelected = null;
   }
 
   toggleEditor() {
@@ -4783,6 +4811,7 @@ class Game {
     this._editorDragging    = obj;
     this._editorDragOffX    = 0;
     this._editorDragOffY    = 0;
+    this._editorDraggingJustPlaced = true;  // suppress double undo on finger lift
     this._showBrickSettings = true;
     // Placement sound — soft thud
     if (window.Sound && Sound.getCtx) {
@@ -5074,7 +5103,12 @@ class Game {
   }
 
   _editorOnUp() {
-    if (this._editorDragging || this._editorDragSlider || this._editorStretchState || this._editorWidthState || this._editorRotateState) this._undoPush();
+    if (this._editorDragging || this._editorDragSlider || this._editorStretchState || this._editorWidthState || this._editorRotateState) {
+      if (!this._editorDraggingJustPlaced) {
+        this._undoPush();
+      }
+    }
+    this._editorDraggingJustPlaced = false;
     this._editorDragging    = null;
     this._editorStretchState = null;
     this._editorWidthState   = null;
