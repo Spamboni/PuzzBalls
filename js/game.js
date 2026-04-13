@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1660;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1661;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5675,6 +5675,13 @@ class Game {
     // ── SLIDER PANELS ─────────────────────────────────────────────────────────
     var sb2 = this._editorSelected;
     var bd2 = window.BrickDefaults || {};
+    // Pivot vars needed by TRANSFORM panel pivot grid
+    var pivCols = ['L','C','R'], pivRows2 = ['T','M','B'];
+    var pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
+    var curPiv3 = sb2 ? (sb2._pivot||'CM') : (this._editorPivot||'CM');
+    // Brick state vars needed by Physics panel
+    var movActive2 = sb2 ? (sb2._movable||false) : (this._editorMovable||false);
+    var transOn3   = sb2 ? (sb2._translateOnRotate!==false) : (this._editorTranslate!==false);
     var slRH  = 26;  // row height per slider
     var slGap = 4;
 
@@ -6002,9 +6009,7 @@ class Game {
     ctx.beginPath(); ctx.roundRect(padding, bpY, bpW, bpH_base, 3); ctx.fill();
     ctx.strokeStyle = '#224466'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(padding, bpY, bpW, bpH_base, 3); ctx.stroke();
-
-    var movActive2 = sb2 ? (sb2._movable||false) : (this._editorMovable||false);
-    var transOn3   = sb2 ? (sb2._translateOnRotate!==false) : (this._editorTranslate!==false);
+    // movActive2, transOn3 declared above near slider panels
 
     var bRow1Y = bpY + 5;
     var bRowH  = 20;
@@ -6025,9 +6030,7 @@ class Game {
     var pivX3  = padding + 4;
     var pivY3  = bRow1Y + bRowH + 4;
     var pW9=22, pG9=3;
-    var pivCols=['L','C','R'], pivRows2=['T','M','B'];
-    var pivColors3=['#ffcc44','#44ccff','#ff8844'];
-    var curPiv3 = sb2?(sb2._pivot||'CM'):(this._editorPivot||'CM');
+    // pivCols, pivRows2, pivColors3, curPiv3 declared above near slider panels
     var pivEnabled2 = transOn3;
     this._editorPivotRects = [];
     for (var pc=0; pc<3; pc++) {
