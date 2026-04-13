@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1665;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1666;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -4634,43 +4634,101 @@ class Game {
     this.tubes.draw(ctx, 'behind', this.frame, _selTubeForDraw);
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
     this._drawChute();
-    // ── Editor mode: chute scroll overlay ────────────────────────────────────
+    // ── Editor mode: chute overlay — fully covers tube + DONE button ──────────
     if (this._editorMode) {
       var _cg = this._chuteGeom();
       var _ctx = this.ctx;
-      _ctx.save();
-      // Semi-transparent overlay over chute
-      _ctx.fillStyle = 'rgba(0,255,200,0.08)';
-      _ctx.fillRect(_cg.LEFT_X, 0, _cg.CHUTE_W, _cg.floorY);
-      // Dashed left border
-      _ctx.strokeStyle = 'rgba(0,255,180,0.4)'; _ctx.lineWidth = 1.5;
-      _ctx.setLineDash([6, 5]);
-      _ctx.beginPath(); _ctx.moveTo(_cg.LEFT_X, 0); _ctx.lineTo(_cg.LEFT_X, _cg.floorY); _ctx.stroke();
-      _ctx.setLineDash([]);
-      // Scroll arrows — two chevrons pointing up and down
       var _cMidX = _cg.LEFT_X + _cg.CHUTE_W / 2;
       var _pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.06);
-      _ctx.strokeStyle = 'rgba(0,255,180,' + (0.5 + 0.3 * _pulse) + ')';
-      _ctx.lineWidth = 2; _ctx.lineCap = 'round';
-      var _arH = 8, _arW = 10;
-      // Up chevron near top
-      var _ay1 = _cg.floorY * 0.25;
-      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay1 + _arH); _ctx.lineTo(_cMidX, _ay1); _ctx.lineTo(_cMidX + _arW, _ay1 + _arH); _ctx.stroke();
-      _ctx.globalAlpha = 0.5;
-      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay1 + _arH*2.2); _ctx.lineTo(_cMidX, _ay1 + _arH*1.2); _ctx.lineTo(_cMidX + _arW, _ay1 + _arH*2.2); _ctx.stroke();
-      // Down chevron near bottom
-      var _ay2 = _cg.floorY * 0.72;
-      _ctx.globalAlpha = 0.5 + 0.3 * _pulse;
-      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay2); _ctx.lineTo(_cMidX, _ay2 + _arH); _ctx.lineTo(_cMidX + _arW, _ay2); _ctx.stroke();
-      _ctx.globalAlpha = 0.5;
-      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay2 - _arH*1.2); _ctx.lineTo(_cMidX, _ay2 - _arH*0.2); _ctx.lineTo(_cMidX + _arW, _ay2 - _arH*1.2); _ctx.stroke();
-      // "SCROLL" label
-      _ctx.globalAlpha = 0.45 + 0.2 * _pulse;
+      _ctx.save();
+
+      // Solid fill to hide ball buttons/tube internals
+      var _ovGrad = _ctx.createLinearGradient(_cg.LEFT_X, 0, _cg.LEFT_X + _cg.CHUTE_W, 0);
+      _ovGrad.addColorStop(0,   'rgba(0,18,30,0.97)');
+      _ovGrad.addColorStop(0.4, 'rgba(0,30,40,0.98)');
+      _ovGrad.addColorStop(1,   'rgba(0,8,20,0.97)');
+      _ctx.fillStyle = _ovGrad;
+      _ctx.fillRect(_cg.LEFT_X, 0, _cg.CHUTE_W, _cg.floorY);
+
+      // Edge glow on left border
+      var _edgeGrad = _ctx.createLinearGradient(_cg.LEFT_X, 0, _cg.LEFT_X + 14, 0);
+      _edgeGrad.addColorStop(0, 'rgba(0,220,180,' + (0.22 + 0.1 * _pulse) + ')');
+      _edgeGrad.addColorStop(1, 'rgba(0,220,180,0)');
+      _ctx.fillStyle = _edgeGrad;
+      _ctx.fillRect(_cg.LEFT_X, 0, 14, _cg.floorY);
+
+      // Left border line with glow
+      _ctx.strokeStyle = 'rgba(0,255,180,' + (0.55 + 0.2 * _pulse) + ')';
+      _ctx.lineWidth = 1.5;
+      _ctx.shadowColor = '#00ffcc'; _ctx.shadowBlur = 10 * _pulse;
+      _ctx.beginPath(); _ctx.moveTo(_cg.LEFT_X + 0.75, 0); _ctx.lineTo(_cg.LEFT_X + 0.75, _cg.floorY); _ctx.stroke();
+      _ctx.shadowBlur = 0;
+
+      // Animated chevrons scrolling upward
+      var _phase = (this.frame * 0.03) % 1;
+      var _arH = 10, _arW = 12;
+      _ctx.lineCap = 'round'; _ctx.lineJoin = 'round';
+      for (var _ci = 0; _ci < 5; _ci++) {
+        var _frac = ((_ci / 5) + _phase) % 1;
+        var _cy = _cg.floorY * 0.08 + _frac * _cg.floorY * 0.82;
+        var _fadeEdge = Math.min(_frac * 6, 1) * Math.min((1 - _frac) * 6, 1);
+        _ctx.globalAlpha = _fadeEdge * (0.55 + 0.3 * _pulse);
+        _ctx.strokeStyle = '#00ffcc'; _ctx.lineWidth = 2;
+        _ctx.shadowColor = '#00ffcc'; _ctx.shadowBlur = 7;
+        _ctx.beginPath();
+        _ctx.moveTo(_cMidX - _arW, _cy + _arH); _ctx.lineTo(_cMidX, _cy); _ctx.lineTo(_cMidX + _arW, _cy + _arH);
+        _ctx.stroke();
+        // Fainter echo chevron
+        _ctx.globalAlpha = _fadeEdge * 0.25; _ctx.shadowBlur = 3; _ctx.lineWidth = 1.5;
+        _ctx.beginPath();
+        _ctx.moveTo(_cMidX - _arW*0.65, _cy + _arH*2.1); _ctx.lineTo(_cMidX, _cy + _arH*1.15); _ctx.lineTo(_cMidX + _arW*0.65, _cy + _arH*2.1);
+        _ctx.stroke();
+        _ctx.shadowBlur = 0;
+      }
+      _ctx.globalAlpha = 1;
+
+      // "SCROLL" label (vertical)
+      _ctx.globalAlpha = 0.3 + 0.15 * _pulse;
       _ctx.fillStyle = '#00ffcc'; _ctx.font = "bold 7px 'Share Tech Mono',monospace";
       _ctx.textAlign = 'center'; _ctx.textBaseline = 'middle';
-      _ctx.save(); _ctx.translate(_cMidX, _cg.floorY * 0.5); _ctx.rotate(-Math.PI/2);
+      _ctx.save(); _ctx.translate(_cMidX, _cg.floorY * 0.5); _ctx.rotate(-Math.PI / 2);
       _ctx.fillText('SCROLL', 0, 0); _ctx.restore();
       _ctx.globalAlpha = 1;
+
+      // DONE button — tall narrow strip inside tube column, flush above floor
+      var _dBtnH = 64, _dBtnW = _cg.CHUTE_W - 6;
+      var _dBtnX = _cg.LEFT_X + 3;
+      var _dBtnY = _cg.floorY - _dBtnH - 2;
+      this._editorDoneBtn = { x: _dBtnX, y: _dBtnY, w: _dBtnW, h: _dBtnH };
+
+      // Drop shadow
+      _ctx.shadowColor = 'rgba(0,0,0,0.7)'; _ctx.shadowBlur = 10; _ctx.shadowOffsetY = 4;
+      _ctx.fillStyle = 'rgba(0,55,28,0.96)';
+      _ctx.beginPath(); _ctx.roundRect(_dBtnX, _dBtnY, _dBtnW, _dBtnH, 6); _ctx.fill();
+      _ctx.shadowOffsetY = 0; _ctx.shadowBlur = 0;
+
+      // Pulsing outer glow
+      _ctx.shadowColor = '#00ff88'; _ctx.shadowBlur = 14 + 7 * _pulse;
+      _ctx.strokeStyle = '#00ff88'; _ctx.lineWidth = 1.8;
+      _ctx.beginPath(); _ctx.roundRect(_dBtnX, _dBtnY, _dBtnW, _dBtnH, 6); _ctx.stroke();
+      _ctx.shadowBlur = 0;
+
+      // Top highlight sheen
+      var _dHi = _ctx.createLinearGradient(0, _dBtnY, 0, _dBtnY + _dBtnH * 0.45);
+      _dHi.addColorStop(0, 'rgba(0,255,136,0.20)'); _dHi.addColorStop(1, 'rgba(0,255,136,0)');
+      _ctx.fillStyle = _dHi;
+      _ctx.beginPath(); _ctx.roundRect(_dBtnX + 2, _dBtnY + 2, _dBtnW - 4, _dBtnH - 4, 5); _ctx.fill();
+
+      // "DONE" text rotated 90°
+      _ctx.save();
+      _ctx.translate(_dBtnX + _dBtnW / 2, _dBtnY + _dBtnH / 2);
+      _ctx.rotate(-Math.PI / 2);
+      _ctx.fillStyle = '#00ff88'; _ctx.font = "bold 13px 'Share Tech Mono',monospace";
+      _ctx.textAlign = 'center'; _ctx.textBaseline = 'middle';
+      _ctx.shadowColor = '#00ff88'; _ctx.shadowBlur = 8;
+      _ctx.fillText('DONE', 0, 0);
+      _ctx.shadowBlur = 0; _ctx.restore();
+
       _ctx.restore();
     }
     if (this.barrier) this.barrier.draw(ctx);
@@ -4691,25 +4749,6 @@ class Game {
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
     if (vSY !== 0) ctx.restore();
-    // DONE button — fixed position bottom-right of game area, always visible in editor
-    if (this._editorMode) {
-      var _flY = this.floorY();
-      var _dBtnW = 70, _dBtnH = 28;
-      var _dBtnX = this.W - _dBtnW - 8;
-      var _dBtnY = _flY - _dBtnH - 8;
-      this._editorDoneBtn = { x: _dBtnX, y: _dBtnY, w: _dBtnW, h: _dBtnH };
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,40,20,0.92)';
-      ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.roundRect(_dBtnX, _dBtnY, _dBtnW, _dBtnH, 6); ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.8;
-      ctx.beginPath(); ctx.roundRect(_dBtnX, _dBtnY, _dBtnW, _dBtnH, 6); ctx.stroke();
-      ctx.fillStyle = '#00ff88'; ctx.font = "bold 13px 'Share Tech Mono',monospace";
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('DONE', _dBtnX + _dBtnW/2, _dBtnY + _dBtnH/2);
-      ctx.restore();
-    }
     // Top HUD clear buttons removed — use editor CLR buttons instead
     if (!this._editorMode) {
       this._drawSpeedSlider();
@@ -7432,7 +7471,7 @@ class Game {
     var leftBtns = [
       { key: '_showVelocityArrows', label: '↗',   default: false },
       { key: '_showBallLabel',      label: 'Aa',  default: false },
-      { key: '_showBallAbbr',       label: 'BNC', default: true  },
+      { key: '_showBallAbbr',       label: 'BNC', default: false },
     ];
     var rowAY = btmY - (btnH + gap) * 2;
     var rowBY = btmY - (btnH + gap);
