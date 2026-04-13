@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1674;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1675;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -887,9 +887,14 @@ class Game {
                   self._pivotBtnPendingTap = null;  // long press consumed — suppress tap
                   _playClrConfirm();
                   if (self._pivotLockKey === key) {
+                    // Same key long-pressed again — unlock everything
                     self._pivotLockKey = null;
                   } else {
+                    // Lock to this key — clear any existing blue pivot active state
                     self._pivotLockKey = key;
+                    self._editorPivotActive = false;  // turn off any blue button
+                    self._editorPivot = 'CM';
+                    if (self._editorSelected) self._editorSelected._pivot = 'CM';
                   }
                 });
               })(_rpKey);
