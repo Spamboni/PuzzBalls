@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1663;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1664;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -709,7 +709,8 @@ class Game {
         // DONE
         if (self._editorDoneBtn) {
           var d=self._editorDoneBtn;
-          if (_px>=d.x&&_px<=d.x+d.w&&_py>=d.y&&_py<=d.y+d.h) {
+          // DONE is drawn at screen coords (outside scroll translate), use pos.x/pos.y
+          if (pos.x>=d.x&&pos.x<=d.x+d.w&&pos.y>=d.y&&pos.y<=d.y+d.h) {
             self._editorMode=false; self._editorTubeMode=false;
             window._tubeEditorMode=false; self._editorSelected=null;
             var _dbgBtnDone = document.getElementById('tube-debug-btn'); if (_dbgBtnDone) _dbgBtnDone.style.display='none';
@@ -4633,6 +4634,45 @@ class Game {
     this.tubes.draw(ctx, 'behind', this.frame, _selTubeForDraw);
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
     this._drawChute();
+    // ── Editor mode: chute scroll overlay ────────────────────────────────────
+    if (this._editorMode) {
+      var _cg = this._chuteGeom();
+      var _ctx = this.ctx;
+      _ctx.save();
+      // Semi-transparent overlay over chute
+      _ctx.fillStyle = 'rgba(0,255,200,0.08)';
+      _ctx.fillRect(_cg.LEFT_X, 0, _cg.CHUTE_W, _cg.floorY);
+      // Dashed left border
+      _ctx.strokeStyle = 'rgba(0,255,180,0.4)'; _ctx.lineWidth = 1.5;
+      _ctx.setLineDash([6, 5]);
+      _ctx.beginPath(); _ctx.moveTo(_cg.LEFT_X, 0); _ctx.lineTo(_cg.LEFT_X, _cg.floorY); _ctx.stroke();
+      _ctx.setLineDash([]);
+      // Scroll arrows — two chevrons pointing up and down
+      var _cMidX = _cg.LEFT_X + _cg.CHUTE_W / 2;
+      var _pulse = 0.5 + 0.5 * Math.sin(this.frame * 0.06);
+      _ctx.strokeStyle = 'rgba(0,255,180,' + (0.5 + 0.3 * _pulse) + ')';
+      _ctx.lineWidth = 2; _ctx.lineCap = 'round';
+      var _arH = 8, _arW = 10;
+      // Up chevron near top
+      var _ay1 = _cg.floorY * 0.25;
+      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay1 + _arH); _ctx.lineTo(_cMidX, _ay1); _ctx.lineTo(_cMidX + _arW, _ay1 + _arH); _ctx.stroke();
+      _ctx.globalAlpha = 0.5;
+      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay1 + _arH*2.2); _ctx.lineTo(_cMidX, _ay1 + _arH*1.2); _ctx.lineTo(_cMidX + _arW, _ay1 + _arH*2.2); _ctx.stroke();
+      // Down chevron near bottom
+      var _ay2 = _cg.floorY * 0.72;
+      _ctx.globalAlpha = 0.5 + 0.3 * _pulse;
+      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay2); _ctx.lineTo(_cMidX, _ay2 + _arH); _ctx.lineTo(_cMidX + _arW, _ay2); _ctx.stroke();
+      _ctx.globalAlpha = 0.5;
+      _ctx.beginPath(); _ctx.moveTo(_cMidX - _arW, _ay2 - _arH*1.2); _ctx.lineTo(_cMidX, _ay2 - _arH*0.2); _ctx.lineTo(_cMidX + _arW, _ay2 - _arH*1.2); _ctx.stroke();
+      // "SCROLL" label
+      _ctx.globalAlpha = 0.45 + 0.2 * _pulse;
+      _ctx.fillStyle = '#00ffcc'; _ctx.font = "bold 7px 'Share Tech Mono',monospace";
+      _ctx.textAlign = 'center'; _ctx.textBaseline = 'middle';
+      _ctx.save(); _ctx.translate(_cMidX, _cg.floorY * 0.5); _ctx.rotate(-Math.PI/2);
+      _ctx.fillText('SCROLL', 0, 0); _ctx.restore();
+      _ctx.globalAlpha = 1;
+      _ctx.restore();
+    }
     if (this.barrier) this.barrier.draw(ctx);
     if (this.target) this.target.draw(ctx);
     for (var i = 0; i < this.obstacles.length; i++) this.obstacles[i].draw(ctx, this.frame);
@@ -4651,6 +4691,25 @@ class Game {
     this._drawSparks();
     if (this._editorMode) this._drawEditor();
     if (vSY !== 0) ctx.restore();
+    // DONE button — fixed position bottom-right of game area, always visible in editor
+    if (this._editorMode) {
+      var _flY = this.floorY();
+      var _dBtnW = 70, _dBtnH = 28;
+      var _dBtnX = this.W - _dBtnW - 8;
+      var _dBtnY = _flY - _dBtnH - 8;
+      this._editorDoneBtn = { x: _dBtnX, y: _dBtnY, w: _dBtnW, h: _dBtnH };
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,40,20,0.92)';
+      ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.roundRect(_dBtnX, _dBtnY, _dBtnW, _dBtnH, 6); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.roundRect(_dBtnX, _dBtnY, _dBtnW, _dBtnH, 6); ctx.stroke();
+      ctx.fillStyle = '#00ff88'; ctx.font = "bold 13px 'Share Tech Mono',monospace";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('DONE', _dBtnX + _dBtnW/2, _dBtnY + _dBtnH/2);
+      ctx.restore();
+    }
     // Top HUD clear buttons removed — use editor CLR buttons instead
     if (!this._editorMode) {
       this._drawSpeedSlider();
@@ -5514,9 +5573,15 @@ class Game {
       return { x:x, y:y, w:w, h:hH, key:key, collapsed:collapsed };
     }
 
-    // ── ROW 1: CLR ALL | DEL | UNDO | REDO | (space) | DONE ─────────────────
-    var r1H = 24, r1Y = cY + 4;
-    var btnW1 = Math.floor((contentW) / 6);
+    // ── ACTIONS panel (collapsible): CLR ALL | DEL | UNDO | REDO + CLR row ───
+    var phA = panelHeader('ACTIONS', 'actions', padding, cY, contentW, '#ff6622');
+    this._editorPanelHeaders = this._editorPanelHeaders || [];
+    this._editorPanelHeaders[3] = phA;
+    cY += phA.h + 2;
+
+    if (!phA.collapsed) {
+    var r1H = 24, r1Y = cY + 2;
+    var btnW1 = Math.floor((contentW) / 5);
 
     this._editorClearBtn      = btn('CLR ALL', padding,                  r1Y, btnW1, r1H, '#ff4400', false);
     // Fill-bar overlay for CLR ALL when held
@@ -5545,10 +5610,10 @@ class Game {
     this._editorRedoBtn       = btn('REDO↪', padding + (btnW1+2)*3,     r1Y, btnW1, r1H,
                                     '#0088ff', false,
                                     {grayed:!(this._redoHistory&&this._redoHistory.length)});
-    // Space intentionally empty in position 4
-    this._editorDoneBtn       = btn('DONE',  W - padding - btnW1,        r1Y, btnW1, r1H, '#00ff88', true);
+    // DONE moved to fixed game-area position (drawn outside scroll context)
+    this._editorDoneBtn = this._editorDoneBtn || null;  // set in _draw
 
-    cY = r1Y + r1H + 6;
+    cY = r1Y + r1H + 4;
 
     // ── Button tap-flash overlay (UNDO/REDO/DEL) ─────────────────────────────
     if (this._btnFlash) {
@@ -5609,6 +5674,13 @@ class Game {
       ctx.shadowBlur = 0;
       ctx.restore();
     }
+
+    } else {
+      // Collapsed — null out buttons so clicks don't fire on invisible elements
+      this._editorClearBtn = null; this._editorDelBtn = null;
+      this._editorUndoBtn = null; this._editorRedoBtn = null;
+      this._editorClrBtns = [];
+    } // end !phA.collapsed
 
     // ── ROW 3: Tab bar — proper tabs attached to panel below ─────────────────
     var tabH = 24;
