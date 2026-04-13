@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1649;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1650;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -627,8 +627,21 @@ class Game {
         for (var cmi = 0; cmi < self._cornerMidRects.length; cmi++) {
           var cmr = self._cornerMidRects[cmi];
           if (pos.x >= cmr.x && pos.x <= cmr.x + cmr.w && pos.y >= cmr.y && pos.y <= cmr.y + cmr.h) {
-            if (window.Sound && Sound.uiToggle) Sound.uiToggle(!window[cmr.key]);
-            window[cmr.key] = !window[cmr.key]; return;
+            if (cmr.key === '_showVelocityIndicator') {
+              // Short tap = toggle, long press = open size slider
+              self._velPressState = { btn: cmr, startTime: Date.now(), duration: 350 };
+              _startLongPress('velsize', 350, function() {
+                _playClrConfirm();
+                self._velSliderOpen = !self._velSliderOpen;
+                self._velPressState = null;
+              });
+              // Toggle on tap (handled in onUp if long press didn't fire)
+              self._velPendingToggle = true;
+            } else {
+              if (window.Sound && Sound.uiToggle) Sound.uiToggle(!window[cmr.key]);
+              window[cmr.key] = !window[cmr.key];
+            }
+            return;
           }
         }
       }
@@ -640,6 +653,19 @@ class Game {
             window[cr.key] = !window[cr.key];
             return;
           }
+        }
+      }
+      // Vel size slider overlay — grab or dismiss
+      if (self._velSliderOpen && self._velSliderRect) {
+        var _vsr2 = self._velSliderRect;
+        if (pos.x >= _vsr2.x - 8 && pos.x <= _vsr2.x + _vsr2.w + 8 &&
+            pos.y >= _vsr2.y - 8 && pos.y <= _vsr2.y + _vsr2.h + 8) {
+          self._draggingVelSlider = true;
+          var _vt2 = Math.max(0, Math.min(1, (pos.x - _vsr2.x) / _vsr2.w));
+          window._velFontSize = Math.round(6 + _vt2 * 46);
+          return;
+        } else {
+          self._velSliderOpen = false; return;  // tap outside = dismiss
         }
       }
       } // end !editorMode corner buttons
@@ -1525,6 +1551,13 @@ class Game {
         self._pendingStickyFlick._lastX = pos.x;
         self._pendingStickyFlick._lastY = pos.y;
       }
+      // Vel font size slider drag
+      if (self._draggingVelSlider && self._velSliderRect) {
+        var _vsr = self._velSliderRect;
+        var _vt = Math.max(0, Math.min(1, (pos.x - _vsr.x) / _vsr.w));
+        window._velFontSize = Math.round(6 + _vt * 46);  // 6–52px
+        return;
+      }
       // Tube slider drag (old path via _tubeDragSlider)
       if (self._tubeDragSlider) {
         var tsl2 = self._tubeDragSlider.sl;
@@ -1814,6 +1847,16 @@ class Game {
       e.preventDefault();
       _cancelLongPress();
       _stopClrTone();
+      // VEL button: if it was a short tap (long press didn't fire), do the toggle
+      if (self._velPendingToggle) {
+        self._velPendingToggle = false;
+        if (self._velPressState) {  // long press didn't complete
+          window._showVelocityIndicator = !window._showVelocityIndicator;
+          if (window.Sound && Sound.uiToggle) Sound.uiToggle(window._showVelocityIndicator);
+        }
+        self._velPressState = null;
+      }
+      self._draggingVelSlider = false;
       self._draggingSlider = false;
       self._draggingBrickSlider = false;
       self._editorDraggingSlider = null;
@@ -6906,8 +6949,9 @@ class Game {
       if (!_isSlung) {
         var _spd = Math.hypot(obj.vx || 0, obj.vy || 0);
         var _spdStr = _spd.toFixed(1);
+        var _vfs = window._velFontSize || 13;
         ctx.save();
-        ctx.font = "bold 13px 'Share Tech Mono',monospace";
+        ctx.font = "bold " + _vfs + "px 'Share Tech Mono',monospace";
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         var _velY = obj.y - obj.r - 4;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -7270,6 +7314,83 @@ class Game {
       var mx = margin + mi * (btnW + gap);
       drawToggleBtn(mx, rowBY, mb.label, window[mb.key], 'rgba(0,220,120,0.7)');
       this._cornerMidRects.push({ x: mx, y: rowBY, w: btnW, h: btnH, key: mb.key });
+
+      // VEL button: fill-bar while held + size slider overlay
+      if (mb.key === '_showVelocityIndicator') {
+        var _vps = this._velPressState;
+        if (_vps) {
+          var _vAge = Date.now() - _vps.startTime;
+          var _vProg = Math.min(1, _vAge / _vps.duration);
+          ctx.save();
+          ctx.beginPath(); ctx.roundRect(mx, rowBY, btnW * _vProg, btnH, 5);
+          var _vg = ctx.createLinearGradient(mx, 0, mx + btnW, 0);
+          _vg.addColorStop(0, 'rgba(0,220,120,0.6)');
+          _vg.addColorStop(0.7, 'rgba(0,255,140,0.9)');
+          _vg.addColorStop(1, 'rgba(255,255,255,0.5)');
+          ctx.fillStyle = _vg; ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 8;
+          ctx.fill(); ctx.shadowBlur = 0;
+          var _vpu = 0.5 + 0.5 * Math.sin(Date.now() * 0.02);
+          ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1 + _vpu;
+          ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 6 * _vpu;
+          ctx.beginPath(); ctx.roundRect(mx, rowBY, btnW, btnH, 5); ctx.stroke();
+          ctx.shadowBlur = 0; ctx.restore();
+          // Rising tone while holding
+          if (!this._velToneNode) {
+            var _vc = window.Sound && Sound.getCtx && Sound.getCtx();
+            if (_vc) {
+              var _vo = _vc.createOscillator(), _vgn = _vc.createGain();
+              var _vvol = (window.AudioSettings && window.AudioSettings.masterVol) || 1;
+              _vo.type = 'sine';
+              _vo.frequency.setValueAtTime(200, _vc.currentTime);
+              _vo.frequency.linearRampToValueAtTime(440, _vc.currentTime + 0.35);
+              _vgn.gain.setValueAtTime(0, _vc.currentTime);
+              _vgn.gain.linearRampToValueAtTime(0.12 * _vvol, _vc.currentTime + 0.35);
+              _vo.connect(_vgn); _vgn.connect(_vc.destination);
+              _vo.start(); this._velToneNode = _vo; this._velToneGain = _vgn;
+            }
+          }
+        } else {
+          if (this._velToneNode) {
+            try { this._velToneNode.stop(); } catch(e){}
+            this._velToneNode = null; this._velToneGain = null;
+          }
+        }
+
+        // Vel size slider overlay popup
+        if (this._velSliderOpen) {
+          var _vSlW = 120, _vSlH = 22, _vSlX = mx - _vSlW/2 + btnW/2, _vSlY = rowBY - _vSlH - 8;
+          // Clamp to screen
+          _vSlX = Math.max(4, Math.min(W - _vSlW - 4, _vSlX));
+          this._velSliderRect = { x: _vSlX, y: _vSlY, w: _vSlW, h: _vSlH };
+          ctx.save();
+          // Background pill
+          ctx.fillStyle = 'rgba(0,12,28,0.92)';
+          ctx.beginPath(); ctx.roundRect(_vSlX - 6, _vSlY - 4, _vSlW + 12, _vSlH + 8, 7); ctx.fill();
+          ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.roundRect(_vSlX - 6, _vSlY - 4, _vSlW + 12, _vSlH + 8, 7); ctx.stroke();
+          // Track
+          var _vTrackY = _vSlY + _vSlH / 2;
+          ctx.strokeStyle = 'rgba(0,200,100,0.3)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(_vSlX, _vTrackY); ctx.lineTo(_vSlX + _vSlW, _vTrackY); ctx.stroke();
+          // Thumb
+          var _vfs2 = window._velFontSize || 13;
+          var _vThT = (_vfs2 - 6) / 46;
+          var _vThX = _vSlX + _vThT * _vSlW;
+          ctx.strokeStyle = 'rgba(0,220,120,0.8)'; ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 4;
+          ctx.beginPath(); ctx.moveTo(_vSlX, _vTrackY); ctx.lineTo(_vThX, _vTrackY); ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.beginPath(); ctx.arc(_vThX, _vTrackY, 7, 0, Math.PI*2);
+          ctx.fillStyle = '#00ff88'; ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 8; ctx.fill();
+          ctx.shadowBlur = 0; ctx.strokeStyle = '#001a0a'; ctx.lineWidth = 1.5; ctx.stroke();
+          // Label
+          ctx.fillStyle = '#00ff88'; ctx.font = "bold 8px 'Share Tech Mono',monospace";
+          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+          ctx.fillText('VEL SIZE ' + _vfs2 + 'px', _vSlX + _vSlW/2, _vSlY - 5);
+          ctx.restore();
+        } else {
+          this._velSliderRect = null;
+        }
+      }
     }
 
     for (var li = 0; li < leftBtns.length; li++) {
