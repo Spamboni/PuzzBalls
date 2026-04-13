@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1677;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1678;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1344,18 +1344,23 @@ class Game {
             if(self._editorSelected){
               var b=self._editorSelected;
               var oldRot=b._rotation||0, newRot=v*Math.PI/180;
-              // Translate brick to keep pivot point stationary
               var piv=b._pivot||'CM';
               var pOff=self._getPivotOffset(b,piv);
-              // World position of pivot before rotation
               var pvX=b.x+Math.cos(oldRot)*pOff.x-Math.sin(oldRot)*pOff.y;
               var pvY=b.y+Math.sin(oldRot)*pOff.x+Math.cos(oldRot)*pOff.y;
-              // World position of pivot after rotation (using offset in new rotation)
               var pvX2=b.x+Math.cos(newRot)*pOff.x-Math.sin(newRot)*pOff.y;
               var pvY2=b.y+Math.sin(newRot)*pOff.x+Math.cos(newRot)*pOff.y;
-              // Shift brick so pivot stays fixed
               b.x+=pvX-pvX2; b.y+=pvY-pvY2;
               b._rotation=newRot;
+              // Re-derive pivot key to reflect visual position
+              if (self._editorPivotActive || self._pivotLockKey) {
+                var _newRotKey = self._normalizePivotKey(b, pvX, pvY);
+                if (_newRotKey !== b._pivot) {
+                  b._pivot = _newRotKey;
+                  self._editorPivot = _newRotKey;
+                  if (self._pivotLockKey) self._pivotLockKey = _newRotKey;
+                }
+              }
             }
           } },
           { key:'hp',      apply:function(v){if(self._editorSelected){self._editorSelected.maxHealth=v;self._editorSelected.health=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectHP=v;} },
@@ -3187,6 +3192,28 @@ class Game {
       'BL':{x:-hw,y:hh}, 'BC':{x:0,y:hh},  'BR':{x:hw,y:hh},
     };
     return pMap[pivot] || {x:0, y:0};
+  }
+
+  // Re-derive the correct pivot key after rotation so it always reflects visual position.
+  // The pivot world point stays fixed; we reclassify which named slot it's in based on
+  // where the brick's local axes now point in screen space.
+  _normalizePivotKey(brick, pivotWX, pivotWY) {
+    var rot = brick._rotation || 0;
+    var hw = (brick.w || 40) / 2, hh = (brick.h || 22) / 2;
+    // Transform pivot world pos into brick's current local space
+    var dx = pivotWX - brick.x, dy = pivotWY - brick.y;
+    var cosR = Math.cos(-rot), sinR = Math.sin(-rot);
+    var localX = cosR * dx - sinR * dy;
+    var localY = sinR * dx + cosR * dy;
+    // Classify along X: left/center/right with threshold
+    var xThresh = hw * 0.4;
+    var col = (localX < -xThresh) ? 'L' : (localX > xThresh) ? 'R' : 'C';
+    // Classify along Y: top/middle/bottom
+    var yThresh = hh * 0.4;
+    var row = (localY < -yThresh) ? 'T' : (localY > yThresh) ? 'B' : 'M';
+    // CM special case
+    if (col === 'C' && row === 'M') return 'CM';
+    return row + col;
   }
 
   // Try to unstick a sticky ball that was hit by another ball
@@ -5291,6 +5318,14 @@ class Game {
         _ptb.x = (_pRight.x + _pLeft.x) / 2;
         _ptb.y = Math.min((_pRight.y + _pLeft.y) / 2, this.floorY() - (_ptb.h||10)/2 - 4);
         _ptb._pivotAsymmetric = true;
+        // Normalize pivot key to reflect where pivot sits visually
+        var _ptfPivWX = _ptf.pivotWX, _ptfPivWY = _ptf.pivotWY;
+        var _newTfKey = this._normalizePivotKey(_ptb, _ptfPivWX, _ptfPivWY);
+        if (_newTfKey !== _ptb._pivot) {
+          _ptb._pivot = _newTfKey;
+          this._editorPivot = _newTfKey;
+          if (this._pivotLockKey) this._pivotLockKey = _newTfKey;
+        }
         return;
       } else {
         // Corner/edge pivot — second finger ignored in pivot mode
@@ -5464,6 +5499,19 @@ class Game {
       // Center = midpoint between anchored end and dragged finger
       _pb.x = _pes.anchorWX + Math.cos(_axisAngle) * _newW / 2;
       _pb.y = Math.min(_pes.anchorWY + Math.sin(_axisAngle) * _newW / 2, this.floorY() - (_pb.h||10)/2 - 4);
+      // Re-derive pivot key so it always reflects visual position
+      var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY);
+      if (_newKey !== _pb._pivot) {
+        _pb._pivot = _newKey;
+        this._editorPivot = _newKey;
+        if (this._pivotLockKey) this._pivotLockKey = _newKey;
+        // Update anchor: it's the end opposite to the (possibly flipped) pivot
+        // Keep anchorWX/Y fixed — it doesn't change, only the label does
+        _pes.pivotWX = _pb.x + Math.cos(_newRot)*this._getPivotOffset(_pb,_newKey).x
+                              - Math.sin(_newRot)*this._getPivotOffset(_pb,_newKey).y;
+        _pes.pivotWY = _pb.y + Math.sin(_newRot)*this._getPivotOffset(_pb,_newKey).x
+                              + Math.cos(_newRot)*this._getPivotOffset(_pb,_newKey).y;
+      }
       return;
     }
 
@@ -5482,6 +5530,13 @@ class Game {
       var _rotPOY3 = Math.sin(_newBodyRot)*_pOff3.x + Math.cos(_newBodyRot)*_pOff3.y;
       _pbb.x = _pbs.pivotWX - _rotPOX3;
       _pbb.y = Math.min(_pbs.pivotWY - _rotPOY3, this.floorY() - (_pbb.h||10)/2 - 4);
+      // Re-derive pivot key to reflect visual position
+      var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY);
+      if (_newBodyKey !== _pbb._pivot) {
+        _pbb._pivot = _newBodyKey;
+        this._editorPivot = _newBodyKey;
+        if (this._pivotLockKey) this._pivotLockKey = _newBodyKey;
+      }
       return;
     }
 
