@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1651;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1652;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -593,6 +593,7 @@ class Game {
           }
         } else if (!self._editorTubeMode && self._editorSelected) {
           self._editorPinchStart = null;
+          self._editorDraggingJustPlaced = false;  // pinch after placement = real interaction
         }
         return;
       }
@@ -1986,11 +1987,14 @@ class Game {
         return;
       }
       if (self._editorMode) {
+        var _hadPinch = !!self._editorPinchStart;
         self._editorPinchStart = null;
         self._editorScrollDragging = false;
         self._editorScrollPending  = false;
         self._editorScrollStart    = undefined;
         self._tubePinchStart = null;
+        // If two-finger pinch was active, push undo for the transform
+        if (_hadPinch) self._undoPush();
         self._editorOnUp();
         return;
       }
@@ -4637,9 +4641,10 @@ class Game {
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
-    // Also snapshot tubes
+    // Also snapshot tubes and currently selected brick id
     var tubeSnap = this.tubes ? this.tubes.toJSON() : [];
-    this._undoHistory.push({ bricks: snap, tubes: tubeSnap });
+    var selId = this._editorSelected ? this._editorSelected.id : null;
+    this._undoHistory.push({ bricks: snap, tubes: tubeSnap, selId: selId });
     if (this._undoHistory.length > 50) this._undoHistory.shift();
     this._redoHistory = [];
   }
@@ -4658,11 +4663,13 @@ class Game {
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
     var redoTubeSnap = this.tubes ? this.tubes.toJSON() : [];
+    var curSelId = this._editorSelected ? this._editorSelected.id : null;
     if (!this._redoHistory) this._redoHistory = [];
-    this._redoHistory.push({ bricks: redoSnap, tubes: redoTubeSnap });
-    // Support both old format (array) and new format ({bricks, tubes})
+    this._redoHistory.push({ bricks: redoSnap, tubes: redoTubeSnap, selId: curSelId });
+    // Support both old format (array) and new format ({bricks, tubes, selId})
     var brickSnap = Array.isArray(snap) ? snap : snap.bricks;
     var tubeSnap  = Array.isArray(snap) ? null : snap.tubes;
+    var snapSelId = snap.selId || null;
     // Restore brick list to snapshot
     this.bricks = brickSnap.map(function(s) {
       var b = s._ref;
@@ -4677,9 +4684,18 @@ class Game {
       return b;
     }).filter(Boolean);
     if (tubeSnap && this.tubes) this.tubes.fromJSON(tubeSnap);
-    // Clear selection so stale highlight doesn't persist
+    // Restore selection to the brick that was selected at undo time
     this._editorSelected = null;
     this._showBrickSettings = false;
+    if (snapSelId) {
+      for (var _si = 0; _si < this.bricks.length; _si++) {
+        if (this.bricks[_si].id === snapSelId) {
+          this._editorSelected = this.bricks[_si];
+          this._showBrickSettings = true;
+          break;
+        }
+      }
+    }
     this._tubeSelected = null;
   }
 
@@ -4698,11 +4714,13 @@ class Game {
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
     var undoTubeSnap = this.tubes ? this.tubes.toJSON() : [];
-    this._undoHistory.push({ bricks: undoSnap, tubes: undoTubeSnap });
+    var curSelIdR = this._editorSelected ? this._editorSelected.id : null;
+    this._undoHistory.push({ bricks: undoSnap, tubes: undoTubeSnap, selId: curSelIdR });
     if (this._undoHistory.length > 50) this._undoHistory.shift();
     // Now restore the redo snapshot
     var brickSnap = Array.isArray(snap) ? snap : snap.bricks;
     var tubeSnap  = Array.isArray(snap) ? null : snap.tubes;
+    var snapSelIdR = snap.selId || null;
     this.bricks = brickSnap.map(function(s) {
       var b = s._ref;
       if (!b) return null;
@@ -4719,6 +4737,15 @@ class Game {
     // Do NOT clear _redoHistory here — caller already popped the used entry
     this._editorSelected = null;
     this._showBrickSettings = false;
+    if (snapSelIdR) {
+      for (var _sri = 0; _sri < this.bricks.length; _sri++) {
+        if (this.bricks[_sri].id === snapSelIdR) {
+          this._editorSelected = this.bricks[_sri];
+          this._showBrickSettings = true;
+          break;
+        }
+      }
+    }
     this._tubeSelected = null;
   }
 
