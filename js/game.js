@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1657;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1658;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -4971,14 +4971,15 @@ class Game {
 
     if (!this._editorPinchStart) {
       // If first finger dragged slightly before second finger joined (same touch sequence),
-      // collapse that micro-drag into the pinch by replacing its undo entry
-      if (this._editorDragInProgress && this._undoHistory && this._undoHistory.length > 0) {
-        this._undoHistory.pop();
+      // the prior push has pre-micro-drag positions — keep that as our pinch undo state
+      // (don't pop+repush, which would capture the micro-dragged position instead)
+      if (!this._editorDragInProgress) {
+        // No prior drag this sequence — push fresh
+        this._undoPush();
       }
+      // If drag was in progress, the existing undo entry already has the right pre-drag state
       this._editorLastPushWasProvisional = false;
       this._editorDragInProgress = false;
-      // Push undo BEFORE the pinch modifies anything
-      this._undoPush();
       // Store initial finger and brick state
       this._editorPinchStart = {
         p0: { x: p0.x, y: p0.y }, p1: { x: p1.x, y: p1.y },
