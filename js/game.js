@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1664;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1665;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -6187,8 +6187,10 @@ class Game {
       var toolMode2 = this._editorToolMode || 'build';
       var modeColors = { build:'rgba(255,255,100,0.85)', select:'rgba(255,200,0,0.85)',
                          scale:'rgba(0,255,136,0.85)', rotate:'rgba(200,68,255,0.85)' };
+      var _dashSpeed = (window.Settings && window.Settings.selectionDashSpeed) || 1.0;
+      var _dashOffset = -(this.frame * _dashSpeed * 0.4) % 16;
       ctx.strokeStyle = modeColors[toolMode2] || 'rgba(255,255,100,0.85)';
-      ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+      ctx.lineWidth = 2; ctx.setLineDash([4,4]); ctx.lineDashOffset = _dashOffset;
       ctx.save();
       if (sb._rotation) { ctx.translate(sb.x,sb.y); ctx.rotate(sb._rotation); ctx.translate(-sb.x,-sb.y); }
       if (sb instanceof CircularBrick) {
@@ -6196,7 +6198,7 @@ class Game {
       } else {
         ctx.beginPath(); ctx.roundRect(sb.x-sb.w/2-5,sb.y-sb.h/2-5,sb.w+10,sb.h+10,4); ctx.stroke();
       }
-      ctx.restore(); ctx.setLineDash([]);
+      ctx.restore(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
 
       if (toolMode2==='rotate' || this._editorRotateState || this._editorSelected) {
         var pivot4 = sb._pivot||'CM';
