@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1641;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1642;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -504,9 +504,14 @@ class Game {
     this._inputBound = true;
 
     function getPos(e) {
-      var rect = canvas.getBoundingClientRect();
-      var src  = e.touches ? e.touches[0] : e;
-      return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+      var rect   = canvas.getBoundingClientRect();
+      var src    = e.touches ? e.touches[0] : e;
+      var scaleX = canvas.width  / rect.width;
+      var scaleY = canvas.height / rect.height;
+      return {
+        x: (src.clientX - rect.left) * scaleX,
+        y: (src.clientY - rect.top)  * scaleY
+      };
     }
 
     function isUI(t) {
@@ -530,8 +535,10 @@ class Game {
           var fY2 = self.floorY();
           var W2 = self.W;
           function toWorld2(t) {
-            var sx = t.clientX - rect2.left;
-            var sy = t.clientY - rect2.top;
+            var _scX2 = self.canvas.width  / rect2.width;
+            var _scY2 = self.canvas.height / rect2.height;
+            var sx = (t.clientX - rect2.left) * _scX2;
+            var sy = (t.clientY - rect2.top)  * _scY2;
             return { x: (sx - W2) / z5 + W2, y: (sy - fY2) / z5 + fY2 };
           }
           var pt0 = e.touches[0], pt1 = e.touches[1];
@@ -592,7 +599,12 @@ class Game {
       // Let touches in the HUD button strip pass through to DOM elements
       var hudH = 56;  // approximate height of top HUD bar
       var firstTouch = e.touches ? e.touches[0] : e;
-      if (firstTouch && firstTouch.clientY < hudH) return;
+      if (firstTouch) {
+        var _hudRect = canvas.getBoundingClientRect();
+        var _hudScaleY = canvas.height / _hudRect.height;
+        var _scaledY = (firstTouch.clientY - _hudRect.top) * _hudScaleY;
+        if (_scaledY < hudH) return;
+      }
       e.preventDefault();
       if (window.Sound) Sound.getCtx();
 
@@ -1586,8 +1598,9 @@ class Game {
         // Two-finger: rotate + translate whole group
         if (e && e.touches && e.touches.length >= 2) {
           var rect2 = self.canvas.getBoundingClientRect();
-          var gf0 = { x: e.touches[0].clientX - rect2.left, y: e.touches[0].clientY - rect2.top };
-          var gf1 = { x: e.touches[1].clientX - rect2.left, y: e.touches[1].clientY - rect2.top };
+          var _gscX = self.canvas.width / rect2.width, _gscY = self.canvas.height / rect2.height;
+          var gf0 = { x: (e.touches[0].clientX - rect2.left) * _gscX, y: (e.touches[0].clientY - rect2.top) * _gscY };
+          var gf1 = { x: (e.touches[1].clientX - rect2.left) * _gscX, y: (e.touches[1].clientY - rect2.top) * _gscY };
           if (!self._tubeGroupPinchStart) {
             self._tubeGroupPinchStart = {
               angle: Math.atan2(gf1.y - gf0.y, gf1.x - gf0.x),
@@ -4741,10 +4754,11 @@ class Game {
     if (!this._editorMode || !this._editorSelected || touches.length < 2) return;
     if (this._editorTubeMode) return;
     var rect = this.canvas.getBoundingClientRect();
+    var _escX = this.canvas.width / rect.width, _escY = this.canvas.height / rect.height;
     var vSY  = this._editorScrollY || 0;
     var t0 = touches[0], t1 = touches[1];
-    var p0 = { x: t0.clientX - rect.left, y: t0.clientY - rect.top };
-    var p1 = { x: t1.clientX - rect.left, y: t1.clientY - rect.top };
+    var p0 = { x: (t0.clientX - rect.left) * _escX, y: (t0.clientY - rect.top) * _escY };
+    var p1 = { x: (t1.clientX - rect.left) * _escX, y: (t1.clientY - rect.top) * _escY };
     var sb = this._editorSelected;
 
     if (!this._editorPinchStart) {
@@ -4812,14 +4826,15 @@ class Game {
   _tubeHandleTouch(touches) {
     if (!this._tubeDragging) return;
     var rect = this.canvas.getBoundingClientRect();
+    var _tscX = this.canvas.width / rect.width, _tscY = this.canvas.height / rect.height;
     var z    = this._viewZoom || 1.0;
     var fY   = this.floorY();
     var W    = this.W;
     var t0 = touches[0], t1 = touches[1];
     // Convert screen coords to world coords using zoom transform inverse
     function toWorld(t) {
-      var sx = t.clientX - rect.left;
-      var sy = t.clientY - rect.top;
+      var sx = (t.clientX - rect.left) * _tscX;
+      var sy = (t.clientY - rect.top)  * _tscY;
       return { x: (sx - W) / z + W, y: (sy - fY) / z + fY };
     }
     var p0 = toWorld(t0);
