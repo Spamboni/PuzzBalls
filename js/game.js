@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1707;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1708;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -767,10 +767,10 @@ class Game {
         var inPanel = _py >= self.floorY() - 5;
 
         // ── Top-bar buttons (screen coords, no scroll offset) ─────────────────
-        // DONE — drawn in zoom-transformed world space
+        // DONE — drawn in zoom-transformed world space (affected by scroll)
         if (self._editorDoneBtn) {
           var d=self._editorDoneBtn;
-          var _doneW = self._screenToWorld(pos.x, pos.y);
+          var _doneW = self._screenToWorld(pos.x, pos.y - _vSY);
           if (_doneW.x>=d.x&&_doneW.y>=d.y&&_doneW.x<=d.x+d.w&&_doneW.y<=d.y+d.h) {
             self._editorMode=false; self._editorTubeMode=false;
             window._tubeEditorMode=false; self._editorSelected=null;
@@ -1155,6 +1155,8 @@ class Game {
               self._editorSelected._flingable=!self._editorSelected._flingable;
               self._editorFlingable=self._editorSelected._flingable;
             } else { self._editorFlingable=!self._editorFlingable; }
+            // Auto-open BRICK PHYSICS panel when flingable is on
+            if (self._editorFlingable) window['_edCollapse_brickphys'] = false;
             if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorFlingable); return;
           }
         }
@@ -1775,8 +1777,10 @@ class Game {
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
       var zoneTop  = self.floorY() - zoneH2;
 
-      // ── Flingable brick: tap-swipe to fling ──────────────────────────────────
+      // ── Flingable brick: track finger for air-hockey swipe ────────────────────
       if (!self._editorMode && !self._deleteMode) {
+        // Check if we're touching a flingable brick directly (instant grab)
+        var _flingDirectHit = false;
         for (var _fi = self.bricks.length - 1; _fi >= 0; _fi--) {
           var _fb = self.bricks[_fi];
           if (!_fb._flingable || _fb.health <= 0) continue;
@@ -1791,16 +1795,22 @@ class Game {
             var _fly = _fSin * _frx + _fCos * _fry;
             _fHit = Math.abs(_flx) < (_fb.w || 40) / 2 + 10 && Math.abs(_fly) < (_fb.h || 22) / 2 + 10;
           }
-          if (_fHit) {
-            self._flingPending = {
-              brick: _fb,
-              startX: _worldPos.x, startY: _worldPos.y,
-              startTime: performance.now(),
-              lastX: _worldPos.x, lastY: _worldPos.y,
-              lastTime: performance.now(),
-            };
-            return;
-          }
+          if (_fHit) { _flingDirectHit = true; break; }
+        }
+        // Start tracking swipe — either on a brick or in empty space nearby
+        self._flingSwipe = {
+          startX: _worldPos.x, startY: _worldPos.y,
+          startTime: performance.now(),
+          lastX: _worldPos.x, lastY: _worldPos.y,
+          lastTime: performance.now(),
+          prevX: _worldPos.x, prevY: _worldPos.y,
+          prevTime: performance.now(),
+          hit: false, // becomes true when finger crosses a flingable brick
+        };
+        // If direct hit, don't block ball selection — let it fall through
+        // The fling triggers on move when velocity is detected
+        if (_flingDirectHit) {
+          // Don't return — allow ball selection below to also check
         }
       }
 
@@ -1874,12 +1884,64 @@ class Game {
         self._pendingStickyFlick._lastX = pos.x;
         self._pendingStickyFlick._lastY = pos.y;
       }
-      // Track fling gesture
-      if (self._flingPending) {
+      // Track fling swipe — detect finger crossing a flingable brick
+      if (self._flingSwipe && !self._flingSwipe.hit) {
         var _fwp = self._screenToWorld(pos.x, pos.y);
-        self._flingPending.lastX = _fwp.x;
-        self._flingPending.lastY = _fwp.y;
-        self._flingPending.lastTime = performance.now();
+        // Save previous position for velocity calculation
+        self._flingSwipe.prevX = self._flingSwipe.lastX;
+        self._flingSwipe.prevY = self._flingSwipe.lastY;
+        self._flingSwipe.prevTime = self._flingSwipe.lastTime;
+        self._flingSwipe.lastX = _fwp.x;
+        self._flingSwipe.lastY = _fwp.y;
+        self._flingSwipe.lastTime = performance.now();
+        // Check if finger is now over a flingable brick
+        var _fSwipeDist = Math.hypot(_fwp.x - self._flingSwipe.startX, _fwp.y - self._flingSwipe.startY);
+        if (_fSwipeDist > 5) { // must have moved at least 5px
+          for (var _fsi = self.bricks.length - 1; _fsi >= 0; _fsi--) {
+            var _fsb = self.bricks[_fsi];
+            if (!_fsb._flingable || _fsb.health <= 0) continue;
+            var _fsHit = false;
+            if (_fsb instanceof CircularBrick) {
+              _fsHit = Math.hypot(_fwp.x - _fsb.x, _fwp.y - _fsb.y) < _fsb.r + 12;
+            } else {
+              var _fsRot = _fsb._rotation || 0;
+              var _fsCos = Math.cos(-_fsRot), _fsSin = Math.sin(-_fsRot);
+              var _fsrx = _fwp.x - _fsb.x, _fsry = _fwp.y - _fsb.y;
+              var _fslx = _fsCos * _fsrx - _fsSin * _fsry;
+              var _fsly = _fsSin * _fsrx + _fsCos * _fsry;
+              _fsHit = Math.abs(_fslx) < (_fsb.w || 40) / 2 + 12 && Math.abs(_fsly) < (_fsb.h || 22) / 2 + 12;
+            }
+            if (_fsHit) {
+              // Compute velocity from recent movement
+              var _fsDt = (self._flingSwipe.lastTime - self._flingSwipe.prevTime) / 1000;
+              if (_fsDt < 0.005) _fsDt = 0.005;
+              var _fsDx = self._flingSwipe.lastX - self._flingSwipe.prevX;
+              var _fsDy = self._flingSwipe.lastY - self._flingSwipe.prevY;
+              var _fsSpd = Math.hypot(_fsDx, _fsDy) / _fsDt;
+              var _fsForce = Math.min(_fsSpd * 0.015, 25);
+              if (_fsForce > 1) {
+                var _fsAngle = Math.atan2(_fsDy, _fsDx);
+                _fsb._vx = Math.cos(_fsAngle) * _fsForce;
+                _fsb._vy = Math.sin(_fsAngle) * _fsForce;
+                // Angular impulse from hit offset
+                var _fsHitDx = _fwp.x - _fsb.x, _fsHitDy = _fwp.y - _fsb.y;
+                var _fsCross = _fsHitDx * Math.sin(_fsAngle) - _fsHitDy * Math.cos(_fsAngle);
+                _fsb._angularV = _fsCross * (_fsb._rotSpeed || 0.3) * 0.02;
+                if (_fsb._spawnX === undefined) { _fsb._spawnX = _fsb.x; _fsb._spawnY = _fsb.y; _fsb._spawnRot = _fsb._rotation || 0; }
+                _fsb._startX = _fsb.x; _fsb._startY = _fsb.y;
+                self._flingSwipe.hit = true;
+                if (window.Sound && Sound.snap) Sound.snap(Math.min(_fsForce / 15, 1));
+              }
+              break;
+            }
+          }
+        }
+      } else if (self._flingSwipe && self._flingSwipe.hit) {
+        // Already hit — just keep tracking for the release cleanup
+        var _fwp2 = self._screenToWorld(pos.x, pos.y);
+        self._flingSwipe.lastX = _fwp2.x;
+        self._flingSwipe.lastY = _fwp2.y;
+        self._flingSwipe.lastTime = performance.now();
       }
       // Vel font size slider drag
       if (self._draggingVelSlider && self._velSliderRect) {
@@ -2326,34 +2388,8 @@ class Game {
       }
       self._tubeDragSlider = null;
 
-      // ── Fling release: compute swipe velocity and apply to brick ────────────
-      if (self._flingPending) {
-        var _fp = self._flingPending;
-        self._flingPending = null;
-        var _fBrick = _fp.brick;
-        var _fdt = (performance.now() - _fp.startTime) / 1000; // seconds
-        if (_fdt < 0.01) _fdt = 0.01;
-        var _fdx = _fp.lastX - _fp.startX;
-        var _fdy = _fp.lastY - _fp.startY;
-        var _fDist = Math.hypot(_fdx, _fdy);
-        // Only fling if swipe was substantial (>8px, <600ms)
-        if (_fDist > 8 && _fdt < 0.6) {
-          var _fSpeed = Math.min(_fDist / _fdt * 0.012, 25); // scale and cap
-          var _fAngle = Math.atan2(_fdy, _fdx);
-          _fBrick._vx = Math.cos(_fAngle) * _fSpeed;
-          _fBrick._vy = Math.sin(_fAngle) * _fSpeed;
-          // Apply angular velocity based on where the swipe hit relative to center
-          var _fHitDx = _fp.startX - _fBrick.x;
-          var _fHitDy = _fp.startY - _fBrick.y;
-          var _fCross = _fHitDx * Math.sin(_fAngle) - _fHitDy * Math.cos(_fAngle);
-          _fBrick._angularV = _fCross * (_fBrick._rotSpeed || 0.3) * 0.02;
-          // Mark start position for distance tracking
-          if (_fBrick._spawnX === undefined) { _fBrick._spawnX = _fBrick.x; _fBrick._spawnY = _fBrick.y; _fBrick._spawnRot = _fBrick._rotation || 0; }
-          _fBrick._startX = _fBrick.x;
-          _fBrick._startY = _fBrick.y;
-          if (window.Sound && Sound.snap) Sound.snap(Math.min(_fSpeed / 15, 1));
-        }
-      }
+      // ── Fling swipe cleanup ──────────────────────────────────────────────────
+      self._flingSwipe = null;
 
       // Quick tap on floor ball → pop it up (no drag happened)
       if (self._pendingStickyFlick) {
@@ -2566,8 +2602,12 @@ class Game {
         var bHWall = (Math.abs(Math.cos(bRot2)) * bW2 + Math.abs(Math.sin(bRot2)) * bH2) / 2;
         var bHHall = (Math.abs(Math.sin(bRot2)) * bW2 + Math.abs(Math.cos(bRot2)) * bH2) / 2;
         var bFloor = this.floorY();
-        if (mbrick.x - bHWall < 0) {
-          mbrick.x = bHWall;
+        // Zoom-expanded boundaries
+        var _bzoom = this._viewZoom || 1;
+        var _bMinX = (_bzoom < 1) ? this.W * (1 - 1/_bzoom) : 0;
+        var _bMinY = (_bzoom < 1) ? bFloor * (1 - 1/_bzoom) : 0;
+        if (mbrick.x - bHWall < _bMinX) {
+          mbrick.x = _bMinX + bHWall;
           mbrick._vx = Math.abs(mbrick._vx || 0) * bWallBounce;
           mbrick._angularV = (mbrick._angularV || 0) * -0.55;
         } else if (mbrick.x + bHWall > this.W) {
@@ -2575,8 +2615,8 @@ class Game {
           mbrick._vx = -Math.abs(mbrick._vx || 0) * bWallBounce;
           mbrick._angularV = (mbrick._angularV || 0) * -0.55;
         }
-        if (mbrick.y - bHHall < 0) {
-          mbrick.y = bHHall;
+        if (mbrick.y - bHHall < _bMinY) {
+          mbrick.y = _bMinY + bHHall;
           mbrick._vy = Math.abs(mbrick._vy || 0) * bWallBounce;
           mbrick._angularV = (mbrick._angularV || 0) * -0.4;
         } else if (mbrick.y + bHHall > bFloor) {
@@ -6915,7 +6955,7 @@ class Game {
     if (!ph3.collapsed) {
       var p3W2 = Math.floor((contentW-8)/3);
       var p3W3 = Math.floor((contentW-4)/2);
-      var grayed3 = !movActive2;
+      var grayed3 = !movActive2 && !flingOn2;
       this._editorSliders.dist    = slider('DIST',     DISTval,         0, 900, padding,           cY, p3W2, {rowH:slRH,col:'#00ccff',grayed:grayed3});
       this._editorSliders.decel   = slider('DECEL',    1-DECELval,   0.01, 0.5, padding+p3W2+4,    cY, p3W2, {rowH:slRH,col:'#00aaff',grayed:grayed3});
       this._editorSliders.spinDist= slider('SPIN/DIST',SPINDISTval,     0, 1.0, padding+(p3W2+4)*2,cY, p3W2, {rowH:slRH,col:'#44ccff',grayed:grayed3});
