@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1679;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1680;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1352,13 +1352,18 @@ class Game {
               var pvY2=b.y+Math.sin(newRot)*pOff.x+Math.cos(newRot)*pOff.y;
               b.x+=pvX-pvX2; b.y+=pvY-pvY2;
               b._rotation=newRot;
-              // Re-derive pivot key to reflect visual position
+              // Re-derive pivot key after ≥90° rotation from when pivot was set
               if (self._editorPivotActive || self._pivotLockKey) {
-                var _newRotKey = self._normalizePivotKey(b, pvX, pvY);
-                if (_newRotKey !== b._pivot) {
-                  b._pivot = _newRotKey;
-                  self._editorPivot = _newRotKey;
-                  if (self._pivotLockKey) self._pivotLockKey = _newRotKey;
+                var _sliderSetRot = self._editorPivotSetRot || 0;
+                var _sliderDelta = Math.abs(newRot - _sliderSetRot);
+                while (_sliderDelta > Math.PI) _sliderDelta = Math.abs(_sliderDelta - 2 * Math.PI);
+                if (_sliderDelta >= Math.PI / 2) {
+                  var _newRotKey = self._normalizePivotKey(b, pvX, pvY);
+                  if (_newRotKey !== b._pivot) {
+                    b._pivot = _newRotKey;
+                    self._editorPivot = _newRotKey;
+                    if (self._pivotLockKey) self._pivotLockKey = _newRotKey;
+                  }
                 }
               }
             }
@@ -1969,23 +1974,19 @@ class Game {
         // Any tap deactivates lock regardless of which button
         if (self._pivotLockKey) {
           self._pivotLockKey = null;
-          // If tapping a different button, activate that pivot normally
           if (_tapKey !== self._editorPivot || !self._editorPivotActive) {
             self._editorPivotActive = true;
             self._editorPivot = _tapKey;
-            if (self._editorSelected) self._editorSelected._pivot = _tapKey;
+            if (self._editorSelected) { self._editorSelected._pivot = _tapKey; self._editorPivotSetRot = self._editorSelected._rotation || 0; }
           }
-          // else: tapping same button while locked just unlocks, pivot stays active
         } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
-          // Same button, not locked — deactivate pivot
           self._editorPivotActive = false;
           self._editorPivot = 'MC';
           if (self._editorSelected) self._editorSelected._pivot = 'MC';
         } else {
-          // New button or not active — activate
           self._editorPivotActive = true;
           self._editorPivot = _tapKey;
-          if (self._editorSelected) self._editorSelected._pivot = _tapKey;
+          if (self._editorSelected) { self._editorSelected._pivot = _tapKey; self._editorPivotSetRot = self._editorSelected._rotation || 0; }
         }
         self._editorPivotEndState = null;
         self._editorPivotBodyState = null;
@@ -5504,12 +5505,17 @@ class Game {
       // Center = midpoint between anchored end and dragged finger
       _pb.x = _pes.anchorWX + Math.cos(_axisAngle) * _newW / 2;
       _pb.y = Math.min(_pes.anchorWY + Math.sin(_axisAngle) * _newW / 2, this.floorY() - (_pb.h||10)/2 - 4);
-      // Re-derive pivot key: only L<->R swap, based on dragged finger's screen X vs pivot X
-      var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x);
-      if (_newKey !== _pb._pivot) {
-        _pb._pivot = _newKey;
-        this._editorPivot = _newKey;
-        if (this._pivotLockKey) this._pivotLockKey = _newKey;
+      // Only re-derive pivot key after ≥90° rotation from start orientation
+      var _rotDelta = Math.abs(_newRot - _pes.origRot);
+      // Normalize delta to [0, PI]
+      while (_rotDelta > Math.PI) _rotDelta = Math.abs(_rotDelta - 2 * Math.PI);
+      if (_rotDelta >= Math.PI / 2) {
+        var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x);
+        if (_newKey !== _pb._pivot) {
+          _pb._pivot = _newKey;
+          this._editorPivot = _newKey;
+          if (this._pivotLockKey) this._pivotLockKey = _newKey;
+        }
       }
       return;
     }
@@ -5529,12 +5535,16 @@ class Game {
       var _rotPOY3 = Math.sin(_newBodyRot)*_pOff3.x + Math.cos(_newBodyRot)*_pOff3.y;
       _pbb.x = _pbs.pivotWX - _rotPOX3;
       _pbb.y = Math.min(_pbs.pivotWY - _rotPOY3, this.floorY() - (_pbb.h||10)/2 - 4);
-      // Re-derive pivot key to reflect visual position
-      var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY);
-      if (_newBodyKey !== _pbb._pivot) {
-        _pbb._pivot = _newBodyKey;
-        this._editorPivot = _newBodyKey;
-        if (this._pivotLockKey) this._pivotLockKey = _newBodyKey;
+      // Only re-derive pivot key after ≥90° rotation from start
+      var _bodyDelta = Math.abs(_deltaBodyAngle);
+      while (_bodyDelta > Math.PI) _bodyDelta = Math.abs(_bodyDelta - 2 * Math.PI);
+      if (_bodyDelta >= Math.PI / 2) {
+        var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY);
+        if (_newBodyKey !== _pbb._pivot) {
+          _pbb._pivot = _newBodyKey;
+          this._editorPivot = _newBodyKey;
+          if (this._pivotLockKey) this._pivotLockKey = _newBodyKey;
+        }
       }
       return;
     }
