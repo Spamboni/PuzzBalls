@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1680;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1681;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1352,17 +1352,22 @@ class Game {
               var pvY2=b.y+Math.sin(newRot)*pOff.x+Math.cos(newRot)*pOff.y;
               b.x+=pvX-pvX2; b.y+=pvY-pvY2;
               b._rotation=newRot;
-              // Re-derive pivot key after ≥90° rotation from when pivot was set
+              // Flip pivot key when the free end crosses the vertical line through pivot
               if (self._editorPivotActive || self._pivotLockKey) {
-                var _sliderSetRot = self._editorPivotSetRot || 0;
-                var _sliderDelta = Math.abs(newRot - _sliderSetRot);
-                while (_sliderDelta > Math.PI) _sliderDelta = Math.abs(_sliderDelta - 2 * Math.PI);
-                if (_sliderDelta >= Math.PI / 2) {
-                  var _newRotKey = self._normalizePivotKey(b, pvX, pvY);
-                  if (_newRotKey !== b._pivot) {
-                    b._pivot = _newRotKey;
-                    self._editorPivot = _newRotKey;
-                    if (self._pivotLockKey) self._pivotLockKey = _newRotKey;
+                var _pivWX = self._editorPivotWorldX;
+                if (_pivWX !== undefined) {
+                  var _slHW = (b.w||40)/2;
+                  var _slCol = (b._pivot||'MC').slice(-1);
+                  // Free end is opposite side from pivot column
+                  var _slFreeX = b.x + Math.cos(newRot) * _slHW * (_slCol === 'L' ? 1 : -1);
+                  var _slRelX = _slFreeX - _pivWX;
+                  if (Math.abs(_slRelX) > 4) {
+                    var _newRotKey = self._normalizePivotKey(b, _pivWX, pvY);
+                    if (_newRotKey !== b._pivot) {
+                      b._pivot = _newRotKey;
+                      self._editorPivot = _newRotKey;
+                      if (self._pivotLockKey) self._pivotLockKey = _newRotKey;
+                    }
                   }
                 }
               }
@@ -1971,22 +1976,33 @@ class Game {
       if (self._pivotBtnPendingTap) {
         var _tapKey = self._pivotBtnPendingTap;
         self._pivotBtnPendingTap = null;
-        // Any tap deactivates lock regardless of which button
+        function _cachePivotWorld(key) {
+          var _sb = self._editorSelected;
+          if (_sb) {
+            var _pr = _sb._rotation || 0;
+            var _po = self._getPivotOffset(_sb, key);
+            self._editorPivotWorldX = _sb.x + Math.cos(_pr)*_po.x - Math.sin(_pr)*_po.y;
+            self._editorPivotWorldY = _sb.y + Math.sin(_pr)*_po.x + Math.cos(_pr)*_po.y;
+            self._editorPivotSetRot = _pr;
+          }
+        }
         if (self._pivotLockKey) {
           self._pivotLockKey = null;
           if (_tapKey !== self._editorPivot || !self._editorPivotActive) {
             self._editorPivotActive = true;
             self._editorPivot = _tapKey;
-            if (self._editorSelected) { self._editorSelected._pivot = _tapKey; self._editorPivotSetRot = self._editorSelected._rotation || 0; }
+            if (self._editorSelected) { self._editorSelected._pivot = _tapKey; _cachePivotWorld(_tapKey); }
           }
         } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
           self._editorPivotActive = false;
           self._editorPivot = 'MC';
+          self._editorPivotWorldX = undefined;
+          self._editorPivotWorldY = undefined;
           if (self._editorSelected) self._editorSelected._pivot = 'MC';
         } else {
           self._editorPivotActive = true;
           self._editorPivot = _tapKey;
-          if (self._editorSelected) { self._editorSelected._pivot = _tapKey; self._editorPivotSetRot = self._editorSelected._rotation || 0; }
+          if (self._editorSelected) { self._editorSelected._pivot = _tapKey; _cachePivotWorld(_tapKey); }
         }
         self._editorPivotEndState = null;
         self._editorPivotBodyState = null;
@@ -5097,6 +5113,15 @@ class Game {
         this._editorPivotActive = true;
       }
 
+      // Cache pivot world position whenever pivot is active — crosshair draws from here
+      if (this._editorPivotActive || this._pivotLockKey) {
+        var _cpivKey = b._pivot || 'MC';
+        var _cpivRot = b._rotation || 0;
+        var _cpivOff = this._getPivotOffset(b, _cpivKey);
+        this._editorPivotWorldX = b.x + Math.cos(_cpivRot)*_cpivOff.x - Math.sin(_cpivRot)*_cpivOff.y;
+        this._editorPivotWorldY = b.y + Math.sin(_cpivRot)*_cpivOff.x + Math.cos(_cpivRot)*_cpivOff.y;
+      }
+
       // Push undo BEFORE modifying — captures state at start of this interaction
       this._undoPush();
       this._editorLastPushWasProvisional = true;  // may be replaced if pinch follows
@@ -5505,16 +5530,17 @@ class Game {
       // Center = midpoint between anchored end and dragged finger
       _pb.x = _pes.anchorWX + Math.cos(_axisAngle) * _newW / 2;
       _pb.y = Math.min(_pes.anchorWY + Math.sin(_axisAngle) * _newW / 2, this.floorY() - (_pb.h||10)/2 - 4);
-      // Only re-derive pivot key after ≥90° rotation from start orientation
-      var _rotDelta = Math.abs(_newRot - _pes.origRot);
-      // Normalize delta to [0, PI]
-      while (_rotDelta > Math.PI) _rotDelta = Math.abs(_rotDelta - 2 * Math.PI);
-      if (_rotDelta >= Math.PI / 2) {
+      // Flip pivot key L<->R when dragged finger crosses the vertical line through pivot
+      // Small hysteresis band (4px) prevents flicker right at the boundary
+      var _fingerSide = pos.x - _pes.pivotWX;
+      var _HYST = 4;
+      if (Math.abs(_fingerSide) > _HYST) {
         var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x);
         if (_newKey !== _pb._pivot) {
           _pb._pivot = _newKey;
           this._editorPivot = _newKey;
           if (this._pivotLockKey) this._pivotLockKey = _newKey;
+          // Pivot world pos never changes — only the label does
         }
       }
       return;
@@ -5535,11 +5561,12 @@ class Game {
       var _rotPOY3 = Math.sin(_newBodyRot)*_pOff3.x + Math.cos(_newBodyRot)*_pOff3.y;
       _pbb.x = _pbs.pivotWX - _rotPOX3;
       _pbb.y = Math.min(_pbs.pivotWY - _rotPOY3, this.floorY() - (_pbb.h||10)/2 - 4);
-      // Only re-derive pivot key after ≥90° rotation from start
-      var _bodyDelta = Math.abs(_deltaBodyAngle);
-      while (_bodyDelta > Math.PI) _bodyDelta = Math.abs(_bodyDelta - 2 * Math.PI);
-      if (_bodyDelta >= Math.PI / 2) {
-        var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY);
+      // Flip pivot key when the free end crosses the vertical line through pivot
+      var _bbHW = (_pbb.w||40)/2;
+      var _freeEndX = _pbb.x + Math.cos(_newBodyRot) * _bbHW * ((_pbb._pivot||'MC').slice(-1) === 'L' ? 1 : -1);
+      var _freeRelX = _freeEndX - _pbs.pivotWX;
+      if (Math.abs(_freeRelX) > 4) {
+        var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY, _freeEndX);
         if (_newBodyKey !== _pbb._pivot) {
           _pbb._pivot = _newBodyKey;
           this._editorPivot = _newBodyKey;
@@ -6541,10 +6568,13 @@ class Game {
       ctx.restore(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
 
       if (this._editorRotateState || (this._editorSelected && (this._editorPivotActive || this._pivotLockKey))) {
-        var pivot4 = this._pivotLockKey || sb._pivot || 'MC';
-        var pOff4  = this._getPivotOffset(sb, pivot4);
-        var pvX4   = sb.x+Math.cos(sb._rotation||0)*pOff4.x-Math.sin(sb._rotation||0)*pOff4.y;
-        var pvY4   = sb.y+Math.sin(sb._rotation||0)*pOff4.x+Math.cos(sb._rotation||0)*pOff4.y;
+        // Always use cached pivot world position — never recompute from key (key is just a label)
+        var pvX4 = (this._editorPivotWorldX !== undefined) ? this._editorPivotWorldX
+                   : sb.x + Math.cos(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').x
+                           - Math.sin(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').y;
+        var pvY4 = (this._editorPivotWorldY !== undefined) ? this._editorPivotWorldY
+                   : sb.y + Math.sin(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').x
+                           + Math.cos(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').y;
         var _xhCol = this._pivotLockKey ? '#ff2244' : '#cc44ff';
         ctx.save(); ctx.strokeStyle=_xhCol; ctx.lineWidth=1.5;
         ctx.shadowColor=_xhCol; ctx.shadowBlur=8;
