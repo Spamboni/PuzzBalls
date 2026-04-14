@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1695;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1696;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -321,6 +321,10 @@ class Game {
             if (objDef._invincible) obj._invincible = true;
             if (objDef._noRegen) obj._noRegen = true;
             if (objDef._noteConfig) obj._noteConfig = objDef._noteConfig;
+            if (objDef._pivot) obj._pivot = objDef._pivot;
+            if (objDef._pivotLocked) obj._pivotLocked = true;
+            if (objDef._translateOnRotate !== undefined) obj._translateOnRotate = objDef._translateOnRotate;
+            if (objDef._spinDist !== undefined) obj._spinDist = objDef._spinDist;
             self.bricks.push(obj);
             break;
           case 'circular_brick':
@@ -886,17 +890,34 @@ class Game {
                 _startLongPress('pivlock_'+key, 700, function() {
                   self._pivotBtnPendingTap = null;  // long press consumed — suppress tap
                   _playClrConfirm();
-                  if (self._pivotLockKey === key) {
-                    // Same key long-pressed again — unlock everything
-                    self._pivotLockKey = null;
-                  } else {
-                    // Lock to this key — clear any existing blue pivot active state
-                    self._pivotLockKey = key;
-                    self._editorPivotActive = false;  // turn off any blue button
-                    self._editorPivot = 'MC';
-                    self._pivotUserSet = false;
-                    self._pivotUserSetRot = undefined;
-                    if (self._editorSelected) self._editorSelected._pivot = 'MC';
+                  var _sb = self._editorSelected;
+                  if (_sb) {
+                    if (_sb._pivotLocked && _sb._pivot === key) {
+                      // Same key long-pressed again — unpin from brick
+                      _sb._pivotLocked = false;
+                      // Also deactivate pivot mode
+                      self._editorPivotActive = false;
+                      self._editorPivot = 'MC';
+                      self._editorPivotWorldX = undefined;
+                      self._editorPivotWorldY = undefined;
+                      self._editorPivotCachedFor = null;
+                      self._editorPivotCachedKey = null;
+                      self._pivotUserSet = false;
+                      self._pivotUserSetRot = undefined;
+                    } else {
+                      // Pin this pivot to the brick
+                      _sb._pivot = key;
+                      _sb._pivotLocked = true;
+                      self._editorPivotActive = true;
+                      self._editorPivot = key;
+                      // Compute and cache pivot world pos
+                      var _pinRot = _sb._rotation || 0;
+                      var _pinOff = self._getPivotOffset(_sb, key);
+                      self._editorPivotWorldX = _sb.x + Math.cos(_pinRot)*_pinOff.x - Math.sin(_pinRot)*_pinOff.y;
+                      self._editorPivotWorldY = _sb.y + Math.sin(_pinRot)*_pinOff.x + Math.cos(_pinRot)*_pinOff.y;
+                      self._editorPivotCachedFor = _sb;
+                      self._editorPivotCachedKey = key;
+                    }
                   }
                 });
               })(_rpKey);
@@ -4961,7 +4982,7 @@ class Game {
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
                _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
-               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
@@ -4982,7 +5003,7 @@ class Game {
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
                _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
-               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
@@ -5003,7 +5024,7 @@ class Game {
       b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
       b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
       b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
-      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._translateOnRotate=s._translateOnRotate;
+      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._translateOnRotate=s._translateOnRotate;
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
     }).filter(Boolean);
@@ -5033,7 +5054,7 @@ class Game {
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
                _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
-               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
@@ -5053,7 +5074,7 @@ class Game {
       b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
       b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
       b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
-      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._translateOnRotate=s._translateOnRotate;
+      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._translateOnRotate=s._translateOnRotate;
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
     }).filter(Boolean);
@@ -5156,14 +5177,24 @@ class Game {
       this._showBrickSettings = true;
       this._editorMovable = b._movable || false;
 
-      // ── Pivot lock: inherit locked pivot key and activate pivot mode ──────────
-      if (this._pivotLockKey) {
+      // ── Per-brick pinned pivot: auto-activate pivot mode ───────────────────
+      if (b._pivotLocked && !(b instanceof CircularBrick)) {
+        this._pivotActivatedByPin = !this._editorPivotActive; // track if WE activated it
+        this._editorPivotActive = true;
+        this._editorPivot = b._pivot || 'MC';
+      }
+      // ── Global pivot lock: inherit locked pivot key and activate pivot mode ──
+      else if (this._pivotLockKey) {
+        this._pivotActivatedByPin = false;
         b._pivot = this._pivotLockKey;
         this._editorPivot = this._pivotLockKey;
         this._editorPivotActive = true;
       } else if (this._editorPivotActive) {
-        // Apply active pivot key to the brick
-        b._pivot = this._editorPivot;
+        this._pivotActivatedByPin = false;
+        // Apply active pivot key to the brick (only if brick doesn't have its own pin)
+        if (!b._pivotLocked) b._pivot = this._editorPivot;
+      } else {
+        this._pivotActivatedByPin = false;
       }
 
       // Cache pivot world position — diagonal partners (TL<->BR, TR<->BL) share same world point
@@ -5214,6 +5245,19 @@ class Game {
         var _endRX = b.x + Math.cos(_bRot)*_hw, _endRY = b.y + Math.sin(_bRot)*_hw;
         var _endLX = b.x - Math.cos(_bRot)*_hw, _endLY = b.y - Math.sin(_bRot)*_hw;
         var _endHitR = Math.max(20, _hw * 0.4 + 8);
+        var _distR = Math.hypot(pos.x - _endRX, pos.y - _endRY);
+        var _distL = Math.hypot(pos.x - _endLX, pos.y - _endLY);
+        // Per-brick pinned pivot: tap near pivot point = drag whole brick (reposition)
+        var _distToPiv = Math.hypot(pos.x - _pvWX, pos.y - _pvWY);
+        if (b._pivotLocked && _distToPiv < _endHitR) {
+          // Reposition drag — finger grabbed the pivot anchor point
+          this._editorDragOffX = pos.x - b.x;
+          this._editorDragOffY = pos.y - b.y;
+          this._editorDragging = b;
+          this._editorPivotEndState = null;
+          this._editorPivotBodyState = null;
+          return;
+        }
         var _distR = Math.hypot(pos.x - _endRX, pos.y - _endRY);
         var _distL = Math.hypot(pos.x - _endLX, pos.y - _endLY);
         // Determine which end is the pivot end from world pos (not key label, which may be stale)
@@ -5320,6 +5364,16 @@ class Game {
     // SELECT mode: tapping empty space just deselects — never place
     if (this._editorSelectMode) {
       if (this._editorSelected) this._saveLastSettings(this._editorSelected);
+      // If pivot mode was auto-activated by a pinned brick, deactivate it on deselect
+      if (this._pivotActivatedByPin) {
+        this._editorPivotActive = false;
+        this._editorPivot = 'MC';
+        this._editorPivotWorldX = undefined;
+        this._editorPivotWorldY = undefined;
+        this._editorPivotCachedFor = null;
+        this._editorPivotCachedKey = null;
+        this._pivotActivatedByPin = false;
+      }
       this._editorSelected = null;
       this._showBrickSettings = false;
       return;
@@ -5327,6 +5381,14 @@ class Game {
     // BUILD mode: place new brick — use last-used settings or factory defaults
     // First, save settings from whatever brick was selected (carries forward all slider values)
     if (this._editorSelected) this._saveLastSettings(this._editorSelected);
+    // If pivot mode was auto-activated by a pinned brick, deactivate before placing new brick
+    if (this._pivotActivatedByPin) {
+      this._editorPivotActive = false;
+      this._editorPivot = 'MC';
+      this._editorPivotWorldX = undefined;
+      this._editorPivotWorldY = undefined;
+      this._pivotActivatedByPin = false;
+    }
     var defaults = window.BrickDefaults || {};
     var last     = this._editorLastSettings || {};
     var isCircle = this._editorBrickType === 'circular_brick';
@@ -5773,6 +5835,14 @@ class Game {
     this._editorDragging.x = nx;
     var maxBrickY = this.floorY() - (this._editorDragging.h || this._editorDragging.r || 15) / 2 - 4;
     this._editorDragging.y = Math.min(ny, maxBrickY);
+    // Update cached pivot world pos when dragging a pinned-pivot brick
+    if (this._editorDragging._pivotLocked && this._editorPivotCachedFor === this._editorDragging) {
+      var _dpb = this._editorDragging;
+      var _dpRot = _dpb._rotation || 0;
+      var _dpOff = this._getPivotOffset(_dpb, _dpb._pivot || 'MC');
+      this._editorPivotWorldX = _dpb.x + Math.cos(_dpRot)*_dpOff.x - Math.sin(_dpRot)*_dpOff.y;
+      this._editorPivotWorldY = _dpb.y + Math.sin(_dpRot)*_dpOff.x + Math.cos(_dpRot)*_dpOff.y;
+    }
   }
 
   _setSliderVal(key, defKey, val, extra) {
@@ -6331,17 +6401,18 @@ class Game {
           var rpW2 = rpW, rpH2 = rpW*0.65;
           var rpAct = _pivActive && curRotPiv===rpKey;
           var rpLocked = (_pivLockKey === rpKey);
-          // Lock state = red; active = normal color; inactive = dimmed
-          var rpCol = rpLocked ? '#ff2244' : (rpKey==='MC') ? '#ffcc44' : '#44ccff';
-          ctx.globalAlpha = (_pivActive || rpLocked) ? 1.0 : 0.4;
-          ctx.fillStyle = rpLocked ? 'rgba(255,20,50,0.25)' : rpAct ? rpCol+'44' : 'rgba(0,10,30,0.6)';
+          var rpPinned = (sb2 && sb2._pivotLocked && sb2._pivot === rpKey);
+          // Pinned = green; Lock state = red; active = normal color; inactive = dimmed
+          var rpCol = rpPinned ? '#22dd66' : rpLocked ? '#ff2244' : (rpKey==='MC') ? '#ffcc44' : '#44ccff';
+          ctx.globalAlpha = (_pivActive || rpLocked || rpPinned) ? 1.0 : 0.4;
+          ctx.fillStyle = rpPinned ? 'rgba(30,220,90,0.25)' : rpLocked ? 'rgba(255,20,50,0.25)' : rpAct ? rpCol+'44' : 'rgba(0,10,30,0.6)';
           ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW2,rpH2,1); ctx.fill();
-          ctx.strokeStyle = rpLocked ? '#ff2244' : rpAct ? rpCol : '#334455';
-          ctx.lineWidth = (rpAct||rpLocked) ? 1.4 : 0.5;
-          if(rpAct||rpLocked){ctx.shadowColor=rpCol;ctx.shadowBlur=rpLocked?6:4;}
+          ctx.strokeStyle = rpPinned ? '#22dd66' : rpLocked ? '#ff2244' : rpAct ? rpCol : '#334455';
+          ctx.lineWidth = (rpAct||rpLocked||rpPinned) ? 1.4 : 0.5;
+          if(rpAct||rpLocked||rpPinned){ctx.shadowColor=rpCol;ctx.shadowBlur=(rpLocked||rpPinned)?6:4;}
           ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW2,rpH2,1); ctx.stroke();
           ctx.shadowBlur=0;
-          if(rpAct||rpLocked){
+          if(rpAct||rpLocked||rpPinned){
             ctx.fillStyle=rpCol;
             ctx.beginPath();ctx.arc(rpx+rpW2/2,rpy+rpH2*0.5,1.5,0,Math.PI*2);ctx.fill();
           }
@@ -6351,7 +6422,7 @@ class Game {
             var _rpProg = Math.min(1, (Date.now() - _cpsRpiv.startTime) / 700);
             ctx.save();
             ctx.beginPath(); ctx.roundRect(rpx, rpy, rpW2*_rpProg, rpH2, 1); ctx.clip();
-            ctx.fillStyle = 'rgba(255,30,60,0.55)';
+            ctx.fillStyle = rpPinned ? 'rgba(30,220,90,0.55)' : 'rgba(255,30,60,0.55)';
             ctx.fillRect(rpx, rpy, rpW2, rpH2);
             ctx.restore();
           }
@@ -6626,13 +6697,14 @@ class Game {
         var pivKey = _pvRows[pr] + _pvCols[pc];  // row+col = TL,TC,TR,ML,CM,MR,BL,BC,BR
         var px9=pivX3+pc*(pW9+pG9), py9=pivY3+pr*(pW9*0.7+pG9);
         var pAct9=pivEnabled2&&curPiv3===pivKey;
-        var pCol9 = (pivKey==='MC') ? '#ffcc44' : '#44ccff';
-        ctx.globalAlpha=pivEnabled2?1.0:0.28;
-        ctx.fillStyle=pAct9?pCol9+'44':'rgba(0,10,30,0.6)';
+        var pPin9=(sb2 && sb2._pivotLocked && sb2._pivot===pivKey);
+        var pCol9 = pPin9 ? '#22dd66' : (pivKey==='MC') ? '#ffcc44' : '#44ccff';
+        ctx.globalAlpha=pivEnabled2||pPin9?1.0:0.28;
+        ctx.fillStyle=pPin9?'rgba(30,220,90,0.25)':pAct9?pCol9+'44':'rgba(0,10,30,0.6)';
         ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.7,2); ctx.fill();
-        ctx.strokeStyle=pAct9?pCol9:'#334455'; ctx.lineWidth=pAct9?1.5:0.6;
+        ctx.strokeStyle=pPin9?'#22dd66':pAct9?pCol9:'#334455'; ctx.lineWidth=(pAct9||pPin9)?1.5:0.6;
         ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.7,2); ctx.stroke();
-        if(pAct9){ctx.fillStyle=pCol9;ctx.beginPath();ctx.arc(px9+pW9/2,py9+pW9*0.35,2.5,0,Math.PI*2);ctx.fill();}
+        if(pAct9||pPin9){ctx.fillStyle=pCol9;ctx.beginPath();ctx.arc(px9+pW9/2,py9+pW9*0.35,2.5,0,Math.PI*2);ctx.fill();}
         ctx.globalAlpha=1.0;
         this._editorPivotRects.push({x:px9,y:py9,w:pW9,h:pW9*0.6,val:pivKey,enabled:pivEnabled2});
       }
@@ -6673,8 +6745,9 @@ class Game {
       var toolMode2 = this._editorToolMode || 'build';
       var modeColors = { build:'rgba(255,255,100,0.85)', select:'rgba(255,200,0,0.85)',
                          scale:'rgba(0,255,136,0.85)' };
-      // Pivot active: use purple tint to indicate pivot mode
-      var _selCol = this._editorPivotActive ? 'rgba(200,68,255,0.9)' : (modeColors[toolMode2] || 'rgba(255,255,100,0.85)');
+      // Pivot active: use purple tint; pinned pivot: use green tint
+      var _selCol = (sb._pivotLocked) ? 'rgba(34,221,102,0.9)'
+        : this._editorPivotActive ? 'rgba(200,68,255,0.9)' : (modeColors[toolMode2] || 'rgba(255,255,100,0.85)');
       var _dashSpeed = (window.Settings && window.Settings.selectionDashSpeed) || 1.0;
       var _dashOffset = -(this.frame * _dashSpeed * 0.4) % 16;
       ctx.strokeStyle = _selCol;
@@ -6688,7 +6761,8 @@ class Game {
       }
       ctx.restore(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
 
-      if (this._editorRotateState || (this._editorSelected && (this._editorPivotActive || this._pivotLockKey))) {
+      var _sbPinned = sb._pivotLocked || false;
+      if (this._editorRotateState || (this._editorSelected && (this._editorPivotActive || this._pivotLockKey || _sbPinned))) {
         var pvX4, pvY4;
         if (this._editorPivotWorldX !== undefined) {
           pvX4 = this._editorPivotWorldX;
@@ -6701,7 +6775,7 @@ class Game {
           pvX4 = sb.x + Math.cos(_fbRot)*_fbOff.x - Math.sin(_fbRot)*_fbOff.y;
           pvY4 = sb.y + Math.sin(_fbRot)*_fbOff.x + Math.cos(_fbRot)*_fbOff.y;
         }
-        var _xhCol = this._pivotLockKey ? '#ff2244' : '#cc44ff';
+        var _xhCol = _sbPinned ? '#22dd66' : this._pivotLockKey ? '#ff2244' : '#cc44ff';
         ctx.save(); ctx.strokeStyle=_xhCol; ctx.lineWidth=1.5;
         ctx.shadowColor=_xhCol; ctx.shadowBlur=8;
         ctx.beginPath(); ctx.arc(pvX4,pvY4,6,0,Math.PI*2); ctx.stroke();
@@ -6747,7 +6821,8 @@ class Game {
           _rotSpeed: b._rotSpeed, _rotDecel: b._rotDecel,
           _wallBounce: b._wallBounce, _invincible: b._invincible || false,
           _noRegen: b._noRegen || false, _noteConfig: b._noteConfig || null,
-          _pivot: b._pivot || 'MC', _translateOnRotate: b._translateOnRotate,
+          _pivot: b._pivot || 'MC', _pivotLocked: b._pivotLocked || false,
+          _translateOnRotate: b._translateOnRotate,
           _spinDist: b._spinDist,
           id: b.id || ('b_' + Math.random().toString(36).slice(2,8))
         };
