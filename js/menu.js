@@ -1,5 +1,5 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_BUILD_TIMESTAMP = '2026-04-14 25:06 CT';
-window.PUZZBALLS_FILE_VERSION['menu.js'] = 1706;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_BUILD_TIMESTAMP = '2026-04-14 25:07 CT';
+window.PUZZBALLS_FILE_VERSION['menu.js'] = 1707;
 // menu.js — Main menu / level selector screen
 
 var LEVEL_CATALOG = [
@@ -40,6 +40,14 @@ var LEVEL_CATALOG = [
     name:        'Power the Grid',
     description: 'Plug the Gravity ball into the electrical port to open the gate',
     difficulty:  'Hard',
+    stars:       0,
+    locked:      false,
+  },
+  {
+    id:          'gauntlet_run',
+    name:        'The Gauntlet',
+    description: 'Navigate through barriers, tubes, and a flingable block to reach the vault',
+    difficulty:  'Medium',
     stars:       0,
     locked:      false,
   },
