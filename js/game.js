@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1716;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1717;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -302,6 +302,7 @@ class Game {
 
     // Restore editor-placed bricks from custom level save
     if (ld.objects) {
+      console.log('[PuzzBalls] Loading ' + ld.objects.length + ' objects from level data');
       ld.objects.forEach(function(objDef) {
         var x = (objDef.rx !== undefined ? objDef.rx * W : objDef.x || W * 0.5);
         var y = (objDef.ry !== undefined ? objDef.ry * self.floorY() : objDef.y || self.floorY() * 0.5);
@@ -2698,6 +2699,42 @@ class Game {
             var hw2 = (other.w  || other.r  * 2) / 2;
             var hh2 = (other.h  || other.r  * 2) / 2;
             if (ox < hw1 + hw2 && oy < hh1 + hh2) {
+              // Push bricks apart — resolve overlap
+              var _sepDx = mbrick.x - other.x;
+              var _sepDy = mbrick.y - other.y;
+              var _sepDist = Math.hypot(_sepDx, _sepDy) || 0.1;
+              var _sepNx = _sepDx / _sepDist, _sepNy = _sepDy / _sepDist;
+              var _overlapX = (hw1 + hw2) - ox;
+              var _overlapY = (hh1 + hh2) - oy;
+              var _pushDist = Math.min(_overlapX, _overlapY) * 0.6;
+              // Push moving brick out, and other brick if it's also movable/flingable
+              var _otherCanMove = other._movable || other._flingable;
+              if (_otherCanMove) {
+                mbrick.x += _sepNx * _pushDist * 0.5;
+                mbrick.y += _sepNy * _pushDist * 0.5;
+                other.x -= _sepNx * _pushDist * 0.5;
+                other.y -= _sepNy * _pushDist * 0.5;
+              } else {
+                mbrick.x += _sepNx * _pushDist;
+                mbrick.y += _sepNy * _pushDist;
+              }
+              // Velocity transfer — bounce off each other
+              var _bbBounce = 0.5;
+              var _dotV = ((mbrick._vx||0) * _sepNx + (mbrick._vy||0) * _sepNy);
+              if (_dotV < 0) { // moving toward other
+                mbrick._vx = (mbrick._vx||0) - (1+_bbBounce) * _dotV * _sepNx * 0.5;
+                mbrick._vy = (mbrick._vy||0) - (1+_bbBounce) * _dotV * _sepNy * 0.5;
+                if (_otherCanMove) {
+                  var _otherDens = other._density || 1;
+                  var _thisDens = mbrick._density || 1;
+                  var _massRatio = _thisDens / (_thisDens + _otherDens);
+                  other._vx = (other._vx||0) + _dotV * _sepNx * _massRatio * _bbBounce;
+                  other._vy = (other._vy||0) + _dotV * _sepNy * _massRatio * _bbBounce;
+                  if (other._spawnX === undefined) { other._spawnX = other.x; other._spawnY = other.y; }
+                  other._startX = other.x; other._startY = other.y;
+                }
+              }
+
               var coolK = '_bb_' + other.id;
               if (!mbrick[coolK] || mbrick[coolK] <= 0) {
                 // Brick-on-brick damage — much less than ball damage
@@ -5695,15 +5732,20 @@ class Game {
       this._pendingBrickDoubleTap = _isMaybeDblTap ? { brick: b, downTime: _now } : null;
 
       // ── Long-press: open note editor (set up timer) ─────────────────────────
-      // Only fires if finger stays still for 600ms — cancelled by move or quick lift
+      // Visual feedback: brick glows during hold. Cancelled only if finger moves >10px
       var _self = this;
+      this._brickLongPressTarget = b;
+      this._brickLongPressStartX = pos.x;
+      this._brickLongPressStartY = pos.y;
+      this._brickLongPressStartTime = _now;
       this._brickLongPressTimer = setTimeout(function() {
         _self._brickLongPressTimer = null;
+        _self._brickLongPressTarget = null;
         // Cancel any pending double-tap — this is a hold, not a quick tap
         _self._pendingBrickDoubleTap = null;
         if (_self._editorSelected === b) {
           _self._editorNotePopup = true;
-          if (window.Sound && Sound.uiTap) Sound.uiTap(0.15);
+          if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
         }
       }, 600);
 
@@ -6196,8 +6238,14 @@ class Game {
   _editorOnMove(pos) {
     this._editorLastPushWasProvisional = false;  // movement confirmed — undo push is real
     this._editorDragInProgress = true;  // finger is still down and has moved
-    // Cancel long-press note editor on any movement
-    if (this._brickLongPressTimer) { clearTimeout(this._brickLongPressTimer); this._brickLongPressTimer = null; }
+    // Cancel long-press note editor only if finger moved >10px (dead zone for jitter)
+    if (this._brickLongPressTimer && this._brickLongPressStartX !== undefined) {
+      var _lpDist = Math.hypot(pos.x - this._brickLongPressStartX, pos.y - this._brickLongPressStartY);
+      if (_lpDist > 10) {
+        clearTimeout(this._brickLongPressTimer); this._brickLongPressTimer = null;
+        this._brickLongPressTarget = null;
+      }
+    }
     // Slider drag in panel area
     if (this._editorDragSlider) {
       var sl = this._editorDragSlider;
@@ -7404,6 +7452,32 @@ class Game {
       ctx.scale(_edZ, _edZ);
       ctx.translate(-W, -floorY);
     }
+    // ── Long-press glow feedback ───────────────────────────────────────────────
+    if (this._brickLongPressTarget && this._brickLongPressTimer) {
+      var _lpb = this._brickLongPressTarget;
+      var _lpElapsed = performance.now() - (this._brickLongPressStartTime || 0);
+      var _lpFrac = Math.min(1, _lpElapsed / 600); // 0→1 over 600ms
+      if (_lpFrac > 0.05) {
+        ctx.save();
+        ctx.globalAlpha = _lpFrac * 0.6;
+        ctx.shadowColor = '#cc44ff'; ctx.shadowBlur = 20 * _lpFrac;
+        ctx.strokeStyle = '#cc44ff'; ctx.lineWidth = 2 + _lpFrac * 2;
+        if (_lpb._rotation) { ctx.translate(_lpb.x, _lpb.y); ctx.rotate(_lpb._rotation); ctx.translate(-_lpb.x, -_lpb.y); }
+        if (_lpb instanceof CircularBrick) {
+          ctx.beginPath(); ctx.arc(_lpb.x, _lpb.y, _lpb.r + 4, 0, Math.PI * 2); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.roundRect(_lpb.x - _lpb.w/2 - 4, _lpb.y - _lpb.h/2 - 4, _lpb.w + 8, _lpb.h + 8, 4); ctx.stroke();
+        }
+        // Progress arc
+        ctx.globalAlpha = _lpFrac * 0.8;
+        ctx.strokeStyle = '#ff88ff'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(_lpb.x, _lpb.y - (_lpb.h || _lpb.r*2)/2 - 10, 6, -Math.PI/2, -Math.PI/2 + _lpFrac * Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+    }
+
     // ── Per-brick visual indicators: pinned pivots + locked dimensions ───────
     for (var _pbi = 0; _pbi < this.bricks.length; _pbi++) {
       var _pb = this.bricks[_pbi];
@@ -7540,6 +7614,7 @@ class Game {
       if (!levelName || !levelName.trim()) return;
       levelName = levelName.trim();
       var W = self.W, floorY = self.floorY();
+      console.log('[PuzzBalls SAVE] bricks:' + self.bricks.length + ' balls:' + self.objects.length + ' tubes:' + (self.tubes ? self.tubes.tubes.length : 0));
       // Serialize bricks
       var brickData = self.bricks.map(function(b) {
         return {
