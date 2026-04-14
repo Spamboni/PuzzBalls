@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1703;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1704;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5068,7 +5068,11 @@ class Game {
       ctx.scale(z, z);
       ctx.translate(-W, -floorY);
     }
-    if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
+    if (this.nebulaOffscreen) {
+      var _nox = this.nebulaOffscreen._worldOffX || 0;
+      var _noy = this.nebulaOffscreen._worldOffY || 0;
+      ctx.drawImage(this.nebulaOffscreen, _nox, _noy);
+    }
     this._drawGrid(); this._drawStars();
 
     for (var g = 0; g < this.objects.length; g++) {
@@ -8102,7 +8106,10 @@ class Game {
 
   _drawFloor(floorY) {
     var ctx = this.ctx, W = this.W, H = this.H;
-    ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(0, floorY, W, H - floorY);
+    // Compute extended left edge for zoomed-out view
+    var _z = this._viewZoom || 1;
+    var _extL = (_z < 1) ? Math.floor(W * (1 - 1/_z)) - 10 : 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(_extL, floorY, W - _extL, H - floorY);
     ctx.save();
 
     // Sling zone line — dotted line above floor showing tap-to-sling reach
@@ -8111,7 +8118,7 @@ class Game {
     ctx.setLineDash([5, 8]);
     ctx.strokeStyle = 'rgba(0,200,150,0.28)';
     ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.moveTo(0, zoneY); ctx.lineTo(W, zoneY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(_extL, zoneY); ctx.lineTo(W, zoneY); ctx.stroke();
     ctx.setLineDash([]);
     // Tiny label on right edge
     ctx.fillStyle = 'rgba(0,200,150,0.35)'; ctx.font = "7px 'Share Tech Mono',monospace";
@@ -8121,13 +8128,13 @@ class Game {
     // Floor line
     ctx.strokeStyle = 'rgba(0,180,255,0.55)'; ctx.lineWidth = 2;
     ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 10;
-    ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(W, floorY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(_extL, floorY); ctx.lineTo(W, floorY); ctx.stroke();
     ctx.shadowBlur = 0;
 
     // Dotted floor echo
     ctx.setLineDash([3, 6]);
     ctx.strokeStyle = 'rgba(0,140,255,0.18)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, floorY + 4); ctx.lineTo(W, floorY + 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(_extL, floorY + 4); ctx.lineTo(W, floorY + 4); ctx.stroke();
     ctx.setLineDash([]);
 
     ctx.fillStyle = 'rgba(0,140,200,0.22)'; ctx.font = "9px 'Share Tech Mono',monospace";
@@ -8577,28 +8584,38 @@ class Game {
   _drawEditorGrid(floorY) {
     var ctx = this.ctx, W = this.W;
     var gs  = window._gridSize || 20;
+    var _z = this._viewZoom || 1;
+    var _egMinX = (_z < 1) ? Math.floor(W * (1 - 1/_z)) : 0;
+    var _egMinY = (_z < 1) ? Math.floor(floorY * (1 - 1/_z)) : 0;
+    var _egStartX = Math.floor(_egMinX / gs) * gs;
+    var _egStartY = Math.floor(_egMinY / gs) * gs;
     ctx.save();
     ctx.lineWidth = 0.5;
-    for (var gx = 0; gx <= W; gx += gs) {
+    for (var gx = _egStartX; gx <= W; gx += gs) {
       var major = (Math.round(gx / gs) % 5 === 0);
       ctx.strokeStyle = major ? 'rgba(0,200,255,0.18)' : 'rgba(0,160,200,0.07)';
       ctx.lineWidth   = major ? 0.8 : 0.4;
-      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, floorY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(gx, _egMinY); ctx.lineTo(gx, floorY); ctx.stroke();
     }
-    for (var gy = 0; gy <= floorY; gy += gs) {
+    for (var gy = _egStartY; gy <= floorY; gy += gs) {
       var majorY = (Math.round(gy / gs) % 5 === 0);
       ctx.strokeStyle = majorY ? 'rgba(0,200,255,0.18)' : 'rgba(0,160,200,0.07)';
       ctx.lineWidth   = majorY ? 0.8 : 0.4;
-      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_egMinX, gy); ctx.lineTo(W, gy); ctx.stroke();
     }
     ctx.restore();
   }
 
   _drawGrid() {
     var ctx = this.ctx, W = this.W, H = this.H;
+    var _z = this._viewZoom || 1;
+    var _gMinX = (_z < 1) ? Math.floor(W * (1 - 1/_z)) : 0;
+    var _gMinY = (_z < 1) ? Math.floor(this.floorY() * (1 - 1/_z)) : 0;
     ctx.strokeStyle = '#030a1804'; ctx.lineWidth = 1;
-    for (var x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-    for (var y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    var _gStartX = Math.floor(_gMinX / 50) * 50;
+    var _gStartY = Math.floor(_gMinY / 50) * 50;
+    for (var x = _gStartX; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x,_gMinY); ctx.lineTo(x,H); ctx.stroke(); }
+    for (var y = _gStartY; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(_gMinX,y); ctx.lineTo(W,y); ctx.stroke(); }
   }
 
   _drawStars() {
@@ -8659,21 +8676,45 @@ class Game {
   }
 
   _buildNebulaOffscreen() {
-    var blobs = [{rx:0.15,ry:0.10,r:180,c:'#0a1a4a'},{rx:0.85,ry:0.22,r:150,c:'#1a0a30'},{rx:0.50,ry:0.55,r:200,c:'#080a20'}];
-    var oc = document.createElement('canvas'); oc.width = this.W; oc.height = this.H;
+    // Build nebula large enough to cover max zoom-out (z=0.25 → 4x area)
+    // Anchor at (W, floorY), so world extends to W*(1-1/zMin) on left, floorY*(1-1/zMin) on top
+    var zMin = 0.25;
+    var extW = Math.ceil(this.W / zMin);
+    var extH = Math.ceil(this.floorY() / zMin);
+    var offX = Math.floor(this.W * (1 - 1/zMin));  // negative offset (left edge in world)
+    var offY = Math.floor(this.floorY() * (1 - 1/zMin));  // negative offset (top edge in world)
+    var oc = document.createElement('canvas'); oc.width = extW; oc.height = extH;
     var nc = oc.getContext('2d');
-    blobs.forEach(function(b) {
-      var bx = b.rx * oc.width, by = b.ry * oc.height;
-      var g = nc.createRadialGradient(bx,by,0,bx,by,b.r);
+    // Generate blobs scattered across the full extent
+    var blobDefs = [
+      {rx:0.15,ry:0.10,r:180,c:'#0a1a4a'},{rx:0.85,ry:0.22,r:150,c:'#1a0a30'},
+      {rx:0.50,ry:0.55,r:200,c:'#080a20'},{rx:0.25,ry:0.75,r:160,c:'#0a1040'},
+      {rx:0.70,ry:0.65,r:140,c:'#120a28'},{rx:0.10,ry:0.40,r:170,c:'#081830'},
+      {rx:0.90,ry:0.80,r:130,c:'#0a0a2a'},{rx:0.40,ry:0.20,r:190,c:'#0c1838'},
+    ];
+    blobDefs.forEach(function(b) {
+      var bx = b.rx * extW, by = b.ry * extH;
+      var g = nc.createRadialGradient(bx,by,0,bx,by,b.r * 1.5);
       g.addColorStop(0,b.c); g.addColorStop(1,'transparent');
-      nc.fillStyle = g; nc.beginPath(); nc.arc(bx,by,b.r,0,Math.PI*2); nc.fill();
+      nc.fillStyle = g; nc.beginPath(); nc.arc(bx,by,b.r*1.5,0,Math.PI*2); nc.fill();
     });
+    // Store the offset so _draw knows where to place it
+    oc._worldOffX = offX;
+    oc._worldOffY = offY;
     return oc;
   }
 
   _buildStars(n) {
     var out = [];
-    for (var i = 0; i < n; i++) out.push({x:Math.random()*this.W,y:Math.random()*this.H,r:Math.random()*1.3,phase:Math.random()*Math.PI*2,speed:0.008+Math.random()*0.018});
+    // Stars cover the full max-zoom-out extent (z=0.25 → 4x area)
+    var zMin = 0.25;
+    var offX = this.W * (1 - 1/zMin);
+    var offY = this.floorY() * (1 - 1/zMin);
+    var extW = this.W / zMin;
+    var extH = this.floorY() / zMin;
+    // Scale star count up proportionally to area
+    var totalStars = Math.round(n / (zMin * zMin));
+    for (var i = 0; i < totalStars; i++) out.push({x:offX + Math.random()*extW, y:offY + Math.random()*extH, r:Math.random()*1.3, phase:Math.random()*Math.PI*2, speed:0.008+Math.random()*0.018});
     return out;
   }
 
