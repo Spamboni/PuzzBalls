@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1681;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1682;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1360,9 +1360,8 @@ class Game {
                   var _slCol = (b._pivot||'MC').slice(-1);
                   // Free end is opposite side from pivot column
                   var _slFreeX = b.x + Math.cos(newRot) * _slHW * (_slCol === 'L' ? 1 : -1);
-                  var _slRelX = _slFreeX - _pivWX;
-                  if (Math.abs(_slRelX) > 4) {
-                    var _newRotKey = self._normalizePivotKey(b, _pivWX, pvY);
+                  if (Math.abs(_slFreeX - _pivWX) > 4) {
+                    var _newRotKey = self._normalizePivotKey(b, _pivWX, self._editorPivotWorldY, _slFreeX);
                     if (_newRotKey !== b._pivot) {
                       b._pivot = _newRotKey;
                       self._editorPivot = _newRotKey;
@@ -3216,25 +3215,27 @@ class Game {
   // where the brick's local axes now point in screen space.
   // Re-derive pivot key after rotation — only swaps L<->R column.
   // C-column buttons (TC, MC, BC) never switch; row (T/M/B) never switches.
-  // The swap is based on whether the dragged end is visually left or right of the pivot.
-  _normalizePivotKey(brick, pivotWX, pivotWY, draggedEndWX) {
+  // freeEndX = screen X of the free (non-pivot) end.
+  // If free end is RIGHT of pivot → pivot is on the LEFT → col = L.
+  // If free end is LEFT of pivot  → pivot is on the RIGHT → col = R.
+  _normalizePivotKey(brick, pivotWX, pivotWY, freeEndX) {
     var currentKey = brick._pivot || 'MC';
     var col = currentKey[currentKey.length - 1]; // L, C, or R
-    if (col === 'C') return currentKey;          // C-column never changes
+    if (col === 'C') return currentKey;           // C-column never changes
     var row = currentKey.slice(0, currentKey.length - 1); // T, M, or B
-    // Use screen-space X position of dragged end vs pivot to determine L or R
     var refX;
-    if (draggedEndWX !== undefined) {
-      refX = draggedEndWX;
+    if (freeEndX !== undefined) {
+      refX = freeEndX;
     } else {
-      // Infer from current brick orientation — which end is on the 'col' side?
+      // Infer free end from current brick orientation (opposite side from pivot col)
       var _rot = brick._rotation || 0;
       var _hw = (brick.w || 40) / 2;
-      refX = (col === 'R')
-        ? brick.x + Math.cos(_rot) * _hw
-        : brick.x - Math.cos(_rot) * _hw;
+      refX = (col === 'L')
+        ? brick.x + Math.cos(_rot) * _hw   // pivot is L, free end is R
+        : brick.x - Math.cos(_rot) * _hw;  // pivot is R, free end is L
     }
-    var newCol = (refX >= pivotWX) ? 'R' : 'L';
+    // Free end RIGHT of pivot → pivot is LEFT; free end LEFT → pivot is RIGHT
+    var newCol = (refX >= pivotWX) ? 'L' : 'R';
     return row + newCol;
   }
 
@@ -5563,7 +5564,9 @@ class Game {
       _pbb.y = Math.min(_pbs.pivotWY - _rotPOY3, this.floorY() - (_pbb.h||10)/2 - 4);
       // Flip pivot key when the free end crosses the vertical line through pivot
       var _bbHW = (_pbb.w||40)/2;
-      var _freeEndX = _pbb.x + Math.cos(_newBodyRot) * _bbHW * ((_pbb._pivot||'MC').slice(-1) === 'L' ? 1 : -1);
+      var _bbCol = (_pbb._pivot||'MC').slice(-1);
+      // Free end = opposite side from pivot column
+      var _freeEndX = _pbb.x + Math.cos(_newBodyRot) * _bbHW * (_bbCol === 'L' ? 1 : -1);
       var _freeRelX = _freeEndX - _pbs.pivotWX;
       if (Math.abs(_freeRelX) > 4) {
         var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY, _freeEndX);
