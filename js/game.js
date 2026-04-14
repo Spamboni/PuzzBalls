@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1694;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1695;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -895,6 +895,7 @@ class Game {
                     self._editorPivotActive = false;  // turn off any blue button
                     self._editorPivot = 'MC';
                     self._pivotUserSet = false;
+                    self._pivotUserSetRot = undefined;
                     if (self._editorSelected) self._editorSelected._pivot = 'MC';
                   }
                 });
@@ -2011,6 +2012,7 @@ class Game {
             self._editorPivot = _tapKey;
             if (self._editorSelected) { self._editorSelected._pivot = _tapKey; _cachePivotWorld(_tapKey); }
             self._pivotUserSet = true;
+            self._pivotUserSetRot = (self._editorSelected && self._editorSelected._rotation) || 0;
           }
         } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
           self._editorPivotActive = false;
@@ -2020,12 +2022,14 @@ class Game {
           self._editorPivotCachedFor = null;
           self._editorPivotCachedKey = null;
           self._pivotUserSet = false;
+          self._pivotUserSetRot = undefined;
           if (self._editorSelected) self._editorSelected._pivot = 'MC';
         } else {
           self._editorPivotActive = true;
           self._editorPivot = _tapKey;
           if (self._editorSelected) { self._editorSelected._pivot = _tapKey; _cachePivotWorld(_tapKey); }
           self._pivotUserSet = true;
+          self._pivotUserSetRot = (self._editorSelected && self._editorSelected._rotation) || 0;
         }
         self._editorPivotEndState = null;
         self._editorPivotBodyState = null;
@@ -3258,16 +3262,23 @@ class Game {
       : ((col==='L') ? brick.x+Math.cos(rot)*hw : brick.x-Math.cos(rot)*hw);
     var freeIsRight = (freeX >= pivotWX);
     var pivIsLeft = (col === 'L');
-    // After a user button tap, suppress normalization until the geometry naturally
-    // agrees with the user-chosen key (free end on correct side). Once validated,
-    // clear the flag and resume normal normalization from that point on.
+    // After a user button tap, suppress normalization until the brick has been
+    // rotated enough (>5°) to indicate genuine user-driven rotation. This prevents
+    // the immediate flip-back when the geometry is inverted from a prior normalization,
+    // while still allowing normalization to work once the user actively rotates.
     if (this._pivotUserSet) {
-      if (pivIsLeft === freeIsRight) {
-        // Geometry now agrees with user's chosen key — validated, clear flag
+      var _rotDelta = Math.abs(rot - (this._pivotUserSetRot || 0));
+      // Normalize to [0, PI] range
+      _rotDelta = _rotDelta % (Math.PI * 2);
+      if (_rotDelta > Math.PI) _rotDelta = Math.PI * 2 - _rotDelta;
+      if (_rotDelta > 0.087) { // ~5 degrees
+        // User has actively rotated — clear suppression, let normalization work
         this._pivotUserSet = false;
+        this._pivotUserSetRot = undefined;
+      } else {
+        // Not enough rotation yet — suppress normalization
+        return currentKey;
       }
-      // Either way, don't flip while flag is set
-      return currentKey;
     }
     // No change if free end is already on the correct side
     if (pivIsLeft === freeIsRight) return currentKey;
