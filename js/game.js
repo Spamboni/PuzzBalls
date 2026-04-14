@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1715;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1716;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -785,6 +785,11 @@ class Game {
             self._editorScrollY=0;
             if(window.Sound&&Sound.uiTap)Sound.uiTap(0.25); return;
           }
+        }
+        // ── Note popup intercept — MUST be before all panel buttons ───────────
+        if (self._editorNotePopup && self._editorSelected) {
+          var _npHandled = self._handleNotePopupTap && self._handleNotePopupTap(_px, _py, self._editorSelected);
+          if (_npHandled) return;
         }
         // UNDO
         if (self._editorUndoBtn) {
@@ -5680,48 +5685,27 @@ class Game {
       this._editorMovable = b._movable || false;
       this._editorFlingable = b._flingable || false;
 
-      // ── Double-tap: duplicate brick with all attributes ─────────────────────
+      // ── Double-tap / Long-press detection ──────────────────────────────────
       var _now = performance.now();
       var _dtap = _now - (this._lastBrickTapTime || 0);
-      if (_dtap < 350 && this._lastBrickTapId === b.id) {
-        // Double tap detected — duplicate this brick
-        this._undoPush();
-        var _dup = (b instanceof CircularBrick)
-          ? new CircularBrick(b.x + 20, b.y + 20, b.r, b.maxHealth, 'brick_' + Date.now(), b.regenAfter)
-          : new BreakableBrick(b.x + 20, b.y + 20, b.w, b.h, b.maxHealth, 'brick_' + Date.now(), b.regenAfter);
-        _dup._rotation = b._rotation || 0;
-        _dup._movable = b._movable; _dup._flingable = b._flingable || false;
-        _dup._density = b._density; _dup._maxTravel = b._maxTravel;
-        _dup._decel = b._decel; _dup._rotSpeed = b._rotSpeed;
-        _dup._rotDecel = b._rotDecel; _dup._wallBounce = b._wallBounce;
-        _dup._invincible = b._invincible; _dup._noRegen = b._noRegen;
-        _dup._translateOnRotate = b._translateOnRotate;
-        _dup._pivot = b._pivot; _dup._pivotLocked = b._pivotLocked;
-        _dup._lenLocked = b._lenLocked; _dup._widLocked = b._widLocked; _dup._rotLocked = b._rotLocked;
-        _dup._spinDist = b._spinDist;
-        _dup._noteConfig = b._noteConfig ? JSON.parse(JSON.stringify(b._noteConfig)) : null;
-        _dup._vx = 0; _dup._vy = 0; _dup._angularV = 0;
-        _dup._spawnX = _dup.x; _dup._spawnY = _dup.y; _dup._spawnRot = _dup._rotation;
-        this.bricks.push(_dup);
-        EventManager.registerTarget(_dup.id, _dup);
-        this._editorSelected = _dup;
-        this._editorDragging = _dup;
-        this._editorDragOffX = 0; this._editorDragOffY = 0;
-        this._editorDraggingJustPlaced = true;
-        this._lastBrickTapTime = 0; // reset to prevent triple-tap
-        if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
-        return;
-      }
+      var _isMaybeDblTap = (_dtap < 400 && this._lastBrickTapId === b.id);
       this._lastBrickTapTime = _now;
       this._lastBrickTapId = b.id;
+      // Store pending double-tap — resolved on finger up (quick lift = duplicate, hold = note editor)
+      this._pendingBrickDoubleTap = _isMaybeDblTap ? { brick: b, downTime: _now } : null;
 
       // ── Long-press: open note editor (set up timer) ─────────────────────────
+      // Only fires if finger stays still for 600ms — cancelled by move or quick lift
+      var _self = this;
       this._brickLongPressTimer = setTimeout(function() {
-        if (this._editorSelected === b) {
-          this._editorNotePopup = true;
+        _self._brickLongPressTimer = null;
+        // Cancel any pending double-tap — this is a hold, not a quick tap
+        _self._pendingBrickDoubleTap = null;
+        if (_self._editorSelected === b) {
+          _self._editorNotePopup = true;
           if (window.Sound && Sound.uiTap) Sound.uiTap(0.15);
         }
-      }.bind(this), 600);
+      }, 600);
 
       // ── Per-brick pinned pivot: auto-activate pivot mode ───────────────────
       if (b._pivotLocked && !(b instanceof CircularBrick)) {
@@ -6467,6 +6451,41 @@ class Game {
     this._editorDraggingJustPlaced = false;
     // Clear long-press note timer (if it hasn't fired yet, we don't want it)
     if (this._brickLongPressTimer) { clearTimeout(this._brickLongPressTimer); this._brickLongPressTimer = null; }
+    // ── Deferred double-tap: duplicate brick if finger was quick ────────────
+    if (this._pendingBrickDoubleTap) {
+      var _pdt = this._pendingBrickDoubleTap;
+      this._pendingBrickDoubleTap = null;
+      var _holdTime = performance.now() - _pdt.downTime;
+      if (_holdTime < 300) {
+        // Quick second tap confirmed — duplicate
+        var b = _pdt.brick;
+        if (b && this.bricks.indexOf(b) >= 0) {
+          this._undoPush();
+          var _dup = (b instanceof CircularBrick)
+            ? new CircularBrick(b.x + 20, b.y + 20, b.r, b.maxHealth, 'brick_' + Date.now(), b.regenAfter)
+            : new BreakableBrick(b.x + 20, b.y + 20, b.w, b.h, b.maxHealth, 'brick_' + Date.now(), b.regenAfter);
+          _dup._rotation = b._rotation || 0;
+          _dup._movable = b._movable; _dup._flingable = b._flingable || false;
+          _dup._density = b._density; _dup._maxTravel = b._maxTravel;
+          _dup._decel = b._decel; _dup._rotSpeed = b._rotSpeed;
+          _dup._rotDecel = b._rotDecel; _dup._wallBounce = b._wallBounce;
+          _dup._invincible = b._invincible; _dup._noRegen = b._noRegen;
+          _dup._translateOnRotate = b._translateOnRotate;
+          _dup._pivot = b._pivot; _dup._pivotLocked = b._pivotLocked;
+          _dup._lenLocked = b._lenLocked; _dup._widLocked = b._widLocked; _dup._rotLocked = b._rotLocked;
+          _dup._spinDist = b._spinDist;
+          _dup._noteConfig = b._noteConfig ? JSON.parse(JSON.stringify(b._noteConfig)) : null;
+          _dup._vx = 0; _dup._vy = 0; _dup._angularV = 0;
+          _dup._spawnX = _dup.x; _dup._spawnY = _dup.y; _dup._spawnRot = _dup._rotation;
+          this.bricks.push(_dup);
+          EventManager.registerTarget(_dup.id, _dup);
+          this._editorSelected = _dup;
+          this._showBrickSettings = true;
+          this._lastBrickTapTime = 0; // reset to prevent triple-tap
+          if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
+        }
+      }
+    }
     this._editorPivotEndState = null;
     this._editorPivotBodyState = null;
     this._editorPivotTwoFingerStart = null;
@@ -7371,8 +7390,9 @@ class Game {
     this._editorDefaultBtn = btn(defMode?'CANCEL\nDEF':'DEFAULT', ppX+4, bpY+5+bRowH*2+8,
       bpW-8, bRowH*1.4, '#ffcc00', defMode, {fs:8});
 
-    // ── Note picker popup ─────────────────────────────────────────────────────
-    if (this._editorNotePopup && sb2) this._drawNotePopup(ctx, sb2);
+    // ── Note picker popup — drawn BEFORE zoom re-apply, but needs to be on top
+    // Store flag, draw after indicators ────────────────────────────────────────
+    var _drawNoteLater = this._editorNotePopup && sb2;
 
     // ── Re-apply zoom+pan for world-space brick indicators ────────────────
     var _edZ = this._viewZoom || 1;
@@ -7505,6 +7525,9 @@ class Game {
 
     // ── End zoom for world-space indicators ──────────────────────────────────
     if (_edZ !== 1 || _edPx !== 0 || _edPy !== 0) ctx.restore();
+
+    // ── Note picker popup — drawn last, on top of everything ─────────────────
+    if (_drawNoteLater) this._drawNotePopup(ctx, sb2);
 
     ctx.filter = 'none';
     ctx.restore();
