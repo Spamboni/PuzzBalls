@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1713;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1714;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -254,11 +254,13 @@ class Game {
 
     // Build ball queue from level definition
     this.ballQueue = [];
-    ld.balls.forEach(function(entry) {
-      for (var c = 0; c < entry.count; c++) {
-        self.ballQueue.push(entry.type);
-      }
-    });
+    if (ld.balls && ld.balls.length) {
+      ld.balls.forEach(function(entry) {
+        for (var c = 0; c < entry.count; c++) {
+          self.ballQueue.push(entry.type);
+        }
+      });
+    }
 
     // Chute: starts EMPTY — player drops balls via chute buttons
     this.objects = [];
@@ -5655,6 +5657,49 @@ class Game {
       this._editorMovable = b._movable || false;
       this._editorFlingable = b._flingable || false;
 
+      // ── Double-tap: duplicate brick with all attributes ─────────────────────
+      var _now = performance.now();
+      var _dtap = _now - (this._lastBrickTapTime || 0);
+      if (_dtap < 350 && this._lastBrickTapId === b.id) {
+        // Double tap detected — duplicate this brick
+        this._undoPush();
+        var _dup = (b instanceof CircularBrick)
+          ? new CircularBrick(b.x + 20, b.y + 20, b.r, b.maxHealth, 'brick_' + Date.now(), b.regenAfter)
+          : new BreakableBrick(b.x + 20, b.y + 20, b.w, b.h, b.maxHealth, 'brick_' + Date.now(), b.regenAfter);
+        _dup._rotation = b._rotation || 0;
+        _dup._movable = b._movable; _dup._flingable = b._flingable || false;
+        _dup._density = b._density; _dup._maxTravel = b._maxTravel;
+        _dup._decel = b._decel; _dup._rotSpeed = b._rotSpeed;
+        _dup._rotDecel = b._rotDecel; _dup._wallBounce = b._wallBounce;
+        _dup._invincible = b._invincible; _dup._noRegen = b._noRegen;
+        _dup._translateOnRotate = b._translateOnRotate;
+        _dup._pivot = b._pivot; _dup._pivotLocked = b._pivotLocked;
+        _dup._lenLocked = b._lenLocked; _dup._widLocked = b._widLocked; _dup._rotLocked = b._rotLocked;
+        _dup._spinDist = b._spinDist;
+        _dup._noteConfig = b._noteConfig ? JSON.parse(JSON.stringify(b._noteConfig)) : null;
+        _dup._vx = 0; _dup._vy = 0; _dup._angularV = 0;
+        _dup._spawnX = _dup.x; _dup._spawnY = _dup.y; _dup._spawnRot = _dup._rotation;
+        this.bricks.push(_dup);
+        EventManager.registerTarget(_dup.id, _dup);
+        this._editorSelected = _dup;
+        this._editorDragging = _dup;
+        this._editorDragOffX = 0; this._editorDragOffY = 0;
+        this._editorDraggingJustPlaced = true;
+        this._lastBrickTapTime = 0; // reset to prevent triple-tap
+        if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
+        return;
+      }
+      this._lastBrickTapTime = _now;
+      this._lastBrickTapId = b.id;
+
+      // ── Long-press: open note editor (set up timer) ─────────────────────────
+      this._brickLongPressTimer = setTimeout(function() {
+        if (this._editorSelected === b) {
+          this._editorNotePopup = true;
+          if (window.Sound && Sound.uiTap) Sound.uiTap(0.15);
+        }
+      }.bind(this), 600);
+
       // ── Per-brick pinned pivot: auto-activate pivot mode ───────────────────
       if (b._pivotLocked && !(b instanceof CircularBrick)) {
         this._pivotActivatedByPin = !this._editorPivotActive; // track if WE activated it
@@ -6144,6 +6189,8 @@ class Game {
   _editorOnMove(pos) {
     this._editorLastPushWasProvisional = false;  // movement confirmed — undo push is real
     this._editorDragInProgress = true;  // finger is still down and has moved
+    // Cancel long-press note editor on any movement
+    if (this._brickLongPressTimer) { clearTimeout(this._brickLongPressTimer); this._brickLongPressTimer = null; }
     // Slider drag in panel area
     if (this._editorDragSlider) {
       var sl = this._editorDragSlider;
@@ -6395,6 +6442,8 @@ class Game {
     this._editorLastPushWasProvisional = false;
     this._editorDragInProgress = false;
     this._editorDraggingJustPlaced = false;
+    // Clear long-press note timer (if it hasn't fired yet, we don't want it)
+    if (this._brickLongPressTimer) { clearTimeout(this._brickLongPressTimer); this._brickLongPressTimer = null; }
     this._editorPivotEndState = null;
     this._editorPivotBodyState = null;
     this._editorPivotTwoFingerStart = null;
@@ -7531,6 +7580,10 @@ class Game {
         nameBtn.style.cssText = "flex:1;font-family:'Share Tech Mono',monospace;font-size:11px;color:#00e5ff;background:rgba(0,150,200,0.1);border:1px solid rgba(0,200,255,0.3);border-radius:4px;padding:10px 12px;cursor:pointer;display:flex;align-items:center;";
         nameBtn.addEventListener('click', function() {
           document.body.removeChild(overlay);
+          // Close editor before loading
+          self._editorMode = false; self._editorTubeMode = false;
+          self._editorSelected = null; self._editorScrollY = 0;
+          window._tubeEditorMode = false;
           self.loadLevel(lv);
           if (window.Sound && Sound.uiTap) Sound.uiTap(0.3);
         });
@@ -8074,8 +8127,7 @@ class Game {
   _drawNotePopup(ctx, brick) {
     var W = this.W, H = this.H;
     var popW = W - 20, popX = 10;
-    var popH = 240, popY = this.floorY() - popH - 8;
-    if (popY < 80) popY = 80;
+    var popH = 240, popY = this.floorY() + 5;  // draw in panel area, below floor line
 
     // Backdrop
     ctx.fillStyle = 'rgba(0,5,18,0.96)';
@@ -8297,7 +8349,7 @@ class Game {
     }
     // Check if tap is inside the popup area at all — consume it to prevent brick placement behind
     var popW = this.W - 20, popX = 10;
-    var popH = 240, popY = this.floorY() - popH - 8;
+    var popH = 240, popY = this.floorY() + 5;
     if (popY < 80) popY = 80;
     if (px >= popX && px <= popX + popW && py >= popY && py <= popY + popH + 40) return true;
     return false;
