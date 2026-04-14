@@ -528,7 +528,7 @@ class UI {
         pane.appendChild(resetSoundBtn);
       } else if (t.id === 'global') {
         _addSlider(pane,'Gravity','Settings','gravityMult',0.3,2.0,0.05,function(v){return Math.round(v*100)+'%';});
-        _addSlider(pane,'Physics Steps','Settings','maxSubSteps',1,12,1,function(v){return v+' steps/frame';});
+        _addSlider(pane,'Physics Steps','Settings','maxSubSteps',1,24,1,function(v){return v+' steps/frame';});
         _addSlider(pane,'Selection Ant March Speed','Settings','selectionDashSpeed',0.05,8.0,0.05,function(v){
           if(v<=0.1) return 'snail'; if(v<=0.5) return 'slow'; if(v<=1.5) return Math.round(v*100)+'%';
           if(v<=4) return 'fast'; return 'ludicrous';
