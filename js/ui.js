@@ -99,7 +99,7 @@ class UI {
 
   _buildSettingsPanel() {
     // Ensure globals exist before building any sliders that reference them
-    window.Settings      = window.Settings      || { gravityMult: 1.0, maxSubSteps: 3, selectionDashSpeed: 2.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:0, maxSplats:20 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
+    window.Settings      = window.Settings      || { gravityMult: 1.0, maxSubSteps: 8, selectionDashSpeed: 2.0, squiggly: { amp:18, freq:0.08, fade:0, delay:0, wave:'sine' }, splatter: { type:'goo', size:11, drips:3, duration:0, maxSplats:20 }, cube: { hp:4, spin:1.0, chaos:0.6, mass:1.4, size:1.0, orbSize:0.35, orbColor:'#ff3300', innerBallType:'gravity', innerBallSize:0.55, innerSpeedBoost:1.4, innerInvinc:30 } };
     window.AudioSettings = window.AudioSettings || { masterVol: 1.0, impactVol: 1.0, impactScaling: true, pitchScaling: true, explosionVol: 1.0 };
     window.BrickDefaults = window.BrickDefaults || {
       rectHP: 100, rectRegen: 2000, rectW: 70, rectH: 22,
