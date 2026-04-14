@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1693;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1694;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5339,7 +5339,9 @@ class Game {
     obj._invincible       = last._invincible || false;
     obj._noRegen          = last._noRegen    || false;
     obj._translateOnRotate= last._translateOnRotate !== undefined ? last._translateOnRotate : true;
-    obj._pivot            = last._pivot || 'MC';
+    obj._pivot            = (this._editorPivotActive || this._pivotLockKey)
+                              ? (this._pivotLockKey || this._editorPivot || 'MC')
+                              : (last._pivot || 'MC');
     obj._spawnX  = pos.x;
     obj._spawnY  = pos.y;
     obj._spawnRot= obj._rotation;
@@ -5354,6 +5356,17 @@ class Game {
     this._editorDragOffY    = 0;
     this._editorDraggingJustPlaced = true;  // suppress double undo on finger lift
     this._showBrickSettings = true;
+    // If pivot is active or locked, apply pivot key to the new brick and cache world pos
+    if (this._editorPivotActive || this._pivotLockKey) {
+      var _plPivKey = this._pivotLockKey || this._editorPivot || 'MC';
+      obj._pivot = _plPivKey;
+      var _plRot = obj._rotation || 0;
+      var _plOff = this._getPivotOffset(obj, _plPivKey);
+      this._editorPivotWorldX = obj.x + Math.cos(_plRot)*_plOff.x - Math.sin(_plRot)*_plOff.y;
+      this._editorPivotWorldY = obj.y + Math.sin(_plRot)*_plOff.x + Math.cos(_plRot)*_plOff.y;
+      this._editorPivotCachedFor = obj;
+      this._editorPivotCachedKey = _plPivKey;
+    }
     // Placement sound — soft thud
     if (window.Sound && Sound.getCtx) {
       var c = Sound.getCtx();
