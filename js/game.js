@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1682;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1683;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1344,30 +1344,29 @@ class Game {
             if(self._editorSelected){
               var b=self._editorSelected;
               var oldRot=b._rotation||0, newRot=v*Math.PI/180;
-              var piv=b._pivot||'MC';
-              var pOff=self._getPivotOffset(b,piv);
-              var pvX=b.x+Math.cos(oldRot)*pOff.x-Math.sin(oldRot)*pOff.y;
-              var pvY=b.y+Math.sin(oldRot)*pOff.x+Math.cos(oldRot)*pOff.y;
-              var pvX2=b.x+Math.cos(newRot)*pOff.x-Math.sin(newRot)*pOff.y;
-              var pvY2=b.y+Math.sin(newRot)*pOff.x+Math.cos(newRot)*pOff.y;
-              b.x+=pvX-pvX2; b.y+=pvY-pvY2;
+              // Use cached pivot world pos if pivot active (never drifts with key flips)
+              var pvX, pvY;
+              if ((self._editorPivotActive || self._pivotLockKey) && self._editorPivotWorldX !== undefined) {
+                pvX = self._editorPivotWorldX; pvY = self._editorPivotWorldY;
+              } else {
+                var piv=b._pivot||'MC'; var pOff=self._getPivotOffset(b,piv);
+                pvX=b.x+Math.cos(oldRot)*pOff.x-Math.sin(oldRot)*pOff.y;
+                pvY=b.y+Math.sin(oldRot)*pOff.x+Math.cos(oldRot)*pOff.y;
+              }
+              // Transform pivot to local space, rotate, compute new world pos, shift brick
+              var _pLX=pvX-b.x, _pLY=pvY-b.y;
+              var _cO=Math.cos(-oldRot),_sO=Math.sin(-oldRot);
+              var _lX=_cO*_pLX-_sO*_pLY, _lY=_sO*_pLX+_cO*_pLY;
+              var _cN=Math.cos(newRot),_sN=Math.sin(newRot);
+              b.x+=pvX-(b.x+_cN*_lX-_sN*_lY); b.y+=pvY-(b.y+_sN*_lX+_cN*_lY);
               b._rotation=newRot;
-              // Flip pivot key when the free end crosses the vertical line through pivot
-              if (self._editorPivotActive || self._pivotLockKey) {
-                var _pivWX = self._editorPivotWorldX;
-                if (_pivWX !== undefined) {
-                  var _slHW = (b.w||40)/2;
-                  var _slCol = (b._pivot||'MC').slice(-1);
-                  // Free end is opposite side from pivot column
-                  var _slFreeX = b.x + Math.cos(newRot) * _slHW * (_slCol === 'L' ? 1 : -1);
-                  if (Math.abs(_slFreeX - _pivWX) > 4) {
-                    var _newRotKey = self._normalizePivotKey(b, _pivWX, self._editorPivotWorldY, _slFreeX);
-                    if (_newRotKey !== b._pivot) {
-                      b._pivot = _newRotKey;
-                      self._editorPivot = _newRotKey;
-                      if (self._pivotLockKey) self._pivotLockKey = _newRotKey;
-                    }
-                  }
+              // Flip pivot key L<->R when free end crosses vertical line through pivot
+              if ((self._editorPivotActive||self._pivotLockKey) && pvX!==undefined) {
+                var _slHW=(b.w||40)/2, _slCol=(b._pivot||'MC').slice(-1);
+                var _slFreeX=b.x+Math.cos(newRot)*_slHW*(_slCol==='L'?1:-1);
+                if (Math.abs(_slFreeX-pvX)>4) {
+                  var _nrk=self._normalizePivotKey(b,pvX,pvY,_slFreeX);
+                  if (_nrk!==b._pivot){b._pivot=_nrk;self._editorPivot=_nrk;if(self._pivotLockKey)self._pivotLockKey=_nrk;}
                 }
               }
             }
@@ -5168,8 +5167,16 @@ class Game {
           return;
         } else {
           // Body tap — rotate only around pivot
+          // Store the local offset from center to pivot at drag start — never changes during drag
+          var _bodyPivOffX = _pvWX - b.x;  // world delta to pivot
+          var _bodyPivOffY = _pvWY - b.y;
+          // Transform to local (unrotated) space so we can re-apply after rotation
+          var _bCosR = Math.cos(-_bRot), _bSinR = Math.sin(-_bRot);
+          var _bodyLocalOffX = _bCosR*_bodyPivOffX - _bSinR*_bodyPivOffY;
+          var _bodyLocalOffY = _bSinR*_bodyPivOffX + _bCosR*_bodyPivOffY;
           this._editorPivotBodyState = {
             brick: b, pivotWX: _pvWX, pivotWY: _pvWY,
+            pivLocalX: _bodyLocalOffX, pivLocalY: _bodyLocalOffY,
             startAngle: Math.atan2(pos.y - _pvWY, pos.x - _pvWX),
             origRot: _bRot, origX: b.x, origY: b.y,
           };
@@ -5556,10 +5563,10 @@ class Game {
       var _newBodyRot = _pbs.origRot + _deltaBodyAngle;
       if (_snapDeg3 > 0) { var _sr3 = _snapDeg3*Math.PI/180; _newBodyRot = Math.round(_newBodyRot/_sr3)*_sr3; }
       _pbb._rotation = _newBodyRot;
-      // Keep pivot fixed: recenter brick
-      var _pOff3 = this._getPivotOffset(_pbb, _pbb._pivot || 'MC');
-      var _rotPOX3 = Math.cos(_newBodyRot)*_pOff3.x - Math.sin(_newBodyRot)*_pOff3.y;
-      var _rotPOY3 = Math.sin(_newBodyRot)*_pOff3.x + Math.cos(_newBodyRot)*_pOff3.y;
+      // Keep pivot fixed: recenter using stored local offset (never changes with key flips)
+      var _cosNBR = Math.cos(_newBodyRot), _sinNBR = Math.sin(_newBodyRot);
+      var _rotPOX3 = _cosNBR*_pbs.pivLocalX - _sinNBR*_pbs.pivLocalY;
+      var _rotPOY3 = _sinNBR*_pbs.pivLocalX + _cosNBR*_pbs.pivLocalY;
       _pbb.x = _pbs.pivotWX - _rotPOX3;
       _pbb.y = Math.min(_pbs.pivotWY - _rotPOY3, this.floorY() - (_pbb.h||10)/2 - 4);
       // Flip pivot key when the free end crosses the vertical line through pivot
