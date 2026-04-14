@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1687;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1688;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1983,11 +1983,14 @@ class Game {
             var _po = self._getPivotOffset(_sb, key);
             self._editorPivotWorldX = _sb.x + Math.cos(_pr)*_po.x - Math.sin(_pr)*_po.y;
             self._editorPivotWorldY = _sb.y + Math.sin(_pr)*_po.x + Math.cos(_pr)*_po.y;
+            self._editorPivotCachedFor = _sb;
+            self._editorPivotCachedKey = key;
             self._editorPivotSetRot = _pr;
           } else {
-            // No brick selected yet — clear cache; will be set when brick is tapped
             self._editorPivotWorldX = undefined;
             self._editorPivotWorldY = undefined;
+            self._editorPivotCachedFor = null;
+            self._editorPivotCachedKey = null;
           }
         }
         if (self._pivotLockKey) {
@@ -2002,6 +2005,8 @@ class Game {
           self._editorPivot = 'MC';
           self._editorPivotWorldX = undefined;
           self._editorPivotWorldY = undefined;
+          self._editorPivotCachedFor = null;
+          self._editorPivotCachedKey = null;
           if (self._editorSelected) self._editorSelected._pivot = 'MC';
         } else {
           self._editorPivotActive = true;
@@ -5126,14 +5131,19 @@ class Game {
         b._pivot = this._editorPivot;
       }
 
-      // Cache pivot world position — always use _editorPivot key (authoritative)
-      // Must happen AFTER pivot key is applied to brick above
+      // Cache pivot world position — only when pivot key changed or brick just selected
       if (this._editorPivotActive || this._pivotLockKey) {
         var _cpivKey = this._editorPivot || b._pivot || 'MC';
         var _cpivRot = b._rotation || 0;
-        var _cpivOff = this._getPivotOffset(b, _cpivKey);
-        this._editorPivotWorldX = b.x + Math.cos(_cpivRot)*_cpivOff.x - Math.sin(_cpivRot)*_cpivOff.y;
-        this._editorPivotWorldY = b.y + Math.sin(_cpivRot)*_cpivOff.x + Math.cos(_cpivRot)*_cpivOff.y;
+        var _prevCachedBrick = this._editorPivotCachedFor;
+        var _prevCachedKey = this._editorPivotCachedKey;
+        if (_prevCachedBrick !== b || _prevCachedKey !== _cpivKey || this._editorPivotWorldX === undefined) {
+          var _cpivOff = this._getPivotOffset(b, _cpivKey);
+          this._editorPivotWorldX = b.x + Math.cos(_cpivRot)*_cpivOff.x - Math.sin(_cpivRot)*_cpivOff.y;
+          this._editorPivotWorldY = b.y + Math.sin(_cpivRot)*_cpivOff.x + Math.cos(_cpivRot)*_cpivOff.y;
+          this._editorPivotCachedFor = b;
+          this._editorPivotCachedKey = _cpivKey;
+        }
       }
 
       // Push undo BEFORE modifying — captures state at start of this interaction
@@ -5572,6 +5582,7 @@ class Game {
         if (_newKey !== _pb._pivot) {
           _pb._pivot = _newKey;
           this._editorPivot = _newKey;
+          this._editorPivotCachedKey = _newKey;
           if (this._pivotLockKey) this._pivotLockKey = _newKey;
         }
       }
