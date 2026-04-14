@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1699;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1700;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -323,6 +323,9 @@ class Game {
             if (objDef._noteConfig) obj._noteConfig = objDef._noteConfig;
             if (objDef._pivot) obj._pivot = objDef._pivot;
             if (objDef._pivotLocked) obj._pivotLocked = true;
+            if (objDef._lenLocked) obj._lenLocked = true;
+            if (objDef._widLocked) obj._widLocked = true;
+            if (objDef._rotLocked) obj._rotLocked = true;
             if (objDef._translateOnRotate !== undefined) obj._translateOnRotate = objDef._translateOnRotate;
             if (objDef._spinDist !== undefined) obj._spinDist = objDef._spinDist;
             self.bricks.push(obj);
@@ -1328,6 +1331,7 @@ class Game {
             window.BrickDefaults = window.BrickDefaults||{}; window.BrickDefaults.rectW = v;
             if (!self._editorSelected) return;
             var b = self._editorSelected;
+            if (b._lenLocked) return;
             var bRot = b._rotation || 0;
             var pivK = b._pivot || 'MC';
             var oldW = b.w || 40;
@@ -1366,6 +1370,7 @@ class Game {
             window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;
             if (!self._editorSelected) return;
             var b = self._editorSelected;
+            if (b._widLocked) return;
             var bRot = b._rotation || 0;
             var pivK = b._pivot || 'MC';
             var _hasPivot = self._editorPivotActive || (b._pivotLocked);
@@ -1391,6 +1396,7 @@ class Game {
           { key:'rot',     apply:function(v){
             if(self._editorSelected){
               var b=self._editorSelected;
+              if (b._rotLocked) return;
               var oldRot=b._rotation||0, newRot=v*Math.PI/180;
               // Use cached pivot world pos if pivot active (never drifts with key flips)
               var pvX, pvY;
@@ -1500,10 +1506,38 @@ class Game {
         }
 
         if (!self._editorTubeMode) {
+        // Long-press on LEN/WID/ROT labels to lock/unlock dimensions
+        var _lockSliders = [
+          { key:'blen', prop:'_lenLocked', label:'LEN' },
+          { key:'bwid', prop:'_widLocked', label:'WID' },
+          { key:'rot',  prop:'_rotLocked', label:'ROT' }
+        ];
+        for (var _lsi=0; _lsi<_lockSliders.length; _lsi++) {
+          var _ls = _lockSliders[_lsi];
+          var _lsl = self._editorSliders && self._editorSliders[_ls.key];
+          if (!_lsl || !_lsl.lblX) continue;
+          if (_px>=_lsl.lblX && _px<=_lsl.lblX+_lsl.lblW && _py>=_lsl.lblY-4 && _py<=_lsl.lblY+_lsl.lblH+4) {
+            _clrPressState = { target:'dimlock_'+_ls.key, startTime:Date.now(), duration:700,
+              col:'#22dd66', btn:{x:_lsl.lblX, y:_lsl.lblY, w:_lsl.lblW, h:_lsl.lblH} };
+            self._clrPressState = _clrPressState;
+            _startClrTone('#22dd66');
+            (function(ls2) {
+              _startLongPress('dimlock_'+ls2.key, 700, function() {
+                _playClrConfirm();
+                if (self._editorSelected) {
+                  self._editorSelected[ls2.prop] = !self._editorSelected[ls2.prop];
+                }
+              });
+            })(_ls);
+            return;
+          }
+        }
         for (var sdi=0; sdi<sliderDefs.length; sdi++) {
           var sd2=sliderDefs[sdi];
           var sl2=self._editorSliders&&self._editorSliders[sd2.key];
           if (!sl2) continue;
+          // Block slider drag when locked
+          if (sl2.locked) continue;
           if (_px>=sl2.trackX-10&&_px<=sl2.trackX+sl2.trackW+10&&_py>=sl2.y-8&&_py<=sl2.y+sl2.h+8) {
             var t2=Math.max(0,Math.min(1,(_px-sl2.trackX)/sl2.trackW));
             var v2=sl2.min+t2*(sl2.max-sl2.min);
@@ -5007,7 +5041,7 @@ class Game {
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
                _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
-               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false, _lenLocked:b._lenLocked||false, _widLocked:b._widLocked||false, _rotLocked:b._rotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
@@ -5028,7 +5062,7 @@ class Game {
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
                _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
-               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false, _lenLocked:b._lenLocked||false, _widLocked:b._widLocked||false, _rotLocked:b._rotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
@@ -5049,7 +5083,7 @@ class Game {
       b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
       b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
       b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
-      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._translateOnRotate=s._translateOnRotate;
+      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._lenLocked=s._lenLocked||false; b._widLocked=s._widLocked||false; b._rotLocked=s._rotLocked||false; b._translateOnRotate=s._translateOnRotate;
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
     }).filter(Boolean);
@@ -5079,7 +5113,7 @@ class Game {
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
                _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
-               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false,
+               _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false, _lenLocked:b._lenLocked||false, _widLocked:b._widLocked||false, _rotLocked:b._rotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
     });
@@ -5099,7 +5133,7 @@ class Game {
       b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
       b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
       b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
-      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._translateOnRotate=s._translateOnRotate;
+      b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._lenLocked=s._lenLocked||false; b._widLocked=s._widLocked||false; b._rotLocked=s._rotLocked||false; b._translateOnRotate=s._translateOnRotate;
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
     }).filter(Boolean);
@@ -5278,9 +5312,9 @@ class Game {
         var _endHitR = Math.max(20, _hw * 0.4 + 8);
         var _distR = Math.hypot(pos.x - _endRX, pos.y - _endRY);
         var _distL = Math.hypot(pos.x - _endLX, pos.y - _endLY);
-        // Per-brick pinned pivot: tap near pivot point = drag whole brick (reposition)
+        // Tap near pivot point = drag whole brick (reposition)
         var _distToPiv = Math.hypot(pos.x - _pvWX, pos.y - _pvWY);
-        if (b._pivotLocked && _distToPiv < _endHitR) {
+        if (_distToPiv < _endHitR) {
           // Reposition drag — finger grabbed the pivot anchor point
           this._editorDragOffX = pos.x - b.x;
           this._editorDragOffY = pos.y - b.y;
@@ -5289,8 +5323,6 @@ class Game {
           this._editorPivotBodyState = null;
           return;
         }
-        var _distR = Math.hypot(pos.x - _endRX, pos.y - _endRY);
-        var _distL = Math.hypot(pos.x - _endLX, pos.y - _endLY);
         // Determine which end is the pivot end from world pos (not key label, which may be stale)
         // The pivot end is the one closer to _pvWX/Y
         var _distPivToR = Math.hypot(_pvWX - _endRX, _pvWY - _endRY);
@@ -5723,14 +5755,18 @@ class Game {
       _fingerDist = Math.min(900, _fingerDist);
       // Rotation: angle from pivot toward finger = direction of dragged end from pivot
       var _pivAngle = Math.atan2(_fpvY, _fpvX);
-      // If dragging left end: pivot→finger angle is reversed relative to brick axis
       var _newRot = (_pes.end === 'right') ? _pivAngle : _pivAngle + Math.PI;
       var _snapDeg2 = this._editorSnapDeg || 0;
       if (_snapDeg2 > 0) { var _sr2 = _snapDeg2*Math.PI/180; _newRot = Math.round(_newRot/_sr2)*_sr2; }
+      // Respect rotation lock — keep original rotation
+      if (_pb._rotLocked) _newRot = _pes.origRot;
       _pb._rotation = _newRot;
       // New width: pivot→finger = pivot→dragged-end distance
       var _ratio = _pes.pivDistAnchored / Math.max(1, _pes.pivDistDragged);
-      _pb.w = Math.max(12, Math.min(900, _fingerDist * (1 + _ratio)));
+      var _newW = Math.max(12, Math.min(900, _fingerDist * (1 + _ratio)));
+      // Respect length lock — keep original width
+      if (_pb._lenLocked) _newW = _pes.origW;
+      _pb.w = _newW;
       // Recompute pivot local offset from stored fractions (scales with current width)
       var _curHW = _pb.w / 2, _curHH = (_pb.h || 22) / 2;
       var _pivLocalX = _pes.pivFracX * _curHW;
@@ -5761,6 +5797,15 @@ class Game {
     // PIVOT BODY mode — rotate only around pivot, no length change
     if (this._editorPivotBodyState) {
       var _pbs = this._editorPivotBodyState, _pbb = _pbs.brick;
+      // Respect rotation lock — don't rotate, fall through to reposition
+      if (_pbb._rotLocked) {
+        // Convert body drag to reposition instead
+        this._editorDragOffX = pos.x - _pbb.x;
+        this._editorDragOffY = pos.y - _pbb.y;
+        this._editorDragging = _pbb;
+        this._editorPivotBodyState = null;
+        return;
+      }
       var _curBodyAngle = Math.atan2(pos.y - _pbs.pivotWY, pos.x - _pbs.pivotWX);
       var _deltaBodyAngle = _curBodyAngle - _pbs.startAngle;
       var _snapDeg3 = this._editorSnapDeg || 0;
@@ -5866,8 +5911,8 @@ class Game {
     this._editorDragging.x = nx;
     var maxBrickY = this.floorY() - (this._editorDragging.h || this._editorDragging.r || 15) / 2 - 4;
     this._editorDragging.y = Math.min(ny, maxBrickY);
-    // Update cached pivot world pos when dragging a pinned-pivot brick
-    if (this._editorDragging._pivotLocked && this._editorPivotCachedFor === this._editorDragging) {
+    // Update cached pivot world pos when dragging a brick with active pivot
+    if ((this._editorDragging._pivotLocked || this._editorPivotActive) && this._editorPivotCachedFor === this._editorDragging) {
       var _dpb = this._editorDragging;
       var _dpRot = _dpb._rotation || 0;
       var _dpOff = this._getPivotOffset(_dpb, _dpb._pivot || 'MC');
@@ -6068,14 +6113,28 @@ class Game {
       var t      = Math.max(0, Math.min(1, (val - min)/(max - min)));
       var col    = opts.col || '#00aaff';
       var grayed = opts.grayed || false;
+      var locked = opts.locked || false;
       var alpha2 = grayed ? 0.3 : 1.0;
       ctx.globalAlpha = alpha2;
 
-      // Label
-      ctx.fillStyle = '#88aacc';
+      // Label — green bg when locked
+      var lblX = x, lblY = y + (opts.rowH||22)/2 - 6, lblH = 12;
+      if (locked) {
+        ctx.fillStyle = 'rgba(30,180,70,0.3)';
+        ctx.beginPath(); ctx.roundRect(lblX, lblY, lblW2 - 2, lblH, 2); ctx.fill();
+        ctx.strokeStyle = '#22dd66'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.roundRect(lblX, lblY, lblW2 - 2, lblH, 2); ctx.stroke();
+        ctx.fillStyle = '#22dd66';
+      } else {
+        ctx.fillStyle = '#88aacc';
+      }
       ctx.font = "bold 8px '" + mono + "'";
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillText(label, x + 2, y + (opts.rowH||22)/2);
+
+      // Track — dimmed when locked
+      var trackAlpha = locked ? 0.35 : 1.0;
+      ctx.globalAlpha = alpha2 * trackAlpha;
 
       // Track — dark bg with crosshatch
       ctx.fillStyle = 'rgba(0,15,40,0.9)';
@@ -6085,31 +6144,27 @@ class Game {
       if (fillW > 0) {
         ctx.save();
         ctx.beginPath(); ctx.roundRect(trackX, trackY, fillW, trackH, 3); ctx.clip();
-        // Cross-hatch lines
         ctx.strokeStyle = col + '44'; ctx.lineWidth = 1;
         for (var xi = trackX - trackH; xi < trackX + fillW + trackH; xi += 5) {
           ctx.beginPath(); ctx.moveTo(xi, trackY); ctx.lineTo(xi + trackH, trackY + trackH); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(xi, trackY + trackH); ctx.lineTo(xi + trackH, trackY); ctx.stroke();
         }
-        // Lighter fill overlay
         ctx.fillStyle = col + '22';
         ctx.fillRect(trackX, trackY, fillW, trackH);
         ctx.restore();
       }
-      // Track border glow
       ctx.strokeStyle = col + (grayed ? '33' : '88'); ctx.lineWidth = 1;
       ctx.shadowColor = col; ctx.shadowBlur = grayed ? 0 : 4;
       ctx.beginPath(); ctx.roundRect(trackX, trackY, trackW, trackH, 3); ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Thumb — rect with grip lines
+      // Thumb
       var thumbX = trackX + trackW * t - thumbW/2;
-      ctx.fillStyle = grayed ? '#334455' : col;
-      ctx.shadowColor = col; ctx.shadowBlur = grayed ? 0 : 8;
+      ctx.fillStyle = grayed ? '#334455' : locked ? '#556666' : col;
+      ctx.shadowColor = col; ctx.shadowBlur = (grayed||locked) ? 0 : 8;
       ctx.beginPath(); ctx.roundRect(thumbX, trackY - (thumbH-trackH)/2, thumbW, thumbH, 2); ctx.fill();
       ctx.shadowBlur = 0;
-      // Grip lines on thumb
-      if (!grayed) {
+      if (!grayed && !locked) {
         ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
         for (var gi = -2; gi <= 2; gi += 2) {
           ctx.beginPath();
@@ -6119,13 +6174,15 @@ class Game {
         }
       }
 
+      ctx.globalAlpha = alpha2;
+
       // VAL window
       var valText = _fmtVal(label, val, opts);
       ctx.fillStyle = 'rgba(0,10,30,0.9)';
       ctx.beginPath(); ctx.roundRect(trackX + trackW + 2, y + (opts.rowH||22)/2 - 8, valW, 16, 2); ctx.fill();
       ctx.strokeStyle = col + '55'; ctx.lineWidth = 0.8;
       ctx.beginPath(); ctx.roundRect(trackX + trackW + 2, y + (opts.rowH||22)/2 - 8, valW, 16, 2); ctx.stroke();
-      ctx.fillStyle = col; ctx.font = "bold 7px '" + mono + "'";
+      ctx.fillStyle = locked ? '#22dd66' : col; ctx.font = "bold 7px '" + mono + "'";
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(valText, trackX + trackW + 2 + valW/2, y + (opts.rowH||22)/2);
 
@@ -6133,7 +6190,8 @@ class Game {
       return { x: trackX, y: trackY - 4, w: trackW, h: trackH + 8,
                trackX: trackX, trackW: trackW, min: min, max: max,
                valX: trackX+trackW+2, valY: y+(opts.rowH||22)/2-8, valW: valW, valH: 16,
-               label: label };
+               lblX: lblX, lblY: lblY, lblW: lblW2 - 2, lblH: lblH,
+               label: label, locked: locked };
     }
 
     function _fmtVal(label, val, opts) {
@@ -6411,12 +6469,39 @@ class Game {
 
     if (!ph1.collapsed) {
       var p1W2 = Math.floor((contentW-4)/2);
-      this._editorSliders.blen = slider('LEN', LENval, 5, 450, padding, cY, p1W2, {rowH:slRH,col:'#00ccff'});
-      this._editorSliders.bwid = slider('WID', WIDval, 2, 450, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff'});
+      var _lenLk = (sb2 && sb2._lenLocked) || false;
+      var _widLk = (sb2 && sb2._widLocked) || false;
+      var _rotLk = (sb2 && sb2._rotLocked) || false;
+      this._editorSliders.blen = slider('LEN', LENval, 5, 450, padding, cY, p1W2, {rowH:slRH,col:'#00ccff',locked:_lenLk});
+      this._editorSliders.bwid = slider('WID', WIDval, 2, 450, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff',locked:_widLk});
+      // Fill-bar on LEN/WID/ROT labels during long-press
+      var _cpsDim = this._clrPressState;
+      var _dimLockSliders = { 'dimlock_blen': this._editorSliders.blen, 'dimlock_bwid': this._editorSliders.bwid };
+      for (var _dlk in _dimLockSliders) {
+        if (_cpsDim && _cpsDim.target === _dlk && _dimLockSliders[_dlk]) {
+          var _dls = _dimLockSliders[_dlk];
+          var _dlProg = Math.min(1, (Date.now() - _cpsDim.startTime) / 700);
+          ctx.save();
+          ctx.beginPath(); ctx.roundRect(_dls.lblX, _dls.lblY, _dls.lblW * _dlProg, _dls.lblH, 2); ctx.clip();
+          ctx.fillStyle = 'rgba(30,220,90,0.45)';
+          ctx.fillRect(_dls.lblX, _dls.lblY, _dls.lblW, _dls.lblH);
+          ctx.restore();
+        }
+      }
       cY += slRH + slGap;
 
       var rotW2 = Math.floor((contentW)*0.6);
-      this._editorSliders.rot = slider('ROT', ROTval, -180, 180, padding, cY, rotW2, {rowH:slRH,col:'#cc44ff'});
+      this._editorSliders.rot = slider('ROT', ROTval, -180, 180, padding, cY, rotW2, {rowH:slRH,col:'#cc44ff',locked:_rotLk});
+      // Fill-bar on ROT label during long-press
+      if (_cpsDim && _cpsDim.target === 'dimlock_rot' && this._editorSliders.rot) {
+        var _rlS = this._editorSliders.rot;
+        var _rlProg = Math.min(1, (Date.now() - _cpsDim.startTime) / 700);
+        ctx.save();
+        ctx.beginPath(); ctx.roundRect(_rlS.lblX, _rlS.lblY, _rlS.lblW * _rlProg, _rlS.lblH, 2); ctx.clip();
+        ctx.fillStyle = 'rgba(30,220,90,0.45)';
+        ctx.fillRect(_rlS.lblX, _rlS.lblY, _rlS.lblW, _rlS.lblH);
+        ctx.restore();
+      }
       // pivot grid beside rotation slider — controls the point the brick rotates around
       var rPivX = padding+rotW2+6, rPivY = cY+2;
       var rpW=14, rpG=2;
@@ -6770,22 +6855,64 @@ class Game {
     // ── Note picker popup ─────────────────────────────────────────────────────
     if (this._editorNotePopup && sb2) this._drawNotePopup(ctx, sb2);
 
-    // ── Pinned-pivot crosshairs on ALL pinned bricks ────────────────────────
+    // ── Per-brick visual indicators: pinned pivots + locked dimensions ───────
     for (var _pbi = 0; _pbi < this.bricks.length; _pbi++) {
       var _pb = this.bricks[_pbi];
-      if (!_pb._pivotLocked || _pb === this._editorSelected) continue;
       if (_pb instanceof CircularBrick) continue;
       var _pbRot = _pb._rotation || 0;
-      var _pbOff = this._getPivotOffset(_pb, _pb._pivot || 'MC');
-      var _pbPvX = _pb.x + Math.cos(_pbRot)*_pbOff.x - Math.sin(_pbRot)*_pbOff.y;
-      var _pbPvY = _pb.y + Math.sin(_pbRot)*_pbOff.x + Math.cos(_pbRot)*_pbOff.y;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(34,221,102,0.5)'; ctx.lineWidth = 1;
-      ctx.shadowColor = '#22dd66'; ctx.shadowBlur = 4;
-      ctx.beginPath(); ctx.arc(_pbPvX, _pbPvY, 5, 0, Math.PI*2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(_pbPvX-7,_pbPvY); ctx.lineTo(_pbPvX+7,_pbPvY);
-      ctx.moveTo(_pbPvX,_pbPvY-7); ctx.lineTo(_pbPvX,_pbPvY+7); ctx.stroke();
-      ctx.shadowBlur = 0; ctx.restore();
+      var _pbHW = (_pb.w || 40) / 2, _pbHH = (_pb.h || 22) / 2;
+      var _cosB = Math.cos(_pbRot), _sinB = Math.sin(_pbRot);
+      // Locked dimension edge glows
+      var _hasLock = _pb._lenLocked || _pb._widLocked || _pb._rotLocked;
+      if (_hasLock) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(34,221,102,0.45)'; ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#22dd66'; ctx.shadowBlur = 4;
+        if (_pb._lenLocked) {
+          // Tick marks at both short ends (left end and right end)
+          var _reX = _pb.x + _cosB*_pbHW, _reY = _pb.y + _sinB*_pbHW;
+          var _leX = _pb.x - _cosB*_pbHW, _leY = _pb.y - _sinB*_pbHW;
+          var _perpX = -_sinB * _pbHH * 0.7, _perpY = _cosB * _pbHH * 0.7;
+          ctx.beginPath();
+          ctx.moveTo(_reX-_perpX, _reY-_perpY); ctx.lineTo(_reX+_perpX, _reY+_perpY);
+          ctx.moveTo(_leX-_perpX, _leY-_perpY); ctx.lineTo(_leX+_perpX, _leY+_perpY);
+          ctx.stroke();
+        }
+        if (_pb._widLocked) {
+          // Tick marks on both long edges (top and bottom)
+          var _axX = _cosB * _pbHW * 0.7, _axY = _sinB * _pbHW * 0.7;
+          var _topCX = _pb.x - _sinB*_pbHH, _topCY = _pb.y + _cosB*_pbHH;
+          var _botCX = _pb.x + _sinB*_pbHH, _botCY = _pb.y - _cosB*_pbHH;
+          ctx.beginPath();
+          ctx.moveTo(_topCX-_axX, _topCY-_axY); ctx.lineTo(_topCX+_axX, _topCY+_axY);
+          ctx.moveTo(_botCX-_axX, _botCY-_axY); ctx.lineTo(_botCX+_axX, _botCY+_axY);
+          ctx.stroke();
+        }
+        if (_pb._rotLocked) {
+          // Small arc with line through it near center
+          var _arcR = Math.min(8, _pbHH * 0.6);
+          ctx.beginPath(); ctx.arc(_pb.x, _pb.y, _arcR, _pbRot - 0.8, _pbRot + 0.8); ctx.stroke();
+          // Strike-through line
+          ctx.beginPath();
+          ctx.moveTo(_pb.x - _cosB*_arcR*0.7, _pb.y - _sinB*_arcR*0.7);
+          ctx.lineTo(_pb.x + _cosB*_arcR*0.7, _pb.y + _sinB*_arcR*0.7);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0; ctx.restore();
+      }
+      // Pinned-pivot crosshair (skip selected brick — it gets its own brighter one)
+      if (_pb._pivotLocked && _pb !== this._editorSelected) {
+        var _pbOff = this._getPivotOffset(_pb, _pb._pivot || 'MC');
+        var _pbPvX = _pb.x + _cosB*_pbOff.x - _sinB*_pbOff.y;
+        var _pbPvY = _pb.y + _sinB*_pbOff.x + _cosB*_pbOff.y;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(34,221,102,0.5)'; ctx.lineWidth = 1;
+        ctx.shadowColor = '#22dd66'; ctx.shadowBlur = 4;
+        ctx.beginPath(); ctx.arc(_pbPvX, _pbPvY, 5, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(_pbPvX-7,_pbPvY); ctx.lineTo(_pbPvX+7,_pbPvY);
+        ctx.moveTo(_pbPvX,_pbPvY-7); ctx.lineTo(_pbPvX,_pbPvY+7); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.restore();
+      }
     }
 
     // ── Selected brick highlight ──────────────────────────────────────────────
@@ -6871,6 +6998,7 @@ class Game {
           _wallBounce: b._wallBounce, _invincible: b._invincible || false,
           _noRegen: b._noRegen || false, _noteConfig: b._noteConfig || null,
           _pivot: b._pivot || 'MC', _pivotLocked: b._pivotLocked || false,
+          _lenLocked: b._lenLocked || false, _widLocked: b._widLocked || false, _rotLocked: b._rotLocked || false,
           _translateOnRotate: b._translateOnRotate,
           _spinDist: b._spinDist,
           id: b.id || ('b_' + Math.random().toString(36).slice(2,8))
