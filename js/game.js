@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1691;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1692;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -894,6 +894,8 @@ class Game {
                     self._pivotLockKey = key;
                     self._editorPivotActive = false;  // turn off any blue button
                     self._editorPivot = 'MC';
+                    self._pivotUserSet = false;
+                    self._pivotUserSetSide = undefined;
                     if (self._editorSelected) self._editorSelected._pivot = 'MC';
                   }
                 });
@@ -2009,6 +2011,7 @@ class Game {
             self._editorPivotActive = true;
             self._editorPivot = _tapKey;
             if (self._editorSelected) { self._editorSelected._pivot = _tapKey; _cachePivotWorld(_tapKey); }
+            self._pivotUserSet = true;
           }
         } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
           self._editorPivotActive = false;
@@ -2017,11 +2020,14 @@ class Game {
           self._editorPivotWorldY = undefined;
           self._editorPivotCachedFor = null;
           self._editorPivotCachedKey = null;
+          self._pivotUserSet = false;
+          self._pivotUserSetSide = undefined;
           if (self._editorSelected) self._editorSelected._pivot = 'MC';
         } else {
           self._editorPivotActive = true;
           self._editorPivot = _tapKey;
           if (self._editorSelected) { self._editorSelected._pivot = _tapKey; _cachePivotWorld(_tapKey); }
+          self._pivotUserSet = true;
         }
         self._editorPivotEndState = null;
         self._editorPivotBodyState = null;
@@ -3252,8 +3258,20 @@ class Game {
     // Compute free end X if not provided
     var freeX = (freeEndX !== undefined) ? freeEndX
       : ((col==='L') ? brick.x+Math.cos(rot)*hw : brick.x-Math.cos(rot)*hw);
-    // Determine if free end is to the right of pivot (with small hysteresis)
     var freeIsRight = (freeX >= pivotWX);
+    // After a user button tap, capture the current free-end side as baseline
+    // and suppress normalization until the free end genuinely crosses to the other side
+    if (this._pivotUserSet) {
+      this._pivotUserSetSide = freeIsRight ? 1 : -1;
+      this._pivotUserSet = false;
+      return currentKey;
+    }
+    if (this._pivotUserSetSide !== undefined) {
+      var curSide = freeIsRight ? 1 : -1;
+      if (curSide === this._pivotUserSetSide) return currentKey; // hasn't crossed yet
+      // Genuine cross — clear the baseline and proceed with normalization
+      this._pivotUserSetSide = undefined;
+    }
     var pivIsLeft = (col === 'L');
     // No change if free end is already on the correct side
     if (pivIsLeft === freeIsRight) return currentKey;
