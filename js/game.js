@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1689;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1690;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1978,14 +1978,24 @@ class Game {
         function _cachePivotWorld(key) {
           var _sb = self._editorSelected;
           if (_sb) {
-            _sb._pivot = key;  // apply key to brick first
-            var _pr = _sb._rotation || 0;
-            var _po = self._getPivotOffset(_sb, key);
-            self._editorPivotWorldX = _sb.x + Math.cos(_pr)*_po.x - Math.sin(_pr)*_po.y;
-            self._editorPivotWorldY = _sb.y + Math.sin(_pr)*_po.x + Math.cos(_pr)*_po.y;
-            self._editorPivotCachedFor = _sb;
-            self._editorPivotCachedKey = key;
-            self._editorPivotSetRot = _pr;
+            var _prevKey = _sb._pivot;
+            _sb._pivot = key;
+            // Diagonal partners (TL<->BR, TR<->BL) are the same physical world point — reuse cache
+            var _diagMap = { 'TL':'BR','BR':'TL','TR':'BL','BL':'TR' };
+            if (_diagMap[_prevKey] === key && self._editorPivotWorldX !== undefined) {
+              // Same physical point, just relabeled — keep existing world pos
+              self._editorPivotCachedFor = _sb;
+              self._editorPivotCachedKey = key;
+            } else {
+              // New pivot selection — compute fresh from brick's current position
+              var _pr = _sb._rotation || 0;
+              var _po = self._getPivotOffset(_sb, key);
+              self._editorPivotWorldX = _sb.x + Math.cos(_pr)*_po.x - Math.sin(_pr)*_po.y;
+              self._editorPivotWorldY = _sb.y + Math.sin(_pr)*_po.x + Math.cos(_pr)*_po.y;
+              self._editorPivotCachedFor = _sb;
+              self._editorPivotCachedKey = key;
+              self._editorPivotSetRot = _pr;
+            }
           } else {
             self._editorPivotWorldX = undefined;
             self._editorPivotWorldY = undefined;
@@ -5131,19 +5141,35 @@ class Game {
         b._pivot = this._editorPivot;
       }
 
-      // Cache pivot world position — only when pivot key changed or brick just selected
+      // Cache pivot world position — diagonal partners (TL<->BR, TR<->BL) share same world point
       if (this._editorPivotActive || this._pivotLockKey) {
         var _cpivKey = this._editorPivot || b._pivot || 'MC';
         var _cpivRot = b._rotation || 0;
         var _prevCachedBrick = this._editorPivotCachedFor;
         var _prevCachedKey = this._editorPivotCachedKey;
-        if (_prevCachedBrick !== b || _prevCachedKey !== _cpivKey || this._editorPivotWorldX === undefined) {
+        var _d2 = { 'TL':'BR','BR':'TL','TR':'BL','BL':'TR' };
+        var _isNewBrick = (_prevCachedBrick !== b);
+        var _isSameKey = (_prevCachedKey === _cpivKey);
+        var _isDiag = (_d2[_prevCachedKey] === _cpivKey);
+        if (this._editorPivotWorldX === undefined || _isNewBrick) {
+          // No cache or new brick — compute fresh
           var _cpivOff = this._getPivotOffset(b, _cpivKey);
           this._editorPivotWorldX = b.x + Math.cos(_cpivRot)*_cpivOff.x - Math.sin(_cpivRot)*_cpivOff.y;
           this._editorPivotWorldY = b.y + Math.sin(_cpivRot)*_cpivOff.x + Math.cos(_cpivRot)*_cpivOff.y;
           this._editorPivotCachedFor = b;
           this._editorPivotCachedKey = _cpivKey;
+        } else if (_isDiag) {
+          // Diagonal partner — same physical world point, just update label
+          this._editorPivotCachedKey = _cpivKey;
+        } else if (!_isSameKey) {
+          // Different non-diagonal pivot — compute fresh
+          var _cpivOff2 = this._getPivotOffset(b, _cpivKey);
+          this._editorPivotWorldX = b.x + Math.cos(_cpivRot)*_cpivOff2.x - Math.sin(_cpivRot)*_cpivOff2.y;
+          this._editorPivotWorldY = b.y + Math.sin(_cpivRot)*_cpivOff2.x + Math.cos(_cpivRot)*_cpivOff2.y;
+          this._editorPivotCachedFor = b;
+          this._editorPivotCachedKey = _cpivKey;
         }
+        // else: same key, same brick — keep existing cache unchanged
       }
 
       // Push undo BEFORE modifying — captures state at start of this interaction
