@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1714;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1715;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1991,6 +1991,15 @@ class Game {
         var zoomDelta = pinchDist / self._playPinchStartDist;
         var newZoom = Math.max(0.25, Math.min(1.0, self._playPinchStartZoom * zoomDelta));
         self._viewZoom = newZoom;
+        // Re-clamp pan for new zoom level
+        if (newZoom < 1 && (self._viewPanX || self._viewPanY)) {
+          var _rpMaxX = self.W * (1/newZoom - 1) * newZoom;
+          var _rpMaxY = self.floorY() * (1/newZoom - 1) * newZoom;
+          self._viewPanX = Math.max(0, Math.min(_rpMaxX, self._viewPanX || 0));
+          self._viewPanY = Math.max(0, Math.min(_rpMaxY, self._viewPanY || 0));
+        } else if (newZoom >= 1) {
+          self._viewPanX = 0; self._viewPanY = 0;
+        }
         return;
       }
       if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
@@ -2125,8 +2134,22 @@ class Game {
         // Pan drag — one-finger drag in pan mode
         if (self._viewPanDrag) {
           var _pd = self._viewPanDrag;
-          self._viewPanX = _pd.origPanX + (pos.x - _pd.startX);
-          self._viewPanY = _pd.origPanY + (pos.y - _pd.startY);
+          var _newPanX = _pd.origPanX + (pos.x - _pd.startX);
+          var _newPanY = _pd.origPanY + (pos.y - _pd.startY);
+          // Clamp pan so world stays within zoom boundaries
+          var _pz = self._viewZoom || 1;
+          if (_pz < 1) {
+            // At zoom z, world extends (1-1/z)*dim beyond the anchor in each direction
+            // Max pan = how far the expanded world can shift before detaching
+            var _maxPanX = self.W * (1/_pz - 1) * _pz;   // rightward limit
+            var _maxPanY = self.floorY() * (1/_pz - 1) * _pz; // downward limit
+            _newPanX = Math.max(0, Math.min(_maxPanX, _newPanX));
+            _newPanY = Math.max(0, Math.min(_maxPanY, _newPanY));
+          } else {
+            _newPanX = 0; _newPanY = 0; // no panning at zoom 1
+          }
+          self._viewPanX = _newPanX;
+          self._viewPanY = _newPanY;
           return;
         }
         // Universal scroll — promote pending to active after 6px, then scroll
