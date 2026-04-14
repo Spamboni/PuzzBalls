@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1678;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1679;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -893,8 +893,8 @@ class Game {
                     // Lock to this key — clear any existing blue pivot active state
                     self._pivotLockKey = key;
                     self._editorPivotActive = false;  // turn off any blue button
-                    self._editorPivot = 'CM';
-                    if (self._editorSelected) self._editorSelected._pivot = 'CM';
+                    self._editorPivot = 'MC';
+                    if (self._editorSelected) self._editorSelected._pivot = 'MC';
                   }
                 });
               })(_rpKey);
@@ -1306,7 +1306,7 @@ class Game {
             if (!self._editorSelected) return;
             var b = self._editorSelected;
             var bRot = b._rotation || 0;
-            var pivK = b._pivot || 'CM';
+            var pivK = b._pivot || 'MC';
             var oldW = b.w || 40;
             if (!self._editorPivotActive) {
               // No pivot mode — uniform resize keeping center
@@ -1344,7 +1344,7 @@ class Game {
             if(self._editorSelected){
               var b=self._editorSelected;
               var oldRot=b._rotation||0, newRot=v*Math.PI/180;
-              var piv=b._pivot||'CM';
+              var piv=b._pivot||'MC';
               var pOff=self._getPivotOffset(b,piv);
               var pvX=b.x+Math.cos(oldRot)*pOff.x-Math.sin(oldRot)*pOff.y;
               var pvY=b.y+Math.sin(oldRot)*pOff.x+Math.cos(oldRot)*pOff.y;
@@ -1979,8 +1979,8 @@ class Game {
         } else if (self._editorPivotActive && self._editorPivot === _tapKey) {
           // Same button, not locked — deactivate pivot
           self._editorPivotActive = false;
-          self._editorPivot = 'CM';
-          if (self._editorSelected) self._editorSelected._pivot = 'CM';
+          self._editorPivot = 'MC';
+          if (self._editorSelected) self._editorSelected._pivot = 'MC';
         } else {
           // New button or not active — activate
           self._editorPivotActive = true;
@@ -2224,7 +2224,7 @@ class Game {
         // Pivot rotation physics
         // translateOnRotate=true  → fixed pivot: brick ONLY rotates, pivot point never moves
         // translateOnRotate=false → free: brick translates AND rotates (pivot drifts with brick)
-        var pivStr2 = mbrick._pivot || 'CM';
+        var pivStr2 = mbrick._pivot || 'MC';
         if (mbrick._translateOnRotate !== false) {
           // ── FIXED PIVOT MODE ─────────────────────────────────────────────
           // Determine pivot offset in brick-local space
@@ -3188,7 +3188,7 @@ class Game {
     var hw = (brick.w || 40) / 2, hh = (brick.h || 22) / 2;
     var pMap = {
       'TL':{x:-hw,y:-hh},'TC':{x:0,y:-hh},'TR':{x:hw,y:-hh},
-      'ML':{x:-hw,y:0},  'CM':{x:0,y:0},   'MR':{x:hw,y:0},
+      'ML':{x:-hw,y:0},  'MC':{x:0,y:0},   'MR':{x:hw,y:0},
       'BL':{x:-hw,y:hh}, 'BC':{x:0,y:hh},  'BR':{x:hw,y:hh},
     };
     return pMap[pivot] || {x:0, y:0};
@@ -3197,23 +3197,28 @@ class Game {
   // Re-derive the correct pivot key after rotation so it always reflects visual position.
   // The pivot world point stays fixed; we reclassify which named slot it's in based on
   // where the brick's local axes now point in screen space.
-  _normalizePivotKey(brick, pivotWX, pivotWY) {
-    var rot = brick._rotation || 0;
-    var hw = (brick.w || 40) / 2, hh = (brick.h || 22) / 2;
-    // Transform pivot world pos into brick's current local space
-    var dx = pivotWX - brick.x, dy = pivotWY - brick.y;
-    var cosR = Math.cos(-rot), sinR = Math.sin(-rot);
-    var localX = cosR * dx - sinR * dy;
-    var localY = sinR * dx + cosR * dy;
-    // Classify along X: left/center/right with threshold
-    var xThresh = hw * 0.4;
-    var col = (localX < -xThresh) ? 'L' : (localX > xThresh) ? 'R' : 'C';
-    // Classify along Y: top/middle/bottom
-    var yThresh = hh * 0.4;
-    var row = (localY < -yThresh) ? 'T' : (localY > yThresh) ? 'B' : 'M';
-    // CM special case
-    if (col === 'C' && row === 'M') return 'CM';
-    return row + col;
+  // Re-derive pivot key after rotation — only swaps L<->R column.
+  // C-column buttons (TC, MC, BC) never switch; row (T/M/B) never switches.
+  // The swap is based on whether the dragged end is visually left or right of the pivot.
+  _normalizePivotKey(brick, pivotWX, pivotWY, draggedEndWX) {
+    var currentKey = brick._pivot || 'MC';
+    var col = currentKey[currentKey.length - 1]; // L, C, or R
+    if (col === 'C') return currentKey;          // C-column never changes
+    var row = currentKey.slice(0, currentKey.length - 1); // T, M, or B
+    // Use screen-space X position of dragged end vs pivot to determine L or R
+    var refX;
+    if (draggedEndWX !== undefined) {
+      refX = draggedEndWX;
+    } else {
+      // Infer from current brick orientation — which end is on the 'col' side?
+      var _rot = brick._rotation || 0;
+      var _hw = (brick.w || 40) / 2;
+      refX = (col === 'R')
+        ? brick.x + Math.cos(_rot) * _hw
+        : brick.x - Math.cos(_rot) * _hw;
+    }
+    var newCol = (refX >= pivotWX) ? 'R' : 'L';
+    return row + newCol;
   }
 
   // Try to unstick a sticky ball that was hit by another ball
@@ -5097,7 +5102,7 @@ class Game {
 
       // ── Pivot mode (activated via rot pivot grid) ───────────────────────────
       if (this._editorPivotActive && !(b instanceof CircularBrick)) {
-        var _pivKey = b._pivot || 'CM';
+        var _pivKey = b._pivot || 'MC';
         var _pOff = this._getPivotOffset(b, _pivKey);
         var _bRot = b._rotation || 0;
         var _pvWX = b.x + Math.cos(_bRot)*_pOff.x - Math.sin(_bRot)*_pOff.y;
@@ -5222,7 +5227,7 @@ class Game {
     obj._invincible       = last._invincible || false;
     obj._noRegen          = last._noRegen    || false;
     obj._translateOnRotate= last._translateOnRotate !== undefined ? last._translateOnRotate : true;
-    obj._pivot            = last._pivot || 'CM';
+    obj._pivot            = last._pivot || 'MC';
     obj._spawnX  = pos.x;
     obj._spawnY  = pos.y;
     obj._spawnRot= obj._rotation;
@@ -5269,10 +5274,10 @@ class Game {
 
     // ── Pivot two-finger: ML/MR pivots allow independent end dragging ─────────
     if (this._editorPivotActive && !(sb instanceof CircularBrick)) {
-      var _pivK = sb._pivot || 'CM';
+      var _pivK = sb._pivot || 'MC';
       // Mid pivots (not locked to one end) support two-finger independent end drag
       // ML, MR = side midpoints; CM, TC, BC = center column (both ends free)
-      var _twoFingerPivots = { 'ML':true, 'MR':true, 'CM':true, 'TC':true, 'BC':true };
+      var _twoFingerPivots = { 'ML':true, 'MR':true, 'MC':true, 'TC':true, 'BC':true };
       if (_twoFingerPivots[_pivK]) {
         // Cancel any in-progress single-finger end drag — upgrade to two-finger
         if (this._editorPivotEndState) {
@@ -5499,18 +5504,12 @@ class Game {
       // Center = midpoint between anchored end and dragged finger
       _pb.x = _pes.anchorWX + Math.cos(_axisAngle) * _newW / 2;
       _pb.y = Math.min(_pes.anchorWY + Math.sin(_axisAngle) * _newW / 2, this.floorY() - (_pb.h||10)/2 - 4);
-      // Re-derive pivot key so it always reflects visual position
-      var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY);
+      // Re-derive pivot key: only L<->R swap, based on dragged finger's screen X vs pivot X
+      var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x);
       if (_newKey !== _pb._pivot) {
         _pb._pivot = _newKey;
         this._editorPivot = _newKey;
         if (this._pivotLockKey) this._pivotLockKey = _newKey;
-        // Update anchor: it's the end opposite to the (possibly flipped) pivot
-        // Keep anchorWX/Y fixed — it doesn't change, only the label does
-        _pes.pivotWX = _pb.x + Math.cos(_newRot)*this._getPivotOffset(_pb,_newKey).x
-                              - Math.sin(_newRot)*this._getPivotOffset(_pb,_newKey).y;
-        _pes.pivotWY = _pb.y + Math.sin(_newRot)*this._getPivotOffset(_pb,_newKey).x
-                              + Math.cos(_newRot)*this._getPivotOffset(_pb,_newKey).y;
       }
       return;
     }
@@ -5525,7 +5524,7 @@ class Game {
       if (_snapDeg3 > 0) { var _sr3 = _snapDeg3*Math.PI/180; _newBodyRot = Math.round(_newBodyRot/_sr3)*_sr3; }
       _pbb._rotation = _newBodyRot;
       // Keep pivot fixed: recenter brick
-      var _pOff3 = this._getPivotOffset(_pbb, _pbb._pivot || 'CM');
+      var _pOff3 = this._getPivotOffset(_pbb, _pbb._pivot || 'MC');
       var _rotPOX3 = Math.cos(_newBodyRot)*_pOff3.x - Math.sin(_newBodyRot)*_pOff3.y;
       var _rotPOY3 = Math.sin(_newBodyRot)*_pOff3.x + Math.cos(_newBodyRot)*_pOff3.y;
       _pbb.x = _pbs.pivotWX - _rotPOX3;
@@ -6119,7 +6118,7 @@ class Game {
     // Pivot vars needed by TRANSFORM panel pivot grid
     var pivCols = ['L','C','R'], pivRows2 = ['T','M','B'];
     var pivColors3 = ['#ffcc44','#44ccff','#ff8844'];
-    var curPiv3 = sb2 ? (sb2._pivot||'CM') : (this._editorPivot||'CM');
+    var curPiv3 = sb2 ? (sb2._pivot||'MC') : (this._editorPivot||'MC');
     // Brick state vars needed by Physics panel
     var movActive2 = sb2 ? (sb2._movable||false) : (this._editorMovable||false);
     var transOn3   = sb2 ? (sb2._translateOnRotate!==false) : (this._editorTranslate!==false);
@@ -6162,7 +6161,7 @@ class Game {
       // pivot grid beside rotation slider — controls the point the brick rotates around
       var rPivX = padding+rotW2+6, rPivY = cY+2;
       var rpW=14, rpG=2;
-      var curRotPiv = sb2 ? (sb2._pivot||'CM') : (this._editorPivot||'CM');
+      var curRotPiv = sb2 ? (sb2._pivot||'MC') : (this._editorPivot||'MC');
       var _pivActive = this._editorPivotActive || false;
       var _pivLockKey = this._pivotLockKey || null;
       this._editorRotPivRects = [];
@@ -6175,7 +6174,7 @@ class Game {
           var rpAct = _pivActive && curRotPiv===rpKey;
           var rpLocked = (_pivLockKey === rpKey);
           // Lock state = red; active = normal color; inactive = dimmed
-          var rpCol = rpLocked ? '#ff2244' : (rpKey==='CM') ? '#ffcc44' : '#44ccff';
+          var rpCol = rpLocked ? '#ff2244' : (rpKey==='MC') ? '#ffcc44' : '#44ccff';
           ctx.globalAlpha = (_pivActive || rpLocked) ? 1.0 : 0.4;
           ctx.fillStyle = rpLocked ? 'rgba(255,20,50,0.25)' : rpAct ? rpCol+'44' : 'rgba(0,10,30,0.6)';
           ctx.beginPath(); ctx.roundRect(rpx,rpy,rpW2,rpH2,1); ctx.fill();
@@ -6401,7 +6400,7 @@ class Game {
     ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpGridW, gpGridH, 2); ctx.fill();
     ctx.strokeStyle = '#334455'; ctx.lineWidth = 0.6;
     ctx.beginPath(); ctx.roundRect(gpBoxX, gpBoxY, gpGridW, gpGridH, 2); ctx.stroke();
-    var curGridPiv = window._editorGridSnapPivot || 'CM';
+    var curGridPiv = window._editorGridSnapPivot || 'MC';
     var gridPivRows = ['T','M','B'], gridPivCols2 = ['L','C','R'];
     this._editorGridPivRects = [];
     for (var gpc = 0; gpc < 3; gpc++) {
@@ -6410,7 +6409,7 @@ class Game {
         var gpx2   = gpBoxX + 3 + gpc * (gpCellW + gpG);
         var gpy2   = gpBoxY + 3 + gpr * (gpCellH + gpG);
         var gpAct2 = curGridPiv === gpKey2;
-        var gpCol2 = (gpKey2 === 'CM') ? '#ffcc44' : '#44ccff';
+        var gpCol2 = (gpKey2 === 'MC') ? '#ffcc44' : '#44ccff';
         ctx.fillStyle   = gpAct2 ? gpCol2 + '44' : 'rgba(0,15,40,0.8)';
         ctx.beginPath(); ctx.roundRect(gpx2, gpy2, gpCellW, gpCellH, 1); ctx.fill();
         ctx.strokeStyle = gpAct2 ? gpCol2 : '#334455';
@@ -6469,7 +6468,7 @@ class Game {
         var pivKey = _pvRows[pr] + _pvCols[pc];  // row+col = TL,TC,TR,ML,CM,MR,BL,BC,BR
         var px9=pivX3+pc*(pW9+pG9), py9=pivY3+pr*(pW9*0.7+pG9);
         var pAct9=pivEnabled2&&curPiv3===pivKey;
-        var pCol9 = (pivKey==='CM') ? '#ffcc44' : '#44ccff';
+        var pCol9 = (pivKey==='MC') ? '#ffcc44' : '#44ccff';
         ctx.globalAlpha=pivEnabled2?1.0:0.28;
         ctx.fillStyle=pAct9?pCol9+'44':'rgba(0,10,30,0.6)';
         ctx.beginPath(); ctx.roundRect(px9,py9,pW9,pW9*0.7,2); ctx.fill();
@@ -6532,7 +6531,7 @@ class Game {
       ctx.restore(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
 
       if (this._editorRotateState || (this._editorSelected && (this._editorPivotActive || this._pivotLockKey))) {
-        var pivot4 = this._pivotLockKey || sb._pivot || 'CM';
+        var pivot4 = this._pivotLockKey || sb._pivot || 'MC';
         var pOff4  = this._getPivotOffset(sb, pivot4);
         var pvX4   = sb.x+Math.cos(sb._rotation||0)*pOff4.x-Math.sin(sb._rotation||0)*pOff4.y;
         var pvY4   = sb.y+Math.sin(sb._rotation||0)*pOff4.x+Math.cos(sb._rotation||0)*pOff4.y;
@@ -6582,7 +6581,7 @@ class Game {
           _rotSpeed: b._rotSpeed, _rotDecel: b._rotDecel,
           _wallBounce: b._wallBounce, _invincible: b._invincible || false,
           _noRegen: b._noRegen || false, _noteConfig: b._noteConfig || null,
-          _pivot: b._pivot || 'CM', _translateOnRotate: b._translateOnRotate,
+          _pivot: b._pivot || 'MC', _translateOnRotate: b._translateOnRotate,
           _spinDist: b._spinDist,
           id: b.id || ('b_' + Math.random().toString(36).slice(2,8))
         };
