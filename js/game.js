@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1690;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1691;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5213,12 +5213,15 @@ class Game {
           var _anchWY = (_hitEnd === 'right') ? _endLY : _endRY;
           var _ePivFracX = _pOffX / Math.max(1, _hw);
           var _ePivFracY = _pOffY / Math.max(1, _hh);
+          // Record which side of the pivot the finger starts on — only normalize when it crosses
+          var _startFpvX = pos.x - _pvWX;
           this._editorPivotEndState = {
             brick: b, end: _hitEnd,
             pivotWX: _pvWX, pivotWY: _pvWY,
             pivFracX: _ePivFracX, pivFracY: _ePivFracY,
             anchorWX: _anchWX, anchorWY: _anchWY,
             startFingerX: pos.x, startFingerY: pos.y,
+            startPivSide: (_startFpvX >= 0) ? 1 : -1,  // which side of pivot at drag start
             origW: b.w, origRot: _bRot, origX: b.x, origY: b.y,
             pivDistDragged: Math.max(1, _pivToEnd),
             pivDistAnchored: _pivToAnch,
@@ -5607,15 +5610,18 @@ class Game {
       var _rotPivY = _sinNR*_pivLocalX + _cosNR*_pivLocalY;
       _pb.x = _pes.pivotWX - _rotPivX;
       _pb.y = Math.min(_pes.pivotWY - _rotPivY, this.floorY() - _curHH - 4);
-      // Flip pivot key after minimum movement — pass finger pos for both axes
+      // Only flip pivot key when finger crosses to the OPPOSITE side from where drag started
       var _movedDist = Math.hypot(pos.x - _pes.startFingerX, pos.y - _pes.startFingerY);
-      if (_movedDist > 12 && Math.abs(_fpvX) > 4) {
+      var _curSide = (_fpvX >= 0) ? 1 : -1;
+      if (_movedDist > 12 && _curSide !== _pes.startPivSide) {
         var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x, pos.y);
         if (_newKey !== _pb._pivot) {
           _pb._pivot = _newKey;
           this._editorPivot = _newKey;
           this._editorPivotCachedKey = _newKey;
           if (this._pivotLockKey) this._pivotLockKey = _newKey;
+          // Update startPivSide so it can flip back on another crossing
+          _pes.startPivSide = _curSide;
         }
       }
       return;
