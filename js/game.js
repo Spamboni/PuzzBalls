@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1684;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1685;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5163,11 +5163,16 @@ class Game {
           // World position of the ANCHORED end — stays fixed throughout drag
           var _anchWX = (_hitEnd === 'right') ? _endLX : _endRX;
           var _anchWY = (_hitEnd === 'right') ? _endLY : _endRY;
+          // Store local offset from brick center to pivot (never changes, key-independent)
+          var _ePivLocalX = _pvWX - b.x, _ePivLocalY = _pvWY - b.y;
+          var _eCosR = Math.cos(-_bRot), _eSinR = Math.sin(-_bRot);
           this._editorPivotEndState = {
             brick: b, end: _hitEnd,
             pivotWX: _pvWX, pivotWY: _pvWY,
+            pivLocalX: _eCosR*_ePivLocalX - _eSinR*_ePivLocalY,
+            pivLocalY: _eSinR*_ePivLocalX + _eCosR*_ePivLocalY,
             anchorWX: _anchWX, anchorWY: _anchWY,
-            startFingerX: pos.x, startFingerY: pos.y,  // suppress normalize until moved
+            startFingerX: pos.x, startFingerY: pos.y,
             origW: b.w, origRot: _bRot, origX: b.x, origY: b.y,
             pivDistDragged: Math.max(1, _pivToEnd),
             pivDistAnchored: _pivToAnch,
@@ -5528,30 +5533,34 @@ class Game {
       this._setSliderVal(sl.key, sl.defKey, val, sl);
       return;
     }
-    // PIVOT END mode — drag one end, anchored end stays fixed in world space
+    // PIVOT END mode — drag one end, pivot point stays fixed in world space
     if (this._editorPivotEndState) {
       var _pes = this._editorPivotEndState, _pb = _pes.brick;
-      // Vector from anchored end to finger (dragged end)
-      var _axF = pos.x - _pes.anchorWX, _ayF = pos.y - _pes.anchorWY;
-      var _newW = Math.hypot(_axF, _ayF);
-      if (_newW < 6) return;
-      _newW = Math.max(12, Math.min(900, _newW));
-      // Rotation = angle from anchored end toward dragged finger
-      // Right end dragged: angle from left anchor to finger = brick rotation
-      // Left end dragged: angle from right anchor to finger = brick rotation + PI
-      var _axisAngle = Math.atan2(_ayF, _axF);
-      var _newRot = (_pes.end === 'right') ? _axisAngle : _axisAngle + Math.PI;
+      // Vector from pivot to finger (dragged end)
+      var _fpvX = pos.x - _pes.pivotWX, _fpvY = pos.y - _pes.pivotWY;
+      var _fingerDist = Math.hypot(_fpvX, _fpvY);
+      if (_fingerDist < 4) return;
+      _fingerDist = Math.min(900, _fingerDist);
+      // Rotation: angle from pivot toward finger = direction of dragged end from pivot
+      var _pivAngle = Math.atan2(_fpvY, _fpvX);
+      // If dragging left end: pivot→finger angle is reversed relative to brick axis
+      var _newRot = (_pes.end === 'right') ? _pivAngle : _pivAngle + Math.PI;
       var _snapDeg2 = this._editorSnapDeg || 0;
       if (_snapDeg2 > 0) { var _sr2 = _snapDeg2*Math.PI/180; _newRot = Math.round(_newRot/_sr2)*_sr2; }
       _pb._rotation = _newRot;
-      _pb.w = _newW;
-      // Center = midpoint between anchored end and dragged finger
-      _pb.x = _pes.anchorWX + Math.cos(_axisAngle) * _newW / 2;
-      _pb.y = Math.min(_pes.anchorWY + Math.sin(_axisAngle) * _newW / 2, this.floorY() - (_pb.h||10)/2 - 4);
-      // Flip pivot key L<->R only after finger has moved at least 12px (suppress on initial tap)
+      // New width: pivot→finger = pivot→dragged-end distance
+      // Total width = pivot→dragged-end + pivot→anchor-end (ratio fixed from original geometry)
+      var _ratio = _pes.pivDistAnchored / Math.max(1, _pes.pivDistDragged);
+      _pb.w = Math.max(12, Math.min(900, _fingerDist * (1 + _ratio)));
+      // Reposition brick so pivot stays fixed using stored local offset
+      var _cosNR = Math.cos(_newRot), _sinNR = Math.sin(_newRot);
+      var _rotPivX = _cosNR*_pes.pivLocalX - _sinNR*_pes.pivLocalY;
+      var _rotPivY = _sinNR*_pes.pivLocalX + _cosNR*_pes.pivLocalY;
+      _pb.x = _pes.pivotWX - _rotPivX;
+      _pb.y = Math.min(_pes.pivotWY - _rotPivY, this.floorY() - (_pb.h||10)/2 - 4);
+      // Flip pivot key L<->R after minimum movement
       var _movedDist = Math.hypot(pos.x - _pes.startFingerX, pos.y - _pes.startFingerY);
-      var _fingerSide = pos.x - _pes.pivotWX;
-      if (_movedDist > 12 && Math.abs(_fingerSide) > 4) {
+      if (_movedDist > 12 && Math.abs(_fpvX) > 4) {
         var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x);
         if (_newKey !== _pb._pivot) {
           _pb._pivot = _newKey;
