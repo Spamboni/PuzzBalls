@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1700;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1701;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -503,6 +503,22 @@ class Game {
 
   floorY() { return this.H - FLOOR_MARGIN; }
 
+  // ── Zoom coordinate helpers ────────────────────────────────────────────────
+  // Zoom anchor = lower-right corner (W, floorY).
+  // Screen→World: invert the ctx.translate(W,fY) + ctx.scale(z,z) + ctx.translate(-W,-fY)
+  _screenToWorld(sx, sy) {
+    var z = this._viewZoom || 1;
+    if (z === 1) return { x: sx, y: sy };
+    var fY = this.floorY(), W = this.W;
+    return { x: (sx - W) / z + W, y: (sy - fY) / z + fY };
+  }
+  _worldToScreen(wx, wy) {
+    var z = this._viewZoom || 1;
+    if (z === 1) return { x: wx, y: wy };
+    var fY = this.floorY(), W = this.W;
+    return { x: (wx - W) * z + W, y: (wy - fY) * z + fY };
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   _bindInput() {
@@ -606,6 +622,16 @@ class Game {
           // Don't reset _editorPinchStart here — let _editorHandleTouch manage it
           self._editorDraggingJustPlaced = false;  // pinch after placement = real interaction
         }
+        // ── Play-area pinch-to-zoom init ──────────────────────────────────────
+        // Fires in play mode always, and in editor mode when no brick/tube is being manipulated
+        var _canZoomPinch = !self._editorMode ||
+          (self._editorMode && !self._editorSelected && !(self._editorTubeMode && self._tubeSelected));
+        if (_canZoomPinch && e.touches.length >= 2) {
+          var _zpt0 = e.touches[0], _zpt1 = e.touches[1];
+          var _zDist = Math.hypot(_zpt1.clientX - _zpt0.clientX, _zpt1.clientY - _zpt0.clientY);
+          self._playPinchStartDist = _zDist;
+          self._playPinchStartZoom = self._viewZoom || 1;
+        }
         return;
       }
       // Let touches in the HUD button strip pass through to DOM elements
@@ -622,7 +648,7 @@ class Game {
 
       var pos = getPos(e);
       // World position (zoom-adjusted) for game interactions
-      var _worldPos = { x: pos.x, y: pos.y };
+      var _worldPos = self._screenToWorld(pos.x, pos.y);
 
       // ── Corner HUD buttons — only when editor is closed ─────────────────────
       if (!self._editorMode) {
@@ -711,14 +737,17 @@ class Game {
         var _vSY = self._editorScrollY || 0;
         var _py  = pos.y - _vSY;  // offset screen tap to match translated canvas
         var _px  = pos.x;
+        // World coords for taps above panel (bricks, tubes, crosshairs)
+        var _edWorld = self._screenToWorld(pos.x, pos.y - _vSY);
+        var _wpx = _edWorld.x, _wpy = _edWorld.y;
         var inPanel = _py >= self.floorY() - 5;
 
         // ── Top-bar buttons (screen coords, no scroll offset) ─────────────────
-        // DONE
+        // DONE — drawn in zoom-transformed world space
         if (self._editorDoneBtn) {
           var d=self._editorDoneBtn;
-          // DONE is drawn at screen coords (outside scroll translate), use pos.x/pos.y
-          if (pos.x>=d.x&&pos.x<=d.x+d.w&&pos.y>=d.y&&pos.y<=d.y+d.h) {
+          var _doneW = self._screenToWorld(pos.x, pos.y);
+          if (_doneW.x>=d.x&&_doneW.y>=d.y&&_doneW.x<=d.x+d.w&&_doneW.y<=d.y+d.h) {
             self._editorMode=false; self._editorTubeMode=false;
             window._tubeEditorMode=false; self._editorSelected=null;
             var _dbgBtnDone = document.getElementById('tube-debug-btn'); if (_dbgBtnDone) _dbgBtnDone.style.display='none';
@@ -1576,7 +1605,7 @@ class Game {
         if (self._editorBrickDeleteMode&&!inPanel) {
           for (var bdi=self.bricks.length-1; bdi>=0; bdi--) {
             var br2=self.bricks[bdi];
-            if (Math.hypot(_px-br2.x,_py-br2.y)<(br2.w||br2.r||30)+12) {
+            if (Math.hypot(_wpx-br2.x,_wpy-br2.y)<(br2.w||br2.r||30)+12) {
               self._undoPush(); self.bricks.splice(bdi,1);
               if (self._editorSelected===br2) self._editorSelected=null;
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
@@ -1588,7 +1617,7 @@ class Game {
             var _dt=_tubes[tdi], _dp=_dt._path;
             if (!_dp) continue;
             for (var dpi=0; dpi<_dp.length; dpi++) {
-              if (Math.hypot(_px-_dp[dpi].x,_py-_dp[dpi].y)<_dt.radius+16) {
+              if (Math.hypot(_wpx-_dp[dpi].x,_wpy-_dp[dpi].y)<_dt.radius+16) {
                 self._undoPush(); self.tubes.remove(_dt);
                 if (self._tubeSelected===_dt) self._tubeSelected=null;
                 if(window.Sound&&Sound.uiTap)Sound.uiTap(0.3); return;
@@ -1598,7 +1627,7 @@ class Game {
         }
         // Scroll handle — chute strip (right side, full height when editor open)
         var chuteX2 = self.W - 55;
-        if (pos.x >= chuteX2) {
+        if (_wpx >= chuteX2 && !inPanel) {
           self._editorScrollPending=true; self._editorScrollDragging=false;
           self._editorScrollStart=self._editorScrollY||0;
           self._editorScrollDragY=pos.y; return;
@@ -1606,9 +1635,9 @@ class Game {
         // World taps (not in panel) — route to tube or brick editor
         if (!inPanel) {
           if (self._editorTubeMode) {
-            self._tubeEditorOnDown({x:_px, y:_py});
+            self._tubeEditorOnDown({x:_wpx, y:_wpy});
           } else {
-            self._editorOnDown({x:_px, y:_py});
+            self._editorOnDown({x:_wpx, y:_wpy});
           }
         }
         // Tap landed in panel but hit nothing — start scroll
@@ -1661,10 +1690,11 @@ class Game {
       }
       // ── Chute ball buttons — drop balls ────────────────────────────────────
       if (self._chuteButtonRects) {
+        var _chuteWorld = self._screenToWorld(pos.x, pos.y);
         for (var cbi2 = 0; cbi2 < self._chuteButtonRects.length; cbi2++) {
           var cbr2 = self._chuteButtonRects[cbi2];
-          if (pos.x >= cbr2.x && pos.x <= cbr2.x + cbr2.w &&
-              pos.y >= cbr2.y && pos.y <= cbr2.y + cbr2.h) {
+          if (_chuteWorld.x >= cbr2.x && _chuteWorld.x <= cbr2.x + cbr2.w &&
+              _chuteWorld.y >= cbr2.y && _chuteWorld.y <= cbr2.y + cbr2.h) {
             self._btnPressFlash = { type: cbr2.type, frame: self.frame };
             if (window.Sound && Sound.uiTap) Sound.uiTap(0.28);
             self._chuteDropBall(cbr2.type);
@@ -1675,8 +1705,9 @@ class Game {
       // ── Chute delete toggle ────────────────────────────────────────────────
       if (self._chuteDeleteRect) {
         var dr = self._chuteDeleteRect;
-        if (pos.x >= dr.x && pos.x <= dr.x + dr.w &&
-            pos.y >= dr.y && pos.y <= dr.y + dr.h) {
+        var _delWorld = self._screenToWorld(pos.x, pos.y);
+        if (_delWorld.x >= dr.x && _delWorld.x <= dr.x + dr.w &&
+            _delWorld.y >= dr.y && _delWorld.y <= dr.y + dr.h) {
           self._toggleDeleteMode();
           if (window.Sound && Sound.uiToggle) Sound.uiToggle(self._deleteMode);
           return;
@@ -1783,14 +1814,12 @@ class Game {
       // Two-finger tube manipulation
       // Two-finger: tube pinch (handled below via _tubeHandleTouch)
       // Two-finger pinch on play area = zoom in/out
-      if (e.touches && e.touches.length >= 2 && !self._editorMode) {
+      if (e.touches && e.touches.length >= 2 && self._playPinchStartDist) {
         var pt0 = e.touches[0], pt1 = e.touches[1];
         var pinchDist = Math.hypot(pt1.clientX - pt0.clientX, pt1.clientY - pt0.clientY);
-        if (self._playPinchStartDist) {
-          var zoomDelta = pinchDist / self._playPinchStartDist;
-          var newZoom = Math.max(0.25, Math.min(1.0, self._playPinchStartZoom * zoomDelta));
-          self._viewZoom = newZoom;
-        }
+        var zoomDelta = pinchDist / self._playPinchStartDist;
+        var newZoom = Math.max(0.25, Math.min(1.0, self._playPinchStartZoom * zoomDelta));
+        self._viewZoom = newZoom;
         return;
       }
       if (self._tubeDragging && e.touches && e.touches.length >= 2 && !self._editorMode) {
@@ -1847,8 +1876,10 @@ class Game {
         if (e && e.touches && e.touches.length >= 2) {
           var rect2 = self.canvas.getBoundingClientRect();
           var _gscX = self.canvas.width / rect2.width, _gscY = self.canvas.height / rect2.height;
-          var gf0 = { x: (e.touches[0].clientX - rect2.left) * _gscX, y: (e.touches[0].clientY - rect2.top) * _gscY };
-          var gf1 = { x: (e.touches[1].clientX - rect2.left) * _gscX, y: (e.touches[1].clientY - rect2.top) * _gscY };
+          var _gf0s = { x: (e.touches[0].clientX - rect2.left) * _gscX, y: (e.touches[0].clientY - rect2.top) * _gscY };
+          var _gf1s = { x: (e.touches[1].clientX - rect2.left) * _gscX, y: (e.touches[1].clientY - rect2.top) * _gscY };
+          var gf0 = self._screenToWorld(_gf0s.x, _gf0s.y);
+          var gf1 = self._screenToWorld(_gf1s.x, _gf1s.y);
           if (!self._tubeGroupPinchStart) {
             self._tubeGroupPinchStart = {
               angle: Math.atan2(gf1.y - gf0.y, gf1.x - gf0.x),
@@ -1882,8 +1913,9 @@ class Game {
         self._tubeGroupPinchStart = null;
         gd.hasMoved = true;
         var _gdSY = self._editorScrollY || 0;
-        var dx2 = pos.x - gd.startX;
-        var dy2 = (pos.y - _gdSY) - gd.startY;
+        var _gdW = self._screenToWorld(pos.x, pos.y - _gdSY);
+        var dx2 = _gdW.x - gd.startX;
+        var dy2 = _gdW.y - gd.startY;
         for (var gi = 0; gi < gd.group.length; gi++) {
           gd.group[gi].x = gd.origins[gi].x + dx2;
           gd.group[gi].y = gd.origins[gi].y + dy2;
@@ -1896,13 +1928,12 @@ class Game {
         var td = self._tubeDragging;
         var conn = td.connectedA || td.connectedB;
         var _tSY = self._editorScrollY || 0;
-        var _tWorldY = pos.y - _tSY;
+        var _tDragW = self._screenToWorld(pos.x, pos.y - _tSY);
         if (conn && self._tubePivotState) {
-          var _connPos = { x: pos.x, y: _tWorldY };
-          self.tubes.dragConnected(td, _connPos, self._tubePivotState);
+          self.tubes.dragConnected(td, _tDragW, self._tubePivotState);
         } else {
-          td.x = pos.x - (self._tubeDragOffX || 0);
-          td.y = _tWorldY - (self._tubeDragOffY || 0);
+          td.x = _tDragW.x - (self._tubeDragOffX || 0);
+          td.y = _tDragW.y - (self._tubeDragOffY || 0);
           td.rebuild();
           self.tubes.checkSnap(td);
         }
@@ -1944,7 +1975,8 @@ class Game {
           return;
         }
         var _vSY2 = self._editorScrollY || 0;
-        self._editorOnMove({x: pos.x, y: pos.y - _vSY2}); return;
+        var _emW = self._screenToWorld(pos.x, pos.y - _vSY2);
+        self._editorOnMove({x: _emW.x, y: _emW.y}); return;
       }
       // If dragging from a floor ball, check if it's a real drag (> 8px = sling, not pop)
       if (self._pendingFloorBall) {
@@ -1978,8 +2010,9 @@ class Game {
       }
       if (!self.sling) return;
       var pos = getPos(e);
-      self.sling.pullX = pos.x; self.sling.pullY = pos.y;
-      var dx = self.sling.anchorX - pos.x, dy = self.sling.anchorY - pos.y;
+      var _wp = self._screenToWorld(pos.x, pos.y);
+      self.sling.pullX = _wp.x; self.sling.pullY = _wp.y;
+      var dx = self.sling.anchorX - _wp.x, dy = self.sling.anchorY - _wp.y;
       var dist = Math.hypot(dx, dy);
       if (dist > SLING_MIN_OFFSET && window.Sound) Sound.stretch(Math.min(dist, SLING_MAX_PULL) / SLING_MAX_PULL);
     }
@@ -2252,6 +2285,7 @@ class Game {
         self._editorScrollPending  = false;
         self._editorScrollStart    = undefined;
         self._tubePinchStart = null;
+        self._playPinchStartDist = null;
         self._editorOnUp();
         return;
       }
@@ -2295,6 +2329,7 @@ class Game {
       }
       obj.pinned = false;
       self.sling = null;
+      self._playPinchStartDist = null;
     }
 
     canvas.addEventListener('mousedown',   onDown);
@@ -4895,8 +4930,16 @@ class Game {
   _draw() {
     var ctx = this.ctx, W = this.W, H = this.H, floorY = this.floorY();
     var vSY = this._editorMode ? (this._editorScrollY || 0) : 0;
+    var z = this._viewZoom || 1;
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
     if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
+    // ── Begin zoom transform (anchor = lower-right corner: W, floorY) ────────
+    if (z !== 1) {
+      ctx.save();
+      ctx.translate(W, floorY);
+      ctx.scale(z, z);
+      ctx.translate(-W, -floorY);
+    }
     if (this.nebulaOffscreen) ctx.drawImage(this.nebulaOffscreen, 0, 0);
     this._drawGrid(); this._drawStars();
 
@@ -5023,6 +5066,8 @@ class Game {
     this.tubes.draw(ctx, 'above', this.frame, _selTubeForDraw);
     if (this.sling) this._drawSling();
     this._drawSparks();
+    // ── End zoom transform ───────────────────────────────────────────────────
+    if (z !== 1) ctx.restore();
     if (this._editorMode) this._drawEditor();
     if (vSY !== 0) ctx.restore();
     // Top HUD clear buttons removed — use editor CLR buttons instead
@@ -5528,9 +5573,11 @@ class Game {
     var _escX = this.canvas.width / rect.width, _escY = this.canvas.height / rect.height;
     var vSY  = this._editorScrollY || 0;
     var t0 = touches[0], t1 = touches[1];
-    // Apply scroll offset so coords are in editor-content space (matching where bricks are drawn)
-    var p0 = { x: (t0.clientX - rect.left) * _escX, y: (t0.clientY - rect.top) * _escY - vSY };
-    var p1 = { x: (t1.clientX - rect.left) * _escX, y: (t1.clientY - rect.top) * _escY - vSY };
+    // Apply scroll offset and zoom so coords are in world space (matching where bricks are drawn)
+    var _s0x = (t0.clientX - rect.left) * _escX, _s0y = (t0.clientY - rect.top) * _escY - vSY;
+    var _s1x = (t1.clientX - rect.left) * _escX, _s1y = (t1.clientY - rect.top) * _escY - vSY;
+    var p0 = this._screenToWorld(_s0x, _s0y);
+    var p1 = this._screenToWorld(_s1x, _s1y);
     var sb = this._editorSelected;
 
     // ── Pivot two-finger: ML/MR pivots allow independent end dragging ─────────
@@ -6855,6 +6902,14 @@ class Game {
     // ── Note picker popup ─────────────────────────────────────────────────────
     if (this._editorNotePopup && sb2) this._drawNotePopup(ctx, sb2);
 
+    // ── Re-apply zoom for world-space brick indicators ──────────────────────
+    var _edZ = this._viewZoom || 1;
+    if (_edZ !== 1) {
+      ctx.save();
+      ctx.translate(W, floorY);
+      ctx.scale(_edZ, _edZ);
+      ctx.translate(-W, -floorY);
+    }
     // ── Per-brick visual indicators: pinned pivots + locked dimensions ───────
     for (var _pbi = 0; _pbi < this.bricks.length; _pbi++) {
       var _pb = this.bricks[_pbi];
@@ -6973,6 +7028,9 @@ class Game {
         });
       }
     }
+
+    // ── End zoom for world-space indicators ──────────────────────────────────
+    if (_edZ !== 1) ctx.restore();
 
     ctx.filter = 'none';
     ctx.restore();
