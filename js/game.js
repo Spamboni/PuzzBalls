@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1704;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1705;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -2039,7 +2039,10 @@ class Game {
       if (self._draggingZoneSlider && self._zoneSliderRect) {
         var zr2 = self._zoneSliderRect;
         var zt2 = Math.max(0, Math.min(1, (pos.x - zr2.x) / zr2.w));
-        self._slingZoneH = Math.round(40 + zt2 * 260);
+        var _zMaxZone = self.floorY();  // at zoom 1, max = full play height
+        var _zz = self._viewZoom || 1;
+        if (_zz < 1) _zMaxZone = Math.round(self.floorY() / _zz);  // expand with zoom
+        self._slingZoneH = Math.round(40 + zt2 * (_zMaxZone - 40));
         return;
       }
       if (self._draggingBrickSlider && self._brickSliderRect) {
@@ -2573,6 +2576,16 @@ class Game {
           var _minX = (_z < 1) ? this.W * (1 - 1/_z) : 0;
           var _minY = (_z < 1) ? floorY * (1 - 1/_z) : 0;
           Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * subSm, bounceMult: bs.bounciness, speedMult: subSm, minX: _minX, minY: _minY });
+          // Early exit: if ball now overlaps a brick, stop substeps so
+          // the swept collision resolver gets a short ray to work with
+          if (_ss < subSteps - 1) {
+            var _hitBrick = false;
+            for (var _sbi = 0; _sbi < this.bricks.length; _sbi++) {
+              if (this.bricks[_sbi].health <= 0) continue;
+              if (this.bricks[_sbi].overlaps(obj)) { _hitBrick = true; break; }
+            }
+            if (_hitBrick) break;
+          }
         }
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
@@ -2668,7 +2681,7 @@ class Game {
       }
     }
     if (this._chuteCollapseDir !== 0) {
-      var _colSpeed = 0.04; // ~25 frames = ~0.4s at 60fps
+      var _colSpeed = 0.025; // ~40 frames = ~0.67s at 60fps
       this._chuteCollapseT += this._chuteCollapseDir * _colSpeed;
       if (this._chuteCollapseT >= 1) {
         this._chuteCollapseT = 1; this._chuteCollapseDir = 0; this._chuteCollapsed = true;
@@ -4489,13 +4502,10 @@ class Game {
 
     ctx.save();
 
-    // ── Collapse clip: cap slides down, erasing content below ────────────────
+    // Track collapse for shutter overlay (drawn after chute content)
+    var _shutterY = 0;
     if (colT > 0) {
-      var _clipBottom = topY + (floorY - topY) * colT;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(leftX - 5, 0, CW + 10, _clipBottom);
-      ctx.clip();
+      _shutterY = topY + (floorY - topY) * colT;
     }
     // ── 3D TUBE BODY ─────────────────────────────────────────────────────────
     // Dark fill with edge gradients to simulate cylindrical depth
@@ -5033,8 +5043,25 @@ class Game {
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(delActive ? 'TAP BALL' : 'DEL', delOrbX + 10, delOrbY);
 
-    // Close collapse clip if active
-    if (colT > 0) ctx.restore();
+    // ── Collapse shutter: dark panel sweeps down from top, covering chute ────
+    if (colT > 0 && _shutterY > topY) {
+      ctx.save();
+      // Main shutter body
+      ctx.fillStyle = '#030a18';
+      ctx.fillRect(leftX - 2, _shutterY, CW + 4, floorY - _shutterY + 10);
+      // Shutter leading edge — glowing line like the cap
+      ctx.strokeStyle = 'rgba(0,180,255,0.7)'; ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#00ccff'; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.moveTo(leftX, _shutterY); ctx.lineTo(leftX + CW, _shutterY); ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Hazard stripe on the leading edge
+      var _shW = 3;
+      for (var _shi = 0; _shi < CW; _shi += 8) {
+        ctx.fillStyle = (_shi % 16 < 8) ? 'rgba(255,180,0,0.4)' : 'rgba(0,0,0,0)';
+        ctx.fillRect(leftX + _shi, _shutterY - _shW, Math.min(8, CW - _shi), _shW);
+      }
+      ctx.restore();
+    }
 
     ctx.restore();
   }
@@ -8376,7 +8403,9 @@ class Game {
     ctx.strokeStyle = 'rgba(0,200,150,0.20)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(sx, ztrackY); ctx.lineTo(sx + sliderW, ztrackY); ctx.stroke();
     var zoneH3   = this._slingZoneH !== undefined ? this._slingZoneH : 100;
-    var zThT     = Math.max(0, Math.min(1, (zoneH3 - 40) / 260));  // range 40–300
+    var _zzDisp = this._viewZoom || 1;
+    var _zMaxDisp = (_zzDisp < 1) ? Math.round(this.floorY() / _zzDisp) : this.floorY();
+    var zThT     = Math.max(0, Math.min(1, (zoneH3 - 40) / (_zMaxDisp - 40)));  // dynamic range
     var zThX     = sx + zThT * sliderW;
     ctx.strokeStyle = 'rgba(0,200,150,0.55)'; ctx.shadowColor = '#00cc99'; ctx.shadowBlur = 4;
     ctx.beginPath(); ctx.moveTo(sx, ztrackY); ctx.lineTo(zThX, ztrackY); ctx.stroke();
