@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1683;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1684;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1977,11 +1977,16 @@ class Game {
         function _cachePivotWorld(key) {
           var _sb = self._editorSelected;
           if (_sb) {
+            _sb._pivot = key;  // apply key to brick first
             var _pr = _sb._rotation || 0;
             var _po = self._getPivotOffset(_sb, key);
             self._editorPivotWorldX = _sb.x + Math.cos(_pr)*_po.x - Math.sin(_pr)*_po.y;
             self._editorPivotWorldY = _sb.y + Math.sin(_pr)*_po.x + Math.cos(_pr)*_po.y;
             self._editorPivotSetRot = _pr;
+          } else {
+            // No brick selected yet — clear cache; will be set when brick is tapped
+            self._editorPivotWorldX = undefined;
+            self._editorPivotWorldY = undefined;
           }
         }
         if (self._pivotLockKey) {
@@ -5111,11 +5116,15 @@ class Game {
         b._pivot = this._pivotLockKey;
         this._editorPivot = this._pivotLockKey;
         this._editorPivotActive = true;
+      } else if (this._editorPivotActive) {
+        // Apply active pivot key to the brick
+        b._pivot = this._editorPivot;
       }
 
-      // Cache pivot world position whenever pivot is active — crosshair draws from here
+      // Cache pivot world position — always use _editorPivot key (authoritative)
+      // Must happen AFTER pivot key is applied to brick above
       if (this._editorPivotActive || this._pivotLockKey) {
-        var _cpivKey = b._pivot || 'MC';
+        var _cpivKey = this._editorPivot || b._pivot || 'MC';
         var _cpivRot = b._rotation || 0;
         var _cpivOff = this._getPivotOffset(b, _cpivKey);
         this._editorPivotWorldX = b.x + Math.cos(_cpivRot)*_cpivOff.x - Math.sin(_cpivRot)*_cpivOff.y;
@@ -5158,6 +5167,7 @@ class Game {
             brick: b, end: _hitEnd,
             pivotWX: _pvWX, pivotWY: _pvWY,
             anchorWX: _anchWX, anchorWY: _anchWY,
+            startFingerX: pos.x, startFingerY: pos.y,  // suppress normalize until moved
             origW: b.w, origRot: _bRot, origX: b.x, origY: b.y,
             pivDistDragged: Math.max(1, _pivToEnd),
             pivDistAnchored: _pivToAnch,
@@ -5538,17 +5548,15 @@ class Game {
       // Center = midpoint between anchored end and dragged finger
       _pb.x = _pes.anchorWX + Math.cos(_axisAngle) * _newW / 2;
       _pb.y = Math.min(_pes.anchorWY + Math.sin(_axisAngle) * _newW / 2, this.floorY() - (_pb.h||10)/2 - 4);
-      // Flip pivot key L<->R when dragged finger crosses the vertical line through pivot
-      // Small hysteresis band (4px) prevents flicker right at the boundary
+      // Flip pivot key L<->R only after finger has moved at least 12px (suppress on initial tap)
+      var _movedDist = Math.hypot(pos.x - _pes.startFingerX, pos.y - _pes.startFingerY);
       var _fingerSide = pos.x - _pes.pivotWX;
-      var _HYST = 4;
-      if (Math.abs(_fingerSide) > _HYST) {
+      if (_movedDist > 12 && Math.abs(_fingerSide) > 4) {
         var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x);
         if (_newKey !== _pb._pivot) {
           _pb._pivot = _newKey;
           this._editorPivot = _newKey;
           if (this._pivotLockKey) this._pivotLockKey = _newKey;
-          // Pivot world pos never changes — only the label does
         }
       }
       return;
@@ -6578,13 +6586,18 @@ class Game {
       ctx.restore(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
 
       if (this._editorRotateState || (this._editorSelected && (this._editorPivotActive || this._pivotLockKey))) {
-        // Always use cached pivot world position — never recompute from key (key is just a label)
-        var pvX4 = (this._editorPivotWorldX !== undefined) ? this._editorPivotWorldX
-                   : sb.x + Math.cos(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').x
-                           - Math.sin(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').y;
-        var pvY4 = (this._editorPivotWorldY !== undefined) ? this._editorPivotWorldY
-                   : sb.y + Math.sin(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').x
-                           + Math.cos(sb._rotation||0) * this._getPivotOffset(sb, sb._pivot||'MC').y;
+        var pvX4, pvY4;
+        if (this._editorPivotWorldX !== undefined) {
+          pvX4 = this._editorPivotWorldX;
+          pvY4 = this._editorPivotWorldY;
+        } else {
+          // Fallback: compute from active pivot key
+          var _fbKey = this._editorPivot || sb._pivot || 'MC';
+          var _fbRot = sb._rotation || 0;
+          var _fbOff = this._getPivotOffset(sb, _fbKey);
+          pvX4 = sb.x + Math.cos(_fbRot)*_fbOff.x - Math.sin(_fbRot)*_fbOff.y;
+          pvY4 = sb.y + Math.sin(_fbRot)*_fbOff.x + Math.cos(_fbRot)*_fbOff.y;
+        }
         var _xhCol = this._pivotLockKey ? '#ff2244' : '#cc44ff';
         ctx.save(); ctx.strokeStyle=_xhCol; ctx.lineWidth=1.5;
         ctx.shadowColor=_xhCol; ctx.shadowBlur=8;
