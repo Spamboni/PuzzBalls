@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1696;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1699;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1331,7 +1331,7 @@ class Game {
             var bRot = b._rotation || 0;
             var pivK = b._pivot || 'MC';
             var oldW = b.w || 40;
-            if (!self._editorPivotActive) {
+            if (!self._editorPivotActive && !b._pivotLocked) {
               // No pivot mode — uniform resize keeping center
               b.w = v; return;
             }
@@ -1362,7 +1362,32 @@ class Game {
               b.y = pvWY3 - (Math.sin(bRot)*pOff4.x + Math.cos(bRot)*pOff4.y);
             }
           } },
-          { key:'bwid',    apply:function(v){if(self._editorSelected){self._editorSelected.h=v;}window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;} },
+          { key:'bwid',    apply:function(v){
+            window.BrickDefaults=window.BrickDefaults||{};window.BrickDefaults.rectH=v;
+            if (!self._editorSelected) return;
+            var b = self._editorSelected;
+            var bRot = b._rotation || 0;
+            var pivK = b._pivot || 'MC';
+            var _hasPivot = self._editorPivotActive || (b._pivotLocked);
+            if (!_hasPivot) {
+              // No pivot mode — uniform resize keeping center
+              b.h = v; return;
+            }
+            var row = pivK.slice(0, pivK.length-1); // T, M, or B
+            if (row === 'T' || row === 'B') {
+              // Edge pivot: keep pivot edge fixed, grow opposite edge
+              var pOff = self._getPivotOffset(b, pivK);
+              var pvWX = b.x + Math.cos(bRot)*pOff.x - Math.sin(bRot)*pOff.y;
+              var pvWY = b.y + Math.sin(bRot)*pOff.x + Math.cos(bRot)*pOff.y;
+              b.h = v;
+              var pOff2 = self._getPivotOffset(b, pivK);
+              b.x = pvWX - (Math.cos(bRot)*pOff2.x - Math.sin(bRot)*pOff2.y);
+              b.y = pvWY - (Math.sin(bRot)*pOff2.x + Math.cos(bRot)*pOff2.y);
+            } else {
+              // Mid row — symmetric growth from center
+              b.h = v;
+            }
+          } },
           { key:'rot',     apply:function(v){
             if(self._editorSelected){
               var b=self._editorSelected;
@@ -5189,12 +5214,18 @@ class Game {
         b._pivot = this._pivotLockKey;
         this._editorPivot = this._pivotLockKey;
         this._editorPivotActive = true;
+      } else if (this._pivotActivatedByPin) {
+        // Pivot was only active because of previous pinned brick — deactivate now
+        this._pivotActivatedByPin = false;
+        this._editorPivotActive = false;
+        this._editorPivot = 'MC';
+        this._editorPivotWorldX = undefined;
+        this._editorPivotWorldY = undefined;
+        this._editorPivotCachedFor = null;
+        this._editorPivotCachedKey = null;
       } else if (this._editorPivotActive) {
-        this._pivotActivatedByPin = false;
-        // Apply active pivot key to the brick (only if brick doesn't have its own pin)
+        // User had pivot active independently — carry it to this brick
         if (!b._pivotLocked) b._pivot = this._editorPivot;
-      } else {
-        this._pivotActivatedByPin = false;
       }
 
       // Cache pivot world position — diagonal partners (TL<->BR, TR<->BL) share same world point
@@ -6738,6 +6769,24 @@ class Game {
 
     // ── Note picker popup ─────────────────────────────────────────────────────
     if (this._editorNotePopup && sb2) this._drawNotePopup(ctx, sb2);
+
+    // ── Pinned-pivot crosshairs on ALL pinned bricks ────────────────────────
+    for (var _pbi = 0; _pbi < this.bricks.length; _pbi++) {
+      var _pb = this.bricks[_pbi];
+      if (!_pb._pivotLocked || _pb === this._editorSelected) continue;
+      if (_pb instanceof CircularBrick) continue;
+      var _pbRot = _pb._rotation || 0;
+      var _pbOff = this._getPivotOffset(_pb, _pb._pivot || 'MC');
+      var _pbPvX = _pb.x + Math.cos(_pbRot)*_pbOff.x - Math.sin(_pbRot)*_pbOff.y;
+      var _pbPvY = _pb.y + Math.sin(_pbRot)*_pbOff.x + Math.cos(_pbRot)*_pbOff.y;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(34,221,102,0.5)'; ctx.lineWidth = 1;
+      ctx.shadowColor = '#22dd66'; ctx.shadowBlur = 4;
+      ctx.beginPath(); ctx.arc(_pbPvX, _pbPvY, 5, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_pbPvX-7,_pbPvY); ctx.lineTo(_pbPvX+7,_pbPvY);
+      ctx.moveTo(_pbPvX,_pbPvY-7); ctx.lineTo(_pbPvX,_pbPvY+7); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.restore();
+    }
 
     // ── Selected brick highlight ──────────────────────────────────────────────
     if (this._editorSelected) {
