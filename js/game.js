@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1702;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1703;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -624,7 +624,25 @@ class Game {
         }
         // ── Play-area pinch-to-zoom init ──────────────────────────────────────
         // Fires in play mode always, and in editor mode when no brick/tube is being manipulated
-        var _canZoomPinch = !self._editorMode ||
+        // If a brick/tube was JUST placed by the first finger, undo it and zoom instead
+        var _justPlacedBrick = self._editorMode && self._editorDraggingJustPlaced && self._editorSelected;
+        var _justPlacedTube = self._editorMode && self._editorTubeMode && self._tubeDragging && self._tubeDragging._justPlaced;
+        if (_justPlacedBrick) {
+          // Undo the brick that was just placed by first finger
+          if (self._undoHistory && self._undoHistory.length > 0) {
+            var _undoSnap = self._undoHistory.pop();
+            var _bSnap = Array.isArray(_undoSnap) ? _undoSnap : _undoSnap.bricks;
+            self.bricks = _bSnap.map(function(s) { var b=s._ref; if(!b)return null; b.x=s.x;b.y=s.y;b.w=s.w;b.h=s.h;b._rotation=s._rotation||0; return b; }).filter(Boolean);
+            if (_undoSnap.tubes && self.tubes) self.tubes.fromJSON(_undoSnap.tubes);
+          }
+          self._editorSelected = null; self._editorDragging = null;
+          self._editorDraggingJustPlaced = false; self._showBrickSettings = false;
+        }
+        if (_justPlacedTube && self._tubeDragging) {
+          self.tubes.remove(self._tubeDragging);
+          self._tubeDragging = null; self._tubeSelected = null;
+        }
+        var _canZoomPinch = !self._editorMode || _justPlacedBrick || _justPlacedTube ||
           (self._editorMode && !self._editorSelected && !(self._editorTubeMode && self._tubeSelected));
         if (_canZoomPinch && e.touches.length >= 2) {
           var _zpt0 = e.touches[0], _zpt1 = e.touches[1];
@@ -1633,7 +1651,9 @@ class Game {
           self._editorScrollDragY=pos.y; return;
         }
         // World taps (not in panel) — route to tube or brick editor
-        if (!inPanel) {
+        // Skip if on an empty tab (affectors/ramps/motors)
+        var _aTab = self._editorActiveTab || 'bricks';
+        if (!inPanel && (_aTab === 'bricks' || _aTab === 'tubes')) {
           if (self._editorTubeMode) {
             self._tubeEditorOnDown({x:_wpx, y:_wpy});
           } else {
@@ -2524,7 +2544,10 @@ class Game {
         // Store position before this frame's movement for swept collision detection
         obj._prevX = obj.x; obj._prevY = obj.y;
         for (var _ss = 0; _ss < subSteps; _ss++) {
-          Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * subSm, bounceMult: bs.bounciness, speedMult: subSm });
+          var _z = this._viewZoom || 1;
+          var _minX = (_z < 1) ? this.W * (1 - 1/_z) : 0;
+          var _minY = (_z < 1) ? floorY * (1 - 1/_z) : 0;
+          Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * subSm, bounceMult: bs.bounciness, speedMult: subSm, minX: _minX, minY: _minY });
         }
         // Sticky: only try to stick if ball is actually touching a wall or floor
         if (obj.type === BALL_TYPES.STICKY && !obj._fromChute && !obj.stuckTo) {
@@ -2532,8 +2555,11 @@ class Game {
           if (obj._knockImmune > 0) { obj._knockImmune--; }
           else {
             var touchingFloor  = obj.y + obj.r >= floorY - 1;
-            var touchingWall   = obj.x - obj.r <= 1 || obj.x + obj.r >= this.W - 1;
-            var touchingTop    = obj.y - obj.r <= 1;
+            var _zSticky = this._viewZoom || 1;
+            var _sMinX = (_zSticky < 1) ? this.W * (1 - 1/_zSticky) : 0;
+            var _sMinY = (_zSticky < 1) ? floorY * (1 - 1/_zSticky) : 0;
+            var touchingWall   = obj.x - obj.r <= _sMinX + 1 || obj.x + obj.r >= this.W - 1;
+            var touchingTop    = obj.y - obj.r <= _sMinY + 1;
             var touchingChute  = obj.y >= g2.TOP_Y && obj.x + obj.r >= g2.LEFT_X - 1;
             if ((touchingWall || touchingTop || touchingChute) && !touchingFloor) {
               this._checkStickyWall(obj);
@@ -2764,21 +2790,24 @@ class Game {
         if (obj.type === BALL_TYPES.SPLATTER && obj.inFlight && !obj._splattered && !obj._fromChute) {
           var g3 = this._chuteGeom();
           var hitWall = false, splatX = obj.x, splatY = obj.y, splatNX = 0, splatNY = -1;
+          var _zSplat = this._viewZoom || 1;
+          var _spMinX = (_zSplat < 1) ? this.W * (1 - 1/_zSplat) : 0;
+          var _spMinY = (_zSplat < 1) ? this.floorY() * (1 - 1/_zSplat) : 0;
           // Floor
           if (obj.y + obj.r >= this.floorY() - 2) {
             hitWall=true; splatX=obj.x; splatY=this.floorY(); splatNX=0; splatNY=-1;
           }
           // Left wall
-          else if (obj.x - obj.r <= 1) {
-            hitWall=true; splatX=0; splatY=obj.y; splatNX=1; splatNY=0;
+          else if (obj.x - obj.r <= _spMinX + 1) {
+            hitWall=true; splatX=_spMinX; splatY=obj.y; splatNX=1; splatNY=0;
           }
           // Right wall (chute left edge)
           else if (obj.x + obj.r >= g3.LEFT_X - 1) {
             hitWall=true; splatX=g3.LEFT_X; splatY=obj.y; splatNX=-1; splatNY=0;
           }
           // Ceiling
-          else if (obj.y - obj.r <= 1) {
-            hitWall=true; splatX=obj.x; splatY=0; splatNX=0; splatNY=1;
+          else if (obj.y - obj.r <= _spMinY + 1) {
+            hitWall=true; splatX=obj.x; splatY=_spMinY; splatNX=0; splatNY=1;
           }
           if (hitWall) {
             this._createSplat(splatX, splatY, splatNX, splatNY, null);
@@ -3331,11 +3360,14 @@ class Game {
       // Store surface normal so tap-bounce launches perpendicular to surface
       var nx = 0, ny = -1;
       var g3 = this._chuteGeom();
-      if (obj.x + obj.r >= g3.LEFT_X - 2)   { nx = -1; ny =  0; } // chute left wall → launch left
-      else if (obj.x - obj.r <= 2)           { nx =  1; ny =  0; } // left wall → launch right
-      else if (obj.x + obj.r >= this.W - 2)  { nx = -1; ny =  0; } // right wall → launch left → launch left
-      else if (obj.y - obj.r <= 2)            { nx =  0; ny =  1; } // ceiling → launch down
-      else                                    { nx =  0; ny = -1; } // default → launch up
+      var _zStk2 = this._viewZoom || 1;
+      var _skMinX = (_zStk2 < 1) ? this.W * (1 - 1/_zStk2) : 0;
+      var _skMinY = (_zStk2 < 1) ? this.floorY() * (1 - 1/_zStk2) : 0;
+      if (obj.x + obj.r >= g3.LEFT_X - 2)       { nx = -1; ny =  0; } // chute left wall → launch left
+      else if (obj.x - obj.r <= _skMinX + 2)     { nx =  1; ny =  0; } // left wall → launch right
+      else if (obj.x + obj.r >= this.W - 2)      { nx = -1; ny =  0; } // right wall → launch left
+      else if (obj.y - obj.r <= _skMinY + 2)     { nx =  0; ny =  1; } // ceiling → launch down
+      else                                        { nx =  0; ny = -1; } // default → launch up
       obj._stickNx = nx;
       obj._stickNy = ny;
       if (window.Sound) Sound.thud(4);
@@ -4948,6 +4980,25 @@ class Game {
     }
 
     this._drawFloor(floorY);
+    // ── Draw zoom boundary walls when zoomed out ─────────────────────────────
+    if (z < 1) {
+      var _zMinX = W * (1 - 1/z);
+      var _zMinY = floorY * (1 - 1/z);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,180,255,0.35)'; ctx.lineWidth = 2;
+      ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 8;
+      // Left wall
+      ctx.beginPath(); ctx.moveTo(_zMinX, _zMinY); ctx.lineTo(_zMinX, floorY); ctx.stroke();
+      // Ceiling
+      ctx.beginPath(); ctx.moveTo(_zMinX, _zMinY); ctx.lineTo(W, _zMinY); ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Dotted echo lines
+      ctx.setLineDash([3, 6]); ctx.strokeStyle = 'rgba(0,140,255,0.15)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(_zMinX + 3, _zMinY); ctx.lineTo(_zMinX + 3, floorY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_zMinX, _zMinY + 3); ctx.lineTo(W, _zMinY + 3); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
     if (this._editorMode && window._showEditorGrid) { this._drawEditorGrid(floorY); }
     var _selTubeForDraw = (this._tubeGroupDrag && this._editorTubeMode) ? null : this._tubeSelected;
     this.tubes.draw(ctx, 'behind', this.frame, _selTubeForDraw);
@@ -6473,6 +6524,19 @@ class Game {
     // ── Branch: tube editor ──────────────────────────────────────────────────
     if (this._editorTubeMode) {
       this._drawTubeEditor(ctx, cY);
+      ctx.filter = 'none'; ctx.restore(); return;
+    }
+
+    // ── Branch: empty tabs (affectors, ramps, motors) ────────────────────────
+    if (activeTab !== 'bricks' && activeTab !== 'tubes') {
+      ctx.fillStyle = 'rgba(80,120,180,0.25)';
+      ctx.font = "bold 12px '" + mono + "'";
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      var _etLabel = activeTab.toUpperCase();
+      ctx.fillText(_etLabel + ' — COMING SOON', W / 2, cY + 50);
+      ctx.fillStyle = 'rgba(80,120,180,0.15)';
+      ctx.font = "10px '" + mono + "'";
+      ctx.fillText('Pinch play area to zoom', W / 2, cY + 75);
       ctx.filter = 'none'; ctx.restore(); return;
     }
 
