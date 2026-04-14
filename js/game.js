@@ -267,6 +267,10 @@ class Game {
     this._chuteTimer   = 0;
     this._chuteDelay   = 500;
     this._deleteMode   = false;
+    // Chute collapse state
+    if (this._chuteCollapsed === undefined) this._chuteCollapsed = false;
+    if (this._chuteCollapseT === undefined) this._chuteCollapseT = 0; // 0=open, 1=closed
+    this._chuteCollapseDir = 0; // +1=closing, -1=opening, 0=idle
     // Keep _aimMode across level resets
 
     // Obstacles
@@ -1708,6 +1712,27 @@ class Game {
           }
         }
       }
+      // ── Chute collapse toggle button (below floor, screen coords) ─────────
+      if (self._chuteToggleBtn && !self._editorMode) {
+        var _ctb = self._chuteToggleBtn;
+        // Button is drawn in world space (inside zoom), convert to world coords
+        var _ctW = self._screenToWorld(pos.x, pos.y);
+        if (_ctW.x >= _ctb.x && _ctW.x <= _ctb.x + _ctb.w &&
+            _ctW.y >= _ctb.y && _ctW.y <= _ctb.y + _ctb.h) {
+          if (self._chuteCollapseDir === 0) {
+            if (self._chuteCollapsed || self._chuteCollapseT > 0.5) {
+              // Expand
+              self._chuteCollapseDir = -1;
+              self._chuteCollapsed = false;
+            } else {
+              // Collapse — wait for active chute balls to drain first
+              self._chuteCollapsePending = true;
+            }
+            if (window.Sound && Sound.uiTap) Sound.uiTap(0.2);
+          }
+          return;
+        }
+      }
       // ── Chute ball buttons — drop balls ────────────────────────────────────
       if (self._chuteButtonRects) {
         var _chuteWorld = self._screenToWorld(pos.x, pos.y);
@@ -2632,8 +2657,30 @@ class Game {
     // Update tube routing
     if (this.tubes) this.tubes.update(this.objects);
 
-    // Enforce chute left wall as physics boundary
-    this._enforceChuteWall();
+    // ── Chute collapse animation ──────────────────────────────────────────────
+    // Pending collapse: wait for chute balls to drain before starting
+    if (this._chuteCollapsePending) {
+      var _activeInChute = (this._chuteActive && this._chuteActive.length > 0) ||
+                           (this._chuteQueue && this._chuteQueue.length > 0);
+      if (!_activeInChute) {
+        this._chuteCollapsePending = false;
+        this._chuteCollapseDir = 1; // start closing
+      }
+    }
+    if (this._chuteCollapseDir !== 0) {
+      var _colSpeed = 0.04; // ~25 frames = ~0.4s at 60fps
+      this._chuteCollapseT += this._chuteCollapseDir * _colSpeed;
+      if (this._chuteCollapseT >= 1) {
+        this._chuteCollapseT = 1; this._chuteCollapseDir = 0; this._chuteCollapsed = true;
+      } else if (this._chuteCollapseT <= 0) {
+        this._chuteCollapseT = 0; this._chuteCollapseDir = 0; this._chuteCollapsed = false;
+      }
+    }
+
+    // Enforce chute left wall as physics boundary (skip when fully collapsed)
+    if (this._chuteCollapseT < 1) {
+      this._enforceChuteWall();
+    }
 
     if (this.target) this.target.update();
     Physics.stepSparks(this.sparks);
@@ -4260,11 +4307,16 @@ class Game {
   // Called from physics loop — enforce left wall as hard boundary
   _enforceChuteWall() {
     var g = this._chuteGeom();
+    var colT = this._chuteCollapseT || 0;
+    // During collapse, the wall only exists above the collapse line
+    var wallBottom = g.TOP_Y + (g.floorY - g.TOP_Y) * (1 - colT);
     for (var i = 0; i < this.objects.length; i++) {
       var obj = this.objects[i];
       if (obj.dead || obj._inChute) continue;
       // Only enforce below the diagonal start — above that, full screen width is open
       if (obj.y < g.TOP_Y + 30) continue;  // allow some overlap at top
+      // During collapse, ball below the wall line passes through
+      if (colT > 0 && obj.y > wallBottom) continue;
       if (obj.x + obj.r > g.LEFT_X) {
         obj.x = g.LEFT_X - obj.r;
         if (obj.vx > 0) {
@@ -4365,6 +4417,8 @@ class Game {
   }
 
   _chuteDropBall(type) {
+    // Block drops when chute is collapsed or collapsing
+    if (this._chuteCollapsed || this._chuteCollapseDir !== 0) return;
     var onField = this.objects.filter(function(o) { return !o.dead; }).length
                 + (this._chuteActive ? this._chuteActive.length : 0)
                 + (this._chuteQueue  ? this._chuteQueue.length  : 0);
@@ -4401,9 +4455,48 @@ class Game {
     var W     = g.W, floorY = g.floorY;
     var leftX = g.LEFT_X, turnR = g.TURN_R, topY = g.TOP_Y;
     var CW    = g.CHUTE_W;
+    var colT  = this._chuteCollapseT || 0;
+
+    // ── Draw collapse toggle button below floor (play mode only) ──────────────
+    if (!this._editorMode) {
+    var _ctBtnH = 28, _ctBtnW = CW - 4;
+    var _ctBtnX = leftX + 2, _ctBtnY = floorY + 6;
+    this._chuteToggleBtn = { x: _ctBtnX, y: _ctBtnY, w: _ctBtnW, h: _ctBtnH };
+    ctx.save();
+    var _ctActive = this._chuteCollapsed || colT > 0;
+    ctx.fillStyle = _ctActive ? 'rgba(0,40,20,0.9)' : 'rgba(0,15,35,0.9)';
+    ctx.beginPath(); ctx.roundRect(_ctBtnX, _ctBtnY, _ctBtnW, _ctBtnH, 5); ctx.fill();
+    ctx.strokeStyle = _ctActive ? '#00ff88' : 'rgba(0,180,255,0.5)';
+    ctx.lineWidth = 1.2;
+    if (_ctActive) { ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 6; }
+    ctx.beginPath(); ctx.roundRect(_ctBtnX, _ctBtnY, _ctBtnW, _ctBtnH, 5); ctx.stroke();
+    ctx.shadowBlur = 0;
+    // Chevron icon
+    var _ctCX = _ctBtnX + _ctBtnW / 2, _ctCY = _ctBtnY + _ctBtnH / 2;
+    var _chevDir = _ctActive ? 1 : -1; // down = expand, up = collapse
+    ctx.strokeStyle = _ctActive ? '#00ff88' : 'rgba(0,180,255,0.7)';
+    ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(_ctCX - 8, _ctCY - _chevDir * 3);
+    ctx.lineTo(_ctCX, _ctCY + _chevDir * 4);
+    ctx.lineTo(_ctCX + 8, _ctCY - _chevDir * 3);
+    ctx.stroke();
+    ctx.restore();
+    } // end !editorMode toggle button
+
+    // Fully collapsed — don't draw chute at all
+    if (colT >= 1) return;
 
     ctx.save();
 
+    // ── Collapse clip: cap slides down, erasing content below ────────────────
+    if (colT > 0) {
+      var _clipBottom = topY + (floorY - topY) * colT;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(leftX - 5, 0, CW + 10, _clipBottom);
+      ctx.clip();
+    }
     // ── 3D TUBE BODY ─────────────────────────────────────────────────────────
     // Dark fill with edge gradients to simulate cylindrical depth
     var shaftH = floorY - topY;
@@ -4940,6 +5033,9 @@ class Game {
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(delActive ? 'TAP BALL' : 'DEL', delOrbX + 10, delOrbY);
 
+    // Close collapse clip if active
+    if (colT > 0) ctx.restore();
+
     ctx.restore();
   }
 
@@ -5005,7 +5101,7 @@ class Game {
     if (this._chuteActive) { for (var ci=0;ci<this._chuteActive.length;ci++) this._drawBall(this._chuteActive[ci]); }
     this._drawChute();
     // ── Editor mode: chute overlay — fully covers tube + DONE button ──────────
-    if (this._editorMode) {
+    if (this._editorMode && this._chuteCollapseT < 1) {
       var _cg = this._chuteGeom();
       var _ctx = this.ctx;
       var _cMidX = _cg.LEFT_X + _cg.CHUTE_W / 2;
@@ -5270,6 +5366,11 @@ class Game {
       if (this._editorMovable === undefined) this._editorMovable = false;
       if (this._editorLastSettings === undefined) this._editorLastSettings = { _movable: false, _rotation: 0, _translateOnRotate: false };
       if (window.Sound && Sound.editorOpen) Sound.editorOpen();  // default ⊕ROT
+      // Force chute open in editor mode
+      if (this._chuteCollapsed || this._chuteCollapseT > 0) {
+        this._chuteCollapsed = false; this._chuteCollapseT = 0;
+        this._chuteCollapseDir = 0; this._chuteCollapsePending = false;
+      }
     } else {
       this._editorNotePopup = false;
       this._editorScrollY = 0;
