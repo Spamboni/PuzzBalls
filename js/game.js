@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1718;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1719;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -7612,14 +7612,20 @@ class Game {
 
   _saveCustomLevel() {
     var self = this;
+    var _preSaveBrickCount = this.bricks.length;
     var defaultName = 'My Level ' + (Date.now() % 10000);
+    if (_preSaveBrickCount === 0) {
+      this._neonAlert('Nothing to save — no bricks placed!\n(Count at save start: ' + _preSaveBrickCount + ')');
+      return;
+    }
     this._neonPrompt('Save level as:', defaultName, function(levelName) {
       if (!levelName || !levelName.trim()) return;
       levelName = levelName.trim();
       var W = self.W, floorY = self.floorY();
-      console.log('[PuzzBalls SAVE] bricks:' + self.bricks.length + ' balls:' + self.objects.length + ' tubes:' + (self.tubes ? self.tubes.tubes.length : 0));
-      if (self.bricks.length === 0) {
-        self._neonAlert('Nothing to save — no bricks placed!');
+      var _postPromptCount = self.bricks.length;
+      console.log('[PuzzBalls SAVE] pre:' + _preSaveBrickCount + ' post:' + _postPromptCount);
+      if (_postPromptCount === 0) {
+        self._neonAlert('Bricks disappeared during save!\nHad ' + _preSaveBrickCount + ' before prompt,\n0 after. This is a bug — please report!');
         return;
       }
       // Serialize bricks
@@ -7990,7 +7996,8 @@ class Game {
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     setTimeout(function(){ input.focus(); input.select(); }, 50);
-    function close(val) { document.body.removeChild(overlay); callback(val); }
+    var _closed = false;
+    function close(val) { if (_closed) return; _closed = true; document.body.removeChild(overlay); callback(val); }
     cancelBtn.addEventListener('click', function(){ close(null); });
     okBtn.addEventListener('click', function(){ close(input.value); });
     input.addEventListener('keydown', function(e){ if(e.key==='Enter') close(input.value); if(e.key==='Escape') close(null); });
