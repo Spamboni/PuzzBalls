@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1717;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1718;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -303,6 +303,7 @@ class Game {
     // Restore editor-placed bricks from custom level save
     if (ld.objects) {
       console.log('[PuzzBalls] Loading ' + ld.objects.length + ' objects from level data');
+      var _loadedBrickCount = 0;
       ld.objects.forEach(function(objDef) {
         var x = (objDef.rx !== undefined ? objDef.rx * W : objDef.x || W * 0.5);
         var y = (objDef.ry !== undefined ? objDef.ry * self.floorY() : objDef.y || self.floorY() * 0.5);
@@ -369,6 +370,8 @@ class Game {
         }
       });
     }
+
+    console.log('[PuzzBalls LOAD] Result: ' + this.bricks.length + ' bricks loaded');
 
     // Restore active balls from save (if present)
     if (ld.activeBalls && ld.activeBalls.length) {
@@ -7615,6 +7618,10 @@ class Game {
       levelName = levelName.trim();
       var W = self.W, floorY = self.floorY();
       console.log('[PuzzBalls SAVE] bricks:' + self.bricks.length + ' balls:' + self.objects.length + ' tubes:' + (self.tubes ? self.tubes.tubes.length : 0));
+      if (self.bricks.length === 0) {
+        self._neonAlert('Nothing to save — no bricks placed!');
+        return;
+      }
       // Serialize bricks
       var brickData = self.bricks.map(function(b) {
         return {
@@ -7671,7 +7678,7 @@ class Game {
       // Notify menu to refresh
       if (window._menuRefreshCallback) window._menuRefreshCallback();
       if (window.Sound && Sound.win) Sound.win();
-      self._neonAlert("Level '" + levelName + "' saved!\\nIt will appear in the main menu.");
+      self._neonAlert("Level '" + levelName + "' saved!\\n" + brickData.length + " bricks, " + tubeData.length + " tubes\\nIt will appear in the main menu.");
     });
   }
 
