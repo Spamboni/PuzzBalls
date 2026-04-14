@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1688;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1689;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -5153,34 +5153,40 @@ class Game {
       // ── Pivot mode (activated via rot pivot grid) ───────────────────────────
       if (this._editorPivotActive && !(b instanceof CircularBrick)) {
         var _pivKey = b._pivot || 'MC';
-        var _pOff = this._getPivotOffset(b, _pivKey);
         var _bRot = b._rotation || 0;
-        var _pvWX = b.x + Math.cos(_bRot)*_pOff.x - Math.sin(_bRot)*_pOff.y;
-        var _pvWY = b.y + Math.sin(_bRot)*_pOff.x + Math.cos(_bRot)*_pOff.y;
+        // Always use the cached pivot world pos — the key is just a label
+        var _pvWX = (this._editorPivotWorldX !== undefined) ? this._editorPivotWorldX
+          : b.x + Math.cos(_bRot)*this._getPivotOffset(b,_pivKey).x - Math.sin(_bRot)*this._getPivotOffset(b,_pivKey).y;
+        var _pvWY = (this._editorPivotWorldY !== undefined) ? this._editorPivotWorldY
+          : b.y + Math.sin(_bRot)*this._getPivotOffset(b,_pivKey).x + Math.cos(_bRot)*this._getPivotOffset(b,_pivKey).y;
         var _hw = (b.w || 40) / 2;
         var _endRX = b.x + Math.cos(_bRot)*_hw, _endRY = b.y + Math.sin(_bRot)*_hw;
         var _endLX = b.x - Math.cos(_bRot)*_hw, _endLY = b.y - Math.sin(_bRot)*_hw;
         var _endHitR = Math.max(20, _hw * 0.4 + 8);
         var _distR = Math.hypot(pos.x - _endRX, pos.y - _endRY);
         var _distL = Math.hypot(pos.x - _endLX, pos.y - _endLY);
-        // Don't allow dragging the end that IS the pivot point
-        var _pivKey2 = _pivKey;
-        var _pivIsRight = (_pivKey2 === 'MR' || _pivKey2 === 'TR' || _pivKey2 === 'BR');
-        var _pivIsLeft  = (_pivKey2 === 'ML' || _pivKey2 === 'TL' || _pivKey2 === 'BL');
+        // Determine which end is the pivot end from world pos (not key label, which may be stale)
+        // The pivot end is the one closer to _pvWX/Y
+        var _distPivToR = Math.hypot(_pvWX - _endRX, _pvWY - _endRY);
+        var _distPivToL = Math.hypot(_pvWX - _endLX, _pvWY - _endLY);
+        var _pivIsRight = (_distPivToR < _distPivToL) && (_distPivToR < _endHitR);
+        var _pivIsLeft  = (_distPivToL < _distPivToR) && (_distPivToL < _endHitR);
         var _hitEnd = null;
         if (!_pivIsRight && _distR < _endHitR && _distR <= _distL) _hitEnd = 'right';
         else if (!_pivIsLeft && _distL < _endHitR) _hitEnd = 'left';
         if (_hitEnd) {
-          // Distance from pivot to the dragged end (in local brick coords along length axis)
-          var _pivToEnd = (_hitEnd === 'right') ? (_hw - _pOff.x) : (_hw + _pOff.x);
-          // Distance from pivot to the anchored end
-          var _pivToAnch = (_hitEnd === 'right') ? (_hw + _pOff.x) : (_hw - _pOff.x);
-          // World position of the ANCHORED end — stays fixed throughout drag
+          // Derive pivot local offset from cached world pos (key-independent)
+          var _cosR = Math.cos(-_bRot), _sinR = Math.sin(-_bRot);
+          var _pdx = _pvWX - b.x, _pdy = _pvWY - b.y;
+          var _pOffX = _cosR*_pdx - _sinR*_pdy;  // pivot offset in local space
+          var _pOffY = _sinR*_pdx + _cosR*_pdy;
+          var _hh = (b.h || 22) / 2;
+          var _pivToEnd  = (_hitEnd === 'right') ? (_hw - _pOffX) : (_hw + _pOffX);
+          var _pivToAnch = (_hitEnd === 'right') ? (_hw + _pOffX) : (_hw - _pOffX);
           var _anchWX = (_hitEnd === 'right') ? _endLX : _endRX;
           var _anchWY = (_hitEnd === 'right') ? _endLY : _endRY;
-          // Store pivot offset as fraction of hw so it scales with width changes
-          var _ePivFracX = _pOff.x / Math.max(1, _hw);  // e.g. -1 for TL, 0 for MC
-          var _ePivFracY = _pOff.y / Math.max(1, (b.h||22)/2);
+          var _ePivFracX = _pOffX / Math.max(1, _hw);
+          var _ePivFracY = _pOffY / Math.max(1, _hh);
           this._editorPivotEndState = {
             brick: b, end: _hitEnd,
             pivotWX: _pvWX, pivotWY: _pvWY,
