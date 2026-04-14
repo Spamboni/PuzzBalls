@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1692;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1693;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -895,7 +895,6 @@ class Game {
                     self._editorPivotActive = false;  // turn off any blue button
                     self._editorPivot = 'MC';
                     self._pivotUserSet = false;
-                    self._pivotUserSetSide = undefined;
                     if (self._editorSelected) self._editorSelected._pivot = 'MC';
                   }
                 });
@@ -2021,7 +2020,6 @@ class Game {
           self._editorPivotCachedFor = null;
           self._editorPivotCachedKey = null;
           self._pivotUserSet = false;
-          self._pivotUserSetSide = undefined;
           if (self._editorSelected) self._editorSelected._pivot = 'MC';
         } else {
           self._editorPivotActive = true;
@@ -3259,20 +3257,18 @@ class Game {
     var freeX = (freeEndX !== undefined) ? freeEndX
       : ((col==='L') ? brick.x+Math.cos(rot)*hw : brick.x-Math.cos(rot)*hw);
     var freeIsRight = (freeX >= pivotWX);
-    // After a user button tap, capture the current free-end side as baseline
-    // and suppress normalization until the free end genuinely crosses to the other side
+    var pivIsLeft = (col === 'L');
+    // After a user button tap, suppress normalization until the geometry naturally
+    // agrees with the user-chosen key (free end on correct side). Once validated,
+    // clear the flag and resume normal normalization from that point on.
     if (this._pivotUserSet) {
-      this._pivotUserSetSide = freeIsRight ? 1 : -1;
-      this._pivotUserSet = false;
+      if (pivIsLeft === freeIsRight) {
+        // Geometry now agrees with user's chosen key — validated, clear flag
+        this._pivotUserSet = false;
+      }
+      // Either way, don't flip while flag is set
       return currentKey;
     }
-    if (this._pivotUserSetSide !== undefined) {
-      var curSide = freeIsRight ? 1 : -1;
-      if (curSide === this._pivotUserSetSide) return currentKey; // hasn't crossed yet
-      // Genuine cross — clear the baseline and proceed with normalization
-      this._pivotUserSetSide = undefined;
-    }
-    var pivIsLeft = (col === 'L');
     // No change if free end is already on the correct side
     if (pivIsLeft === freeIsRight) return currentKey;
     // Cross detected — toggle to diagonal opposite only
