@@ -42,12 +42,10 @@ class UI {
     if (btnSave && opts.game) {
       function doSave(e) { e.preventDefault(); e.stopPropagation(); opts.game._saveCustomLevel(); }
       btnSave.addEventListener('click', doSave);
-      btnSave.addEventListener('touchend', doSave);
     }
     if (btnLoad && opts.game) {
       function doLoad(e) { e.preventDefault(); e.stopPropagation(); opts.game._showLoadLevelOverlay(); }
       btnLoad.addEventListener('click', doLoad);
-      btnLoad.addEventListener('touchend', doLoad);
     }
 
     if (this._btnEditor && opts.game) {
