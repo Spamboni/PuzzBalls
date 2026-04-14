@@ -1,0 +1,101 @@
+═══════════════════════════════════════════════════════════════════════════════
+PUZZBALLS SESSION HANDOFF — v17.01 (build 1701)
+Date: April 14, 2026
+Session: Opus 4.6 — Pinch-to-zoom on play area
+═══════════════════════════════════════════════════════════════════════════════
+
+CURRENT VERSION: v17.01 (1701)
+LAST DEPLOYED TO GITHUB: v16.96 (need to push v17.01)
+ALL CHANGES THIS SESSION: game.js only (+ version bumps in index.html, menu.js)
+
+───────────────────────────────────────────────────────────────────────────────
+WHAT WAS DONE THIS SESSION (v17.00 → v17.01)
+───────────────────────────────────────────────────────────────────────────────
+
+1. PINCH-TO-ZOOM ON PLAY AREA (v17.01)
+   Feature: Two-finger pinch gesture zooms the play area in/out.
+   
+   Zoom mechanics:
+   - Anchor point: lower-right corner (W, floorY) — where ground meets right wall
+   - When zooming out, world expands up and to the left
+   - Zoom range: 0.25 (16x area) to 1.0 (default, current size)
+   - At zoom 0.5 = 4x the building area (2x width, 2x height)
+   
+   What scales with zoom (world space):
+   - All bricks, balls, tubes, obstacles, targets, barriers
+   - Ball generator chute (shrinks when zoomed out)
+   - Editor chute overlay strip + DONE button (scale with world)
+   - Floor line, sling zone, grid, stars, nebula
+   - Sparks, splats, gravity range indicators
+   - Per-brick indicators (pivot crosshairs, lock marks, selection)
+   
+   What stays fixed at 1:1 (screen space):
+   - Editor panel (sliders, buttons, brick controls below floorY)
+   - HUD speed sliders (ball/brick/tube/zone)
+   - Corner toggle buttons
+   - Top HUD bar
+   
+   Coordinate conversion system:
+   - _screenToWorld(sx, sy) — converts screen touch coords to world coords
+   - _worldToScreen(wx, wy) — inverse transform
+   - Anchor math: world = (screen - anchor) / zoom + anchor
+   - All touch handlers updated to use world coords for game interactions:
+     * Ball selection, sling start/drag/release
+     * Chute button taps, delete toggle
+     * Editor brick/tube placement and drag
+     * Editor brick delete mode
+     * Editor tube group drag (one-finger and two-finger)
+     * Editor brick pinch/resize (_editorHandleTouch)
+     * Editor DONE button tap
+     * Editor chute scroll strip
+   
+   Pinch gesture detection:
+   - Play mode: any two-finger touch initiates zoom pinch
+   - Editor mode: two-finger zoom only when no brick/tube is selected
+     (if brick selected → existing pinch/resize behavior takes priority)
+   - _playPinchStartDist / _playPinchStartZoom track gesture state
+   - Cleared on touch end in all paths (play, editor, tube release)
+   
+   Rendering:
+   - _draw() wraps world content in ctx.save/translate/scale/translate/restore
+   - Zoom transform applied after background clear, before world rendering
+   - Restored before editor panel and HUD drawing
+   - _drawEditor() re-applies zoom for world-space brick indicators section
+   
+   Known considerations:
+   - Zoom level is NOT saved with level data (view preference, resets to 1.0)
+   - Chute buttons shrink when zoomed out — may be hard to tap at extreme zoom
+   - _tubeHandleTouch already had zoom-aware toWorld() from previous code
+   - The existing _viewZoom variable and toWorld pattern in tube code was the
+     foundation this build expanded on
+
+───────────────────────────────────────────────────────────────────────────────
+KNOWN REMAINING ISSUES
+───────────────────────────────────────────────────────────────────────────────
+
+- First deploy of zoom — needs live testing on phone for:
+  * Pinch gesture feel and responsiveness
+  * Chute button tappability at various zoom levels
+  * Editor interactions at zoomed-out levels
+  * Sling aim accuracy at different zoom levels
+  * Two-finger behavior when one finger is in panel vs world area
+- Sam mentioned "some things I need to fix" from v17.00 testing — unspecified
+- The _pivotLockKey (global red lock) still exists alongside per-brick pinning
+- Zoom doesn't persist across level loads or page refreshes
+
+───────────────────────────────────────────────────────────────────────────────
+KEY ARCHITECTURE REMINDERS
+───────────────────────────────────────────────────────────────────────────────
+
+- Stack: Vanilla HTML5 Canvas + JS, no frameworks, globals on window
+- Script load order: sound → physics → objects → events → balls → presets →
+  menu → ui → game
+- Zip structure: NEVER use wrapper folder, files at top level
+- Version bumping: increment ALL version strings (index.html comment + script
+  tags, game.js, menu.js FILE_VERSION lines, BUILD_TIMESTAMP)
+- Deploy: puzzballs-deploy.html reads zip → pushes via GitHub API
+- Service worker: sw.js caches aggressively, may need cache bust after deploy
+- Testing: live on phone via GitHub Pages (spamboni.github.io/PuzzBalls)
+- Zoom coordinate system: anchor at (W, floorY), screen↔world via
+  _screenToWorld/_worldToScreen. All world touch interactions must go through
+  these helpers.
