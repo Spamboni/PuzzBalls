@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1710;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1711;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -514,15 +514,17 @@ class Game {
   // Screen→World: invert the ctx.translate(W,fY) + ctx.scale(z,z) + ctx.translate(-W,-fY)
   _screenToWorld(sx, sy) {
     var z = this._viewZoom || 1;
-    if (z === 1) return { x: sx, y: sy };
+    var px = this._viewPanX || 0, py = this._viewPanY || 0;
+    if (z === 1 && px === 0 && py === 0) return { x: sx, y: sy };
     var fY = this.floorY(), W = this.W;
-    return { x: (sx - W) / z + W, y: (sy - fY) / z + fY };
+    return { x: (sx - px - W) / z + W, y: (sy - py - fY) / z + fY };
   }
   _worldToScreen(wx, wy) {
     var z = this._viewZoom || 1;
-    if (z === 1) return { x: wx, y: wy };
+    var px = this._viewPanX || 0, py = this._viewPanY || 0;
+    if (z === 1 && px === 0 && py === 0) return { x: wx, y: wy };
     var fY = this.floorY(), W = this.W;
-    return { x: (wx - W) * z + W, y: (wy - fY) * z + fY };
+    return { x: (wx - W) * z + W + px, y: (wy - fY) * z + fY + py };
   }
 
   // ── Input ──────────────────────────────────────────────────────────────────
@@ -572,7 +574,7 @@ class Game {
             var _scY2 = self.canvas.height / rect2.height;
             var sx = (t.clientX - rect2.left) * _scX2;
             var sy = (t.clientY - rect2.top)  * _scY2;
-            return { x: (sx - W2) / z5 + W2, y: (sy - fY2) / z5 + fY2 };
+            return self._screenToWorld(sx, sy);
           }
           var pt0 = e.touches[0], pt1 = e.touches[1];
           var pp0 = toWorld2(pt0);
@@ -1672,7 +1674,11 @@ class Game {
         // World taps (not in panel) — route to tube or brick editor
         // Skip if on an empty tab (affectors/ramps/motors)
         var _aTab = self._editorActiveTab || 'bricks';
-        if (!inPanel && (_aTab === 'bricks' || _aTab === 'tubes')) {
+        var _toolMode = self._editorToolMode || 'build';
+        if (!inPanel && _toolMode === 'pan') {
+          // Start pan drag
+          self._viewPanDrag = { startX: pos.x, startY: pos.y, origPanX: self._viewPanX || 0, origPanY: self._viewPanY || 0 };
+        } else if (!inPanel && (_aTab === 'bricks' || _aTab === 'tubes')) {
           if (self._editorTubeMode) {
             self._tubeEditorOnDown({x:_wpx, y:_wpy});
           } else {
@@ -1930,7 +1936,13 @@ class Game {
                 if (_fsb._spawnX === undefined) { _fsb._spawnX = _fsb.x; _fsb._spawnY = _fsb.y; _fsb._spawnRot = _fsb._rotation || 0; }
                 _fsb._startX = _fsb.x; _fsb._startY = _fsb.y;
                 self._flingSwipe.hit = true;
-                if (window.Sound && Sound.snap) Sound.snap(Math.min(_fsForce / 15, 1));
+                // Play brick note if configured, otherwise snap sound
+                if (_fsb._noteConfig && window.BrickNote) {
+                  var _fnc = _fsb._noteConfig;
+                  window.BrickNote.playNote(_fnc.note||'C', _fnc.octave||4, _fnc.timbre||'marimba', _fnc.vol !== undefined ? _fnc.vol : 0.6);
+                } else if (window.Sound && Sound.snap) {
+                  Sound.snap(Math.min(_fsForce / 15, 1));
+                }
               }
               break;
             }
@@ -2107,6 +2119,13 @@ class Game {
         }
         self._editorPinchStart = null;  // only cleared on full lift (onUp)
         self._tubePinchStart = null;
+        // Pan drag — one-finger drag in pan mode
+        if (self._viewPanDrag) {
+          var _pd = self._viewPanDrag;
+          self._viewPanX = _pd.origPanX + (pos.x - _pd.startX);
+          self._viewPanY = _pd.origPanY + (pos.y - _pd.startY);
+          return;
+        }
         // Universal scroll — promote pending to active after 6px, then scroll
         if (self._editorScrollPending || self._editorScrollDragging) {
           var dragDelta = pos.y - self._editorScrollDragY;
@@ -2448,6 +2467,7 @@ class Game {
         self._editorScrollStart    = undefined;
         self._tubePinchStart = null;
         self._playPinchStartDist = null;
+        self._viewPanDrag = null;
         self._editorOnUp();
         return;
       }
@@ -5206,9 +5226,11 @@ class Game {
     var z = this._viewZoom || 1;
     ctx.fillStyle = '#030a18'; ctx.fillRect(0, 0, W, H);
     if (vSY !== 0) { ctx.save(); ctx.translate(0, vSY); }
-    // ── Begin zoom transform (anchor = lower-right corner: W, floorY) ────────
-    if (z !== 1) {
+    // ── Begin zoom+pan transform (anchor = lower-right corner: W, floorY) ─────
+    var _px = this._viewPanX || 0, _py2 = this._viewPanY || 0;
+    if (z !== 1 || _px !== 0 || _py2 !== 0) {
       ctx.save();
+      ctx.translate(_px, _py2);
       ctx.translate(W, floorY);
       ctx.scale(z, z);
       ctx.translate(-W, -floorY);
@@ -5378,8 +5400,8 @@ class Game {
     this.tubes.draw(ctx, 'above', this.frame, _selTubeForDraw);
     if (this.sling) this._drawSling();
     this._drawSparks();
-    // ── End zoom transform ───────────────────────────────────────────────────
-    if (z !== 1) ctx.restore();
+    // ── End zoom+pan transform ─────────────────────────────────────────────
+    if (z !== 1 || _px !== 0 || _py2 !== 0) ctx.restore();
     if (this._editorMode) this._drawEditor();
     if (vSY !== 0) ctx.restore();
     // Top HUD clear buttons removed — use editor CLR buttons instead
@@ -6045,11 +6067,12 @@ class Game {
     var fY   = this.floorY();
     var W    = this.W;
     var t0 = touches[0], t1 = touches[1];
-    // Convert screen coords to world coords using zoom transform inverse
+    // Convert screen coords to world coords using zoom+pan transform inverse
+    var _self = this;
     function toWorld(t) {
       var sx = (t.clientX - rect.left) * _tscX;
       var sy = (t.clientY - rect.top)  * _tscY;
-      return { x: (sx - W) / z + W, y: (sy - fY) / z + fY };
+      return _self._screenToWorld(sx, sy);
     }
     var p0 = toWorld(t0);
     var p1 = toWorld(t1);
@@ -7017,6 +7040,14 @@ class Game {
         c.beginPath(); c.roundRect(-9,-5,18,10,2); c.stroke();
         c.beginPath(); c.moveTo(-9,-2);c.lineTo(-14,0);c.lineTo(-9,2);c.moveTo(-9,0);c.lineTo(-14,0); c.stroke();
         c.beginPath(); c.moveTo(9,-2);c.lineTo(14,0);c.lineTo(9,2);c.moveTo(9,0);c.lineTo(14,0); c.stroke(); }},
+      { id:'pan',     col:'#ff8844', icon: function(c,col) {
+        c.strokeStyle=col; c.lineWidth=1.6; c.lineCap='round';
+        // Four arrows
+        c.beginPath(); c.moveTo(0,-8);c.lineTo(0,8); c.moveTo(-8,0);c.lineTo(8,0); c.stroke();
+        c.beginPath(); c.moveTo(-2,-6);c.lineTo(0,-8);c.lineTo(2,-6); c.stroke();
+        c.beginPath(); c.moveTo(-2,6);c.lineTo(0,8);c.lineTo(2,6); c.stroke();
+        c.beginPath(); c.moveTo(-6,-2);c.lineTo(-8,0);c.lineTo(-6,2); c.stroke();
+        c.beginPath(); c.moveTo(6,-2);c.lineTo(8,0);c.lineTo(6,2); c.stroke(); }},
     ];
     var edMode = this._editorToolMode || 'build';
     var toolW  = 36;
@@ -7237,10 +7268,12 @@ class Game {
     // ── Note picker popup ─────────────────────────────────────────────────────
     if (this._editorNotePopup && sb2) this._drawNotePopup(ctx, sb2);
 
-    // ── Re-apply zoom for world-space brick indicators ──────────────────────
+    // ── Re-apply zoom+pan for world-space brick indicators ────────────────
     var _edZ = this._viewZoom || 1;
-    if (_edZ !== 1) {
+    var _edPx = this._viewPanX || 0, _edPy = this._viewPanY || 0;
+    if (_edZ !== 1 || _edPx !== 0 || _edPy !== 0) {
       ctx.save();
+      ctx.translate(_edPx, _edPy);
       ctx.translate(W, floorY);
       ctx.scale(_edZ, _edZ);
       ctx.translate(-W, -floorY);
@@ -7365,7 +7398,7 @@ class Game {
     }
 
     // ── End zoom for world-space indicators ──────────────────────────────────
-    if (_edZ !== 1) ctx.restore();
+    if (_edZ !== 1 || _edPx !== 0 || _edPy !== 0) ctx.restore();
 
     ctx.filter = 'none';
     ctx.restore();
