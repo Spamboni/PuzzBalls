@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1719;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1720;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -560,6 +560,7 @@ class Game {
     }
 
     function onDown(e) {
+      if (self._modalOpen) { e.preventDefault(); return; }
       if (isUI(e.target)) return;
       // Two-finger = start pinch — init state immediately
       if (e.touches && e.touches.length >= 2) {
@@ -1895,8 +1896,8 @@ class Game {
 
     function onMove(e) {
       e.preventDefault();
+      if (self._modalOpen) return;
       var pos = getPos(e);
-      // Track sticky flick finger position
       if (self._pendingStickyFlick) {
         self._pendingStickyFlick._lastX = pos.x;
         self._pendingStickyFlick._lastY = pos.y;
@@ -2296,6 +2297,7 @@ class Game {
 
     function onUp(e) {
       e.preventDefault();
+      if (self._modalOpen) return;
       _cancelLongPress();
       _stopClrTone();
 
@@ -7995,9 +7997,12 @@ class Game {
     box.appendChild(titleEl); box.appendChild(input); box.appendChild(btnRow);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+    this._modalOpen = true;
+    if (this.canvas) this.canvas.style.pointerEvents = 'none';
     setTimeout(function(){ input.focus(); input.select(); }, 50);
     var _closed = false;
-    function close(val) { if (_closed) return; _closed = true; document.body.removeChild(overlay); callback(val); }
+    var _self = this;
+    function close(val) { if (_closed) return; _closed = true; document.body.removeChild(overlay); _self._modalOpen = false; if (_self.canvas) _self.canvas.style.pointerEvents = ''; callback(val); }
     cancelBtn.addEventListener('click', function(){ close(null); });
     okBtn.addEventListener('click', function(){ close(input.value); });
     input.addEventListener('keydown', function(e){ if(e.key==='Enter') close(input.value); if(e.key==='Escape') close(null); });
@@ -8018,7 +8023,9 @@ class Game {
     box.appendChild(titleEl); box.appendChild(okBtn);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
-    function close() { document.body.removeChild(overlay); if(callback)callback(); }
+    this._modalOpen = true;
+    var _alertSelf = this;
+    function close() { document.body.removeChild(overlay); _alertSelf._modalOpen = false; if (_alertSelf.canvas) _alertSelf.canvas.style.pointerEvents = ''; if(callback)callback(); }
     okBtn.addEventListener('click', close);
     overlay.addEventListener('click', function(e){ if(e.target===overlay) close(); });
   }
@@ -8033,7 +8040,8 @@ class Game {
     titleEl.style.cssText = 'color:#dd88ff;font-size:12px;font-weight:bold;margin-bottom:10px;';
     titleEl.textContent = title;
     box.appendChild(titleEl);
-    function close(val) { document.body.removeChild(overlay); callback(val); }
+    var _pickerSelf = this;
+    function close(val) { document.body.removeChild(overlay); _pickerSelf._modalOpen = false; if (_pickerSelf.canvas) _pickerSelf.canvas.style.pointerEvents = ''; callback(val); }
     options.forEach(function(opt) {
       var btn = document.createElement('button');
       btn.textContent = opt.label;
@@ -8049,6 +8057,8 @@ class Game {
     box.appendChild(cancelBtn);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+    this._modalOpen = true;
+    var _pickerSelf = this;
     overlay.addEventListener('click', function(e){ if(e.target===overlay) close(null); });
   }
 
