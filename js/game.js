@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1705;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1706;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -316,6 +316,7 @@ class Game {
             obj = new BreakableBrick(x, y, objDef.w || 40, objDef.h || 22, objDef.health || 100, objDef.id, objDef.regenAfter || null);
             if (objDef.rotation) obj._rotation = objDef.rotation;
             if (objDef._movable) obj._movable = objDef._movable;
+            if (objDef._flingable) obj._flingable = objDef._flingable;
             if (objDef._density !== undefined) obj._density = objDef._density;
             if (objDef._maxTravel !== undefined) obj._maxTravel = objDef._maxTravel;
             if (objDef._decel !== undefined) obj._decel = objDef._decel;
@@ -338,6 +339,7 @@ class Game {
             obj = new CircularBrick(x, y, objDef.r || 22, objDef.health || 100, objDef.id, objDef.regenAfter || null);
             if (objDef.rotation) obj._rotation = objDef.rotation;
             if (objDef._movable) obj._movable = objDef._movable;
+            if (objDef._flingable) obj._flingable = objDef._flingable;
             if (objDef._noteConfig) obj._noteConfig = objDef._noteConfig;
             self.bricks.push(obj);
             break;
@@ -1145,6 +1147,17 @@ class Game {
             if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorTranslate); return;
           }
         }
+        // FLING toggle
+        if (self._editorFlingRect) {
+          var fr2=self._editorFlingRect;
+          if (_px>=fr2.x&&_px<=fr2.x+fr2.w&&_py>=fr2.y&&_py<=fr2.y+fr2.h) {
+            if (self._editorSelected) {
+              self._editorSelected._flingable=!self._editorSelected._flingable;
+              self._editorFlingable=self._editorSelected._flingable;
+            } else { self._editorFlingable=!self._editorFlingable; }
+            if(window.Sound&&Sound.uiToggle)Sound.uiToggle(self._editorFlingable); return;
+          }
+        }
         // Pivot rects (behavior panel + ROT mode big grid)
         if (self._editorPivotRects) {
           for (var piv=0; piv<self._editorPivotRects.length; piv++) {
@@ -1762,6 +1775,35 @@ class Game {
       var zoneH2   = self._slingZoneH !== undefined ? self._slingZoneH : 100;
       var zoneTop  = self.floorY() - zoneH2;
 
+      // ── Flingable brick: tap-swipe to fling ──────────────────────────────────
+      if (!self._editorMode && !self._deleteMode) {
+        for (var _fi = self.bricks.length - 1; _fi >= 0; _fi--) {
+          var _fb = self.bricks[_fi];
+          if (!_fb._flingable || _fb.health <= 0) continue;
+          var _fHit = false;
+          if (_fb instanceof CircularBrick) {
+            _fHit = Math.hypot(_worldPos.x - _fb.x, _worldPos.y - _fb.y) < _fb.r + 10;
+          } else {
+            var _fRot = _fb._rotation || 0;
+            var _fCos = Math.cos(-_fRot), _fSin = Math.sin(-_fRot);
+            var _frx = _worldPos.x - _fb.x, _fry = _worldPos.y - _fb.y;
+            var _flx = _fCos * _frx - _fSin * _fry;
+            var _fly = _fSin * _frx + _fCos * _fry;
+            _fHit = Math.abs(_flx) < (_fb.w || 40) / 2 + 10 && Math.abs(_fly) < (_fb.h || 22) / 2 + 10;
+          }
+          if (_fHit) {
+            self._flingPending = {
+              brick: _fb,
+              startX: _worldPos.x, startY: _worldPos.y,
+              startTime: performance.now(),
+              lastX: _worldPos.x, lastY: _worldPos.y,
+              lastTime: performance.now(),
+            };
+            return;
+          }
+        }
+      }
+
       // ── Delete mode: tap a ball to remove it ─────────────────────────────
       if (self._deleteMode) {
         if (self._tryDeleteBall(_worldPos.x, _worldPos.y)) return;
@@ -1831,6 +1873,13 @@ class Game {
       if (self._pendingStickyFlick) {
         self._pendingStickyFlick._lastX = pos.x;
         self._pendingStickyFlick._lastY = pos.y;
+      }
+      // Track fling gesture
+      if (self._flingPending) {
+        var _fwp = self._screenToWorld(pos.x, pos.y);
+        self._flingPending.lastX = _fwp.x;
+        self._flingPending.lastY = _fwp.y;
+        self._flingPending.lastTime = performance.now();
       }
       // Vel font size slider drag
       if (self._draggingVelSlider && self._velSliderRect) {
@@ -2277,6 +2326,35 @@ class Game {
       }
       self._tubeDragSlider = null;
 
+      // ── Fling release: compute swipe velocity and apply to brick ────────────
+      if (self._flingPending) {
+        var _fp = self._flingPending;
+        self._flingPending = null;
+        var _fBrick = _fp.brick;
+        var _fdt = (performance.now() - _fp.startTime) / 1000; // seconds
+        if (_fdt < 0.01) _fdt = 0.01;
+        var _fdx = _fp.lastX - _fp.startX;
+        var _fdy = _fp.lastY - _fp.startY;
+        var _fDist = Math.hypot(_fdx, _fdy);
+        // Only fling if swipe was substantial (>8px, <600ms)
+        if (_fDist > 8 && _fdt < 0.6) {
+          var _fSpeed = Math.min(_fDist / _fdt * 0.012, 25); // scale and cap
+          var _fAngle = Math.atan2(_fdy, _fdx);
+          _fBrick._vx = Math.cos(_fAngle) * _fSpeed;
+          _fBrick._vy = Math.sin(_fAngle) * _fSpeed;
+          // Apply angular velocity based on where the swipe hit relative to center
+          var _fHitDx = _fp.startX - _fBrick.x;
+          var _fHitDy = _fp.startY - _fBrick.y;
+          var _fCross = _fHitDx * Math.sin(_fAngle) - _fHitDy * Math.cos(_fAngle);
+          _fBrick._angularV = _fCross * (_fBrick._rotSpeed || 0.3) * 0.02;
+          // Mark start position for distance tracking
+          if (_fBrick._spawnX === undefined) { _fBrick._spawnX = _fBrick.x; _fBrick._spawnY = _fBrick.y; _fBrick._spawnRot = _fBrick._rotation || 0; }
+          _fBrick._startX = _fBrick.x;
+          _fBrick._startY = _fBrick.y;
+          if (window.Sound && Sound.snap) Sound.snap(Math.min(_fSpeed / 15, 1));
+        }
+      }
+
       // Quick tap on floor ball → pop it up (no drag happened)
       if (self._pendingStickyFlick) {
         var psf = self._pendingStickyFlick;
@@ -2419,7 +2497,7 @@ class Game {
     for (i = 0; i < this.bricks.length; i++) {
       this.bricks[i].updateRegen(dt);
       var mbrick = this.bricks[i];
-      if (mbrick._movable && (Math.abs(mbrick._vx||0) > 0.05 || Math.abs(mbrick._vy||0) > 0.05 || Math.abs(mbrick._angularV||0) > 0.001)) {
+      if ((mbrick._movable || mbrick._flingable) && (Math.abs(mbrick._vx||0) > 0.05 || Math.abs(mbrick._vy||0) > 0.05 || Math.abs(mbrick._angularV||0) > 0.001)) {
         var decel = mbrick._decel || 0.88;
         var bsm   = this.brickSpeedMult !== undefined ? this.brickSpeedMult : 0.5;
         mbrick.x += (mbrick._vx || 0) * bsm * 2;
@@ -5236,6 +5314,22 @@ class Game {
     // if (this._tubeGroupDrag && this._tubeGroupDrag.hasMoved && window._tubeBBoxOn !== false && this._editorTubeMode) { ... }
     for (var i = 0; i < this.buttons.length;    i++) this.buttons[i].draw(ctx);
     for (var i = 0; i < this.bricks.length; i++) this.bricks[i].draw(ctx);
+    // Flingable brick indicators (play mode only — small touch icon)
+    if (!this._editorMode) {
+      for (var _fdi = 0; _fdi < this.bricks.length; _fdi++) {
+        var _fdb = this.bricks[_fdi];
+        if (!_fdb._flingable || _fdb.health <= 0) continue;
+        var _fdPulse = 0.4 + 0.2 * Math.sin(this.frame * 0.05 + _fdi);
+        ctx.save();
+        ctx.globalAlpha = _fdPulse;
+        ctx.fillStyle = '#ff6644';
+        ctx.font = "bold 8px 'Share Tech Mono',monospace";
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText('⤴', _fdb.x, _fdb.y - (_fdb.h || _fdb.r || 20) / 2 - 3);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+    }
     this._drawSplats();  // draw ON TOP of bricks, before balls
     for (var i = 0; i < this.turnstiles.length; i++) this.turnstiles[i].draw(ctx);
     for (var i = 0; i < this.ports.length;      i++) this.ports[i].draw(ctx);
@@ -5263,7 +5357,7 @@ class Game {
       return { x:b.x, y:b.y, w:b.w, h:b.h, r:b.r, _rotation:b._rotation,
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
-               _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
+               _rotDecel:b._rotDecel, _movable:b._movable, _flingable:b._flingable||false, _invincible:b._invincible,
                _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false, _lenLocked:b._lenLocked||false, _widLocked:b._widLocked||false, _rotLocked:b._rotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
@@ -5284,7 +5378,7 @@ class Game {
       return { x:b.x, y:b.y, w:b.w, h:b.h, r:b.r, _rotation:b._rotation,
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
-               _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
+               _rotDecel:b._rotDecel, _movable:b._movable, _flingable:b._flingable||false, _invincible:b._invincible,
                _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false, _lenLocked:b._lenLocked||false, _widLocked:b._widLocked||false, _rotLocked:b._rotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
@@ -5305,7 +5399,7 @@ class Game {
       b._rotation=s._rotation||0; b.maxHealth=s.maxHealth; b.health=s.maxHealth;
       b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
       b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
-      b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
+      b._movable=s._movable; b._flingable=s._flingable||false; b._invincible=s._invincible; b._noRegen=s._noRegen;
       b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._lenLocked=s._lenLocked||false; b._widLocked=s._widLocked||false; b._rotLocked=s._rotLocked||false; b._translateOnRotate=s._translateOnRotate;
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
@@ -5335,7 +5429,7 @@ class Game {
       return { x:b.x, y:b.y, w:b.w, h:b.h, r:b.r, _rotation:b._rotation,
                maxHealth:b.maxHealth, regenAfter:b.regenAfter, _density:b._density,
                _maxTravel:b._maxTravel, _decel:b._decel, _rotSpeed:b._rotSpeed,
-               _rotDecel:b._rotDecel, _movable:b._movable, _invincible:b._invincible,
+               _rotDecel:b._rotDecel, _movable:b._movable, _flingable:b._flingable||false, _invincible:b._invincible,
                _noRegen:b._noRegen, _wallBounce:b._wallBounce, _pivot:b._pivot, _pivotLocked:b._pivotLocked||false, _lenLocked:b._lenLocked||false, _widLocked:b._widLocked||false, _rotLocked:b._rotLocked||false,
                _translateOnRotate:b._translateOnRotate, _noteConfig:b._noteConfig,
                _spawnX:b._spawnX, _spawnY:b._spawnY, _spawnRot:b._spawnRot, id:b.id, _ref:b };
@@ -5355,7 +5449,7 @@ class Game {
       b._rotation=s._rotation||0; b.maxHealth=s.maxHealth; b.health=s.maxHealth;
       b.regenAfter=s.regenAfter; b._density=s._density; b._maxTravel=s._maxTravel;
       b._decel=s._decel; b._rotSpeed=s._rotSpeed; b._rotDecel=s._rotDecel;
-      b._movable=s._movable; b._invincible=s._invincible; b._noRegen=s._noRegen;
+      b._movable=s._movable; b._flingable=s._flingable||false; b._invincible=s._invincible; b._noRegen=s._noRegen;
       b._wallBounce=s._wallBounce; b._pivot=s._pivot; b._pivotLocked=s._pivotLocked||false; b._lenLocked=s._lenLocked||false; b._widLocked=s._widLocked||false; b._rotLocked=s._rotLocked||false; b._translateOnRotate=s._translateOnRotate;
       b._spawnX=s._spawnX; b._spawnY=s._spawnY; b._spawnRot=s._spawnRot;
       return b;
@@ -5463,6 +5557,7 @@ class Game {
       this._editorSelected = b;
       this._showBrickSettings = true;
       this._editorMovable = b._movable || false;
+      this._editorFlingable = b._flingable || false;
 
       // ── Per-brick pinned pivot: auto-activate pivot mode ───────────────────
       if (b._pivotLocked && !(b instanceof CircularBrick)) {
@@ -5692,6 +5787,7 @@ class Game {
       ? new CircularBrick(pos.x, pos.y, (last.r || defaults.circularR || 22), defHP, id, defRegen)
       : new BreakableBrick(pos.x, pos.y, defW, defH, defHP, id, defRegen);
     obj._movable          = last._movable  !== undefined ? last._movable  : (this._editorMovable || false);
+    obj._flingable        = last._flingable !== undefined ? last._flingable : (this._editorFlingable || false);
     obj._rotation         = last._rotation !== undefined ? last._rotation : 0;
     obj._vx = 0; obj._vy = 0; obj._angularV = 0;
     obj._maxTravel        = last._maxTravel  !== undefined ? last._maxTravel  : (defaults.maxTravel || 60);
@@ -6189,7 +6285,7 @@ class Game {
     this._editorLastSettings = {
       maxHealth: brick.maxHealth, regenAfter: brick.regenAfter,
       w: brick.w, h: brick.h, r: brick.r,
-      _movable: brick._movable, _rotation: brick._rotation,
+      _movable: brick._movable, _flingable: brick._flingable||false, _rotation: brick._rotation,
       _maxTravel: brick._maxTravel, _decel: brick._decel, _density: brick._density,
       _rotSpeed: brick._rotSpeed, _rotDecel: brick._rotDecel,
       _noteConfig: brick._noteConfig ? JSON.parse(JSON.stringify(brick._noteConfig)) : null,
@@ -7042,6 +7138,10 @@ class Game {
     var noteOn2 = sb2&&sb2._noteConfig;
     this._editorNoteBtn = btn('🎵', padding+4+statW*2+6, bRow1Y, bRowH, bRowH,
       noteOn2?'#cc44ff':'#446688', noteOn2||false);
+    // FLING toggle
+    var flingOn2 = sb2 ? (sb2._flingable||false) : (this._editorFlingable||false);
+    this._editorFlingRect = btn(flingOn2?'● FLING':'○ FLING', padding+4+statW*2+6+bRowH+3, bRow1Y, statW*0.9, bRowH,
+      flingOn2?'#ff6644':'#446688', flingOn2, {fs:7});
 
     // 3x3 pivot grid — same cell size as rotation pivot (14px)
     var pivX3  = padding + 4;
@@ -7246,7 +7346,7 @@ class Game {
           x: b.x, y: b.y, w: b.w || null, h: b.h || null, r: b.r || null,
           rotation: b._rotation || 0,
           health: b.maxHealth || 100, regenAfter: b.regenAfter || null,
-          _movable: b._movable || false, _density: b._density,
+          _movable: b._movable || false, _flingable: b._flingable || false, _density: b._density,
           _maxTravel: b._maxTravel, _decel: b._decel,
           _rotSpeed: b._rotSpeed, _rotDecel: b._rotDecel,
           _wallBounce: b._wallBounce, _invincible: b._invincible || false,
