@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1711;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1712;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -2714,13 +2714,33 @@ class Game {
           var _minX = (_z < 1) ? this.W * (1 - 1/_z) : 0;
           var _minY = (_z < 1) ? floorY * (1 - 1/_z) : 0;
           Physics.stepObject(obj, this.W, floorY, this.sparks, { gravityMult: Settings.gravityMult * subSm, bounceMult: bs.bounciness, speedMult: subSm, minX: _minX, minY: _minY });
-          // Early exit: if ball now overlaps a brick, stop substeps so
+          // Early exit: if ball now overlaps a brick or tube, stop substeps so
           // the swept collision resolver gets a short ray to work with
           if (_ss < subSteps - 1) {
             var _hitBrick = false;
             for (var _sbi = 0; _sbi < this.bricks.length; _sbi++) {
               if (this.bricks[_sbi].health <= 0) continue;
               if (this.bricks[_sbi].overlaps(obj)) { _hitBrick = true; break; }
+            }
+            if (!_hitBrick && this.tubes && !obj._inTube) {
+              // Check tube exterior proximity
+              var _tubes2 = this.tubes.tubes;
+              for (var _sti = 0; _sti < _tubes2.length && !_hitBrick; _sti++) {
+                var _stube = _tubes2[_sti];
+                var _spts = _stube._path;
+                if (!_spts || _spts.length < 2) continue;
+                var _str = _stube.radius + obj.r;
+                for (var _spi = 0; _spi < _spts.length - 1; _spi++) {
+                  var _sax = _spts[_spi].x, _say = _spts[_spi].y;
+                  var _sbx = _spts[_spi+1].x, _sby = _spts[_spi+1].y;
+                  var _sdx = _sbx - _sax, _sdy = _sby - _say;
+                  var _ssl = _sdx*_sdx + _sdy*_sdy;
+                  if (_ssl < 0.001) continue;
+                  var _st = Math.max(0, Math.min(1, ((obj.x-_sax)*_sdx + (obj.y-_say)*_sdy) / _ssl));
+                  var _scpx = _sax + _st*_sdx, _scpy = _say + _st*_sdy;
+                  if (Math.hypot(obj.x - _scpx, obj.y - _scpy) < _str) { _hitBrick = true; break; }
+                }
+              }
             }
             if (_hitBrick) break;
           }
