@@ -28,6 +28,8 @@ function stepObject(obj, W, H, sparks, settings) {
   var s = settings || {};
   var gravMult  = s.gravityMult  || 1.0;
   var bncMult   = s.bounceMult   || 1.0;
+  var minX      = s.minX         || 0;
+  var minY      = s.minY         || 0;
   var speedMult = s.speedMult    !== undefined ? s.speedMult : 1.0;
   var bounce    = Math.min(PHYSICS.BOUNCE * bncMult, 1.0);
 
@@ -40,8 +42,8 @@ function stepObject(obj, W, H, sparks, settings) {
   obj.y += obj.vy * speedMult;
 
   // ── wall collisions ──────────────────────────────────────────────
-  if (obj.x - obj.r < 0) {
-    obj.x = obj.r;
+  if (obj.x - obj.r < minX) {
+    obj.x = minX + obj.r;
     var spd1 = Math.abs(obj.vx);
     obj.vx = Math.abs(obj.vx) * bounce;
     spawnSparks(sparks, obj.x, obj.y, obj.glowColor, 5);
@@ -56,8 +58,8 @@ function stepObject(obj, W, H, sparks, settings) {
     if (spd2 > 1.5 && window.Sound) Sound.ballImpact(obj.type, spd2, obj.r);
     if (obj.type === 'exploder' && !obj.exploded && !obj._fromChute && spd2 > 1.5) _countExploderBounce(obj);
   }
-  if (obj.y - obj.r < 0) {
-    obj.y = obj.r;
+  if (obj.y - obj.r < minY) {
+    obj.y = minY + obj.r;
     var spd3 = Math.abs(obj.vy);
     obj.vy = Math.abs(obj.vy) * bounce;
     if (spd3 > 1.5 && window.Sound) Sound.ballImpact(obj.type, spd3, obj.r);
