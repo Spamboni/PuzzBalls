@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1712;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1713;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1936,12 +1936,13 @@ class Game {
                 if (_fsb._spawnX === undefined) { _fsb._spawnX = _fsb.x; _fsb._spawnY = _fsb.y; _fsb._spawnRot = _fsb._rotation || 0; }
                 _fsb._startX = _fsb.x; _fsb._startY = _fsb.y;
                 self._flingSwipe.hit = true;
-                // Play brick note if configured, otherwise snap sound
+                // Play brick note if configured (velocity-dependent volume), otherwise snap sound
+                var _flingVol = Math.min(1.0, Math.max(0.1, _fsForce / 15));
                 if (_fsb._noteConfig && window.BrickNote) {
                   var _fnc = _fsb._noteConfig;
-                  window.BrickNote.playNote(_fnc.note||'C', _fnc.octave||4, _fnc.timbre||'marimba', _fnc.vol !== undefined ? _fnc.vol : 0.6);
+                  window.BrickNote.playNote(_fnc.note||'C', _fnc.octave||4, _fnc.timbre||'marimba', (_fnc.vol !== undefined ? _fnc.vol : 0.6) * _flingVol);
                 } else if (window.Sound && Sound.snap) {
-                  Sound.snap(Math.min(_fsForce / 15, 1));
+                  Sound.snap(_flingVol);
                 }
               }
               break;
@@ -2674,6 +2675,18 @@ class Game {
                 other.takeDamage(bbDmg);
                 if (mbrick.isAlive()) mbrick.takeDamage(Math.round(bbDmg * 0.5));
                 mbrick[coolK] = 30;
+                // Velocity-dependent note volume (0.1 to 1.0 based on speed)
+                var _bbVol = Math.min(1.0, Math.max(0.1, bSpeed / 12));
+                // Play notes on both bricks if configured
+                if (other._noteConfig && window.BrickNote) {
+                  var _nc1 = other._noteConfig;
+                  window.BrickNote.playNote(_nc1.note||'C', _nc1.octave||4, _nc1.timbre||'marimba', (_nc1.vol||0.6) * _bbVol);
+                }
+                if (mbrick._noteConfig && window.BrickNote) {
+                  var _nc2 = mbrick._noteConfig;
+                  window.BrickNote.playNote(_nc2.note||'C', _nc2.octave||4, _nc2.timbre||'marimba', (_nc2.vol||0.6) * _bbVol);
+                }
+                // Thud + existing brick-on-brick sound
                 if (window.Sound) Sound.brickOnBrick(bSpeed);
               }
             }
@@ -3308,10 +3321,11 @@ class Game {
         }
 
         if (window.spawnBrickShards) spawnBrickShards(this.sparks, brick, ball);
-        // Play brick note if configured, otherwise normal impact sound
+        // Play brick note if configured (velocity-dependent volume), otherwise normal impact sound
+        var _ballNoteVol = Math.min(1.0, Math.max(0.15, speed / 10));
         if (brick._noteConfig && window.BrickNote) {
           var nc3 = brick._noteConfig;
-          window.BrickNote.playNote(nc3.note||'C', nc3.octave||4, nc3.timbre||'marimba', nc3.vol !== undefined ? nc3.vol : 0.6);
+          window.BrickNote.playNote(nc3.note||'C', nc3.octave||4, nc3.timbre||'marimba', (nc3.vol !== undefined ? nc3.vol : 0.6) * _ballNoteVol);
         } else if (window.Sound) {
           Sound.brickShatter(dmg * 0.01);
         }
