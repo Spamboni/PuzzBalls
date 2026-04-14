@@ -1,4 +1,4 @@
-<!-- PuzzBalls v1706 -->
+<!-- PuzzBalls v1707 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -59,16 +59,16 @@
 
 </div><!-- /#game-screen -->
 
-<script src="js/sound.js?v=1706"></script>
-<script src="js/physics.js?v=1706"></script>
-<script src="js/objects.js?v=1706"></script>
-<script src="js/tubes.js?v=1706"></script>
-<script src="js/events.js?v=1706"></script>
-<script src="js/balls.js?v=1706"></script>
-<script src="js/presets.js?v=1706"></script>
-<script src="js/menu.js?v=1706"></script>
-<script src="js/ui.js?v=1706"></script>
-<script src="js/game.js?v=1706"></script>
+<script src="js/sound.js?v=1707"></script>
+<script src="js/physics.js?v=1707"></script>
+<script src="js/objects.js?v=1707"></script>
+<script src="js/tubes.js?v=1707"></script>
+<script src="js/events.js?v=1707"></script>
+<script src="js/balls.js?v=1707"></script>
+<script src="js/presets.js?v=1707"></script>
+<script src="js/menu.js?v=1707"></script>
+<script src="js/ui.js?v=1707"></script>
+<script src="js/game.js?v=1707"></script>
 
 <script>
 window.addEventListener('DOMContentLoaded', function() {
@@ -219,6 +219,78 @@ window.addEventListener('DOMContentLoaded', function() {
         objectives: [
           { id: 'goal_1', type: 'portActivated', portId: 'port_alpha', description: 'Plug the GRAVITY ball into the port ⚡' },
           { id: 'goal_2', type: 'ballInZone',    ballType: 'bouncer',  description: 'Then land a BOUNCER in the target' },
+        ],
+      },
+
+      'gauntlet_run': {
+        id: 'gauntlet_run',
+        name: 'The Gauntlet',
+        balls: [
+          { type: 'bouncer', count: 3 },
+          { type: 'exploder', count: 2 },
+          { type: 'gravity', count: 1 },
+          { type: 'splitter', count: 1 },
+          { type: 'sticky', count: 2 },
+        ],
+        obstacles: [],
+        objects: [
+          // Floor platforms
+          { type:'breakable_brick', id:'floor_L', x:80, y:640, w:160, h:14, health:999, _invincible:true },
+          { type:'breakable_brick', id:'floor_R', x:260, y:640, w:100, h:14, health:999, _invincible:true },
+          // Angled ramps
+          { type:'breakable_brick', id:'ramp_left', x:40, y:600, w:90, h:10, rotation:-0.35, health:999, _invincible:true, _pivot:'BL' },
+          { type:'breakable_brick', id:'ramp_right', x:290, y:590, w:70, h:10, rotation:0.3, health:999, _invincible:true },
+          // Mid shelves (breakable)
+          { type:'breakable_brick', id:'mid_shelf_1', x:150, y:500, w:120, h:12, health:200, _density:1.5 },
+          { type:'breakable_brick', id:'mid_shelf_2', x:60, y:440, w:80, h:10, rotation:0.15, health:150 },
+          // Spinner — movable, invincible, rotates when hit
+          { type:'breakable_brick', id:'spinner_1', x:200, y:420, w:100, h:8, rotation:0.8,
+            health:999, _invincible:true, _movable:true,
+            _rotSpeed:0.6, _rotDecel:0.92, _decel:0.95, _maxTravel:30, _density:0.8,
+            _translateOnRotate:true, _pivot:'MC' },
+          // Flingable block — player can swipe it around
+          { type:'breakable_brick', id:'fling_block', x:100, y:550, w:50, h:30, health:999,
+            _invincible:true, _flingable:true,
+            _decel:0.85, _maxTravel:200, _rotSpeed:0.4, _density:0.6 },
+          // Narrow gate
+          { type:'breakable_brick', id:'narrow_gate_L', x:110, y:340, w:90, h:16, health:300, _density:2.0 },
+          { type:'breakable_brick', id:'narrow_gate_R', x:230, y:340, w:80, h:16, health:300, _density:2.0 },
+          // Small bumper
+          { type:'breakable_brick', id:'bumper_1', x:170, y:370, w:14, h:14, rotation:0.78,
+            health:80, _movable:true, _density:0.4,
+            _decel:0.80, _maxTravel:80, _rotSpeed:0.8, _wallBounce:0.6 },
+          // Upper corridor walls
+          { type:'breakable_brick', id:'upper_wall_L', x:30, y:260, w:14, h:180, health:999, _invincible:true },
+          { type:'breakable_brick', id:'upper_wall_R', x:300, y:260, w:14, h:180, health:999, _invincible:true },
+          // Zigzag shelves
+          { type:'breakable_brick', id:'zigzag_1', x:80, y:250, w:80, h:8, rotation:-0.25, health:120 },
+          { type:'breakable_brick', id:'zigzag_2', x:240, y:210, w:80, h:8, rotation:0.25, health:120 },
+          { type:'breakable_brick', id:'zigzag_3', x:100, y:170, w:70, h:8, rotation:-0.2, health:150, _density:1.3 },
+          // Vault
+          { type:'breakable_brick', id:'vault_floor', x:170, y:110, w:140, h:10, health:999, _invincible:true },
+          { type:'breakable_brick', id:'vault_wall_L', x:105, y:80, w:10, h:60, health:999, _invincible:true },
+          { type:'breakable_brick', id:'vault_wall_R', x:235, y:80, w:10, h:60, health:999, _invincible:true },
+          // Vault lid — heavy, breakable, movable
+          { type:'breakable_brick', id:'vault_lid', x:170, y:50, w:120, h:12,
+            health:400, _movable:true, _density:2.5,
+            _decel:0.90, _maxTravel:50, _rotSpeed:0.2 },
+          // Circular pillars
+          { type:'circular_brick', id:'pillar_1', x:50, y:500, r:16, health:999, _invincible:true },
+          { type:'circular_brick', id:'pillar_2', x:280, y:460, r:12, health:999, _invincible:true },
+        ],
+        tubeData: [
+          { type:'straight', x:165, y:460, rotation:-1.57, length:80, radius:14, speedMod:1.2,
+            style:'glass', layer:'main', id:'tube_chute_1', connectedA:null, connectedB:null },
+          { type:'straight', x:50, y:310, rotation:-0.5, length:90, radius:12, speedMod:1.5,
+            style:'glass', layer:'main', id:'tube_ramp_1', connectedA:null, connectedB:null },
+        ],
+        target: {
+          rx: 0.44, ry: 0.10, r: 18,
+          barrierR: 40, barrierThickness: 8,
+          barrierGap: 0.6, barrierGapAngle: -Math.PI / 2,
+        },
+        objectives: [
+          { id:'goal_1', type:'ballInZone', ballType:'bouncer', description:'Get a BOUNCER into the vault at the top' },
         ],
       },
     };
