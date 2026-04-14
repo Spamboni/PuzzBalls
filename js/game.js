@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1685;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1686;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1364,8 +1364,9 @@ class Game {
               if ((self._editorPivotActive||self._pivotLockKey) && pvX!==undefined) {
                 var _slHW=(b.w||40)/2, _slCol=(b._pivot||'MC').slice(-1);
                 var _slFreeX=b.x+Math.cos(newRot)*_slHW*(_slCol==='L'?1:-1);
+                var _slFreeY=b.y+Math.sin(newRot)*_slHW*(_slCol==='L'?1:-1);
                 if (Math.abs(_slFreeX-pvX)>4) {
-                  var _nrk=self._normalizePivotKey(b,pvX,pvY,_slFreeX);
+                  var _nrk=self._normalizePivotKey(b,pvX,pvY,_slFreeX,_slFreeY);
                   if (_nrk!==b._pivot){b._pivot=_nrk;self._editorPivot=_nrk;if(self._pivotLockKey)self._pivotLockKey=_nrk;}
                 }
               }
@@ -3222,25 +3223,31 @@ class Game {
   // freeEndX = screen X of the free (non-pivot) end.
   // If free end is RIGHT of pivot → pivot is on the LEFT → col = L.
   // If free end is LEFT of pivot  → pivot is on the RIGHT → col = R.
-  _normalizePivotKey(brick, pivotWX, pivotWY, freeEndX) {
+  _normalizePivotKey(brick, pivotWX, pivotWY, freeEndX, freeEndY) {
     var currentKey = brick._pivot || 'MC';
     var col = currentKey[currentKey.length - 1]; // L, C, or R
-    if (col === 'C') return currentKey;           // C-column never changes
     var row = currentKey.slice(0, currentKey.length - 1); // T, M, or B
-    var refX;
+    if (col === 'C') return currentKey; // C-column never changes (MC, TC, BC stay)
+    var rot = brick._rotation || 0;
+    var hw = (brick.w || 40) / 2;
+    // Compute free end world position if not provided
+    var freeX, freeY;
     if (freeEndX !== undefined) {
-      refX = freeEndX;
+      freeX = freeEndX;
+      freeY = freeEndY !== undefined ? freeEndY : brick.y + Math.sin(rot) * hw * (col === 'L' ? 1 : -1);
     } else {
-      // Infer free end from current brick orientation (opposite side from pivot col)
-      var _rot = brick._rotation || 0;
-      var _hw = (brick.w || 40) / 2;
-      refX = (col === 'L')
-        ? brick.x + Math.cos(_rot) * _hw   // pivot is L, free end is R
-        : brick.x - Math.cos(_rot) * _hw;  // pivot is R, free end is L
+      freeX = (col === 'L') ? brick.x + Math.cos(rot)*hw : brick.x - Math.cos(rot)*hw;
+      freeY = (col === 'L') ? brick.y + Math.sin(rot)*hw : brick.y - Math.sin(rot)*hw;
     }
-    // Free end RIGHT of pivot → pivot is LEFT; free end LEFT → pivot is RIGHT
-    var newCol = (refX >= pivotWX) ? 'L' : 'R';
-    return row + newCol;
+    // L/R: free end right of pivot → pivot is Left; left of pivot → pivot is Right
+    var newCol = (freeX >= pivotWX) ? 'L' : 'R';
+    // T/B: only applies to corner pivots (T* or B* rows), not M row
+    var newRow = row;
+    if (row !== 'M') {
+      // Free end below pivot (higher Y) → pivot is Top; above pivot → pivot is Bottom
+      newRow = (freeY >= pivotWY) ? 'T' : 'B';
+    }
+    return newRow + newCol;
   }
 
   // Try to unstick a sticky ball that was hit by another ball
@@ -5163,14 +5170,13 @@ class Game {
           // World position of the ANCHORED end — stays fixed throughout drag
           var _anchWX = (_hitEnd === 'right') ? _endLX : _endRX;
           var _anchWY = (_hitEnd === 'right') ? _endLY : _endRY;
-          // Store local offset from brick center to pivot (never changes, key-independent)
-          var _ePivLocalX = _pvWX - b.x, _ePivLocalY = _pvWY - b.y;
-          var _eCosR = Math.cos(-_bRot), _eSinR = Math.sin(-_bRot);
+          // Store pivot offset as fraction of hw so it scales with width changes
+          var _ePivFracX = _pOff.x / Math.max(1, _hw);  // e.g. -1 for TL, 0 for MC
+          var _ePivFracY = _pOff.y / Math.max(1, (b.h||22)/2);
           this._editorPivotEndState = {
             brick: b, end: _hitEnd,
             pivotWX: _pvWX, pivotWY: _pvWY,
-            pivLocalX: _eCosR*_ePivLocalX - _eSinR*_ePivLocalY,
-            pivLocalY: _eSinR*_ePivLocalX + _eCosR*_ePivLocalY,
+            pivFracX: _ePivFracX, pivFracY: _ePivFracY,
             anchorWX: _anchWX, anchorWY: _anchWY,
             startFingerX: pos.x, startFingerY: pos.y,
             origW: b.w, origRot: _bRot, origX: b.x, origY: b.y,
@@ -5549,19 +5555,22 @@ class Game {
       if (_snapDeg2 > 0) { var _sr2 = _snapDeg2*Math.PI/180; _newRot = Math.round(_newRot/_sr2)*_sr2; }
       _pb._rotation = _newRot;
       // New width: pivot→finger = pivot→dragged-end distance
-      // Total width = pivot→dragged-end + pivot→anchor-end (ratio fixed from original geometry)
       var _ratio = _pes.pivDistAnchored / Math.max(1, _pes.pivDistDragged);
       _pb.w = Math.max(12, Math.min(900, _fingerDist * (1 + _ratio)));
-      // Reposition brick so pivot stays fixed using stored local offset
+      // Recompute pivot local offset from stored fractions (scales with current width)
+      var _curHW = _pb.w / 2, _curHH = (_pb.h || 22) / 2;
+      var _pivLocalX = _pes.pivFracX * _curHW;
+      var _pivLocalY = _pes.pivFracY * _curHH;
+      // Reposition brick so pivot stays fixed
       var _cosNR = Math.cos(_newRot), _sinNR = Math.sin(_newRot);
-      var _rotPivX = _cosNR*_pes.pivLocalX - _sinNR*_pes.pivLocalY;
-      var _rotPivY = _sinNR*_pes.pivLocalX + _cosNR*_pes.pivLocalY;
+      var _rotPivX = _cosNR*_pivLocalX - _sinNR*_pivLocalY;
+      var _rotPivY = _sinNR*_pivLocalX + _cosNR*_pivLocalY;
       _pb.x = _pes.pivotWX - _rotPivX;
-      _pb.y = Math.min(_pes.pivotWY - _rotPivY, this.floorY() - (_pb.h||10)/2 - 4);
-      // Flip pivot key L<->R after minimum movement
+      _pb.y = Math.min(_pes.pivotWY - _rotPivY, this.floorY() - _curHH - 4);
+      // Flip pivot key after minimum movement — pass finger pos for both axes
       var _movedDist = Math.hypot(pos.x - _pes.startFingerX, pos.y - _pes.startFingerY);
       if (_movedDist > 12 && Math.abs(_fpvX) > 4) {
-        var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x);
+        var _newKey = this._normalizePivotKey(_pb, _pes.pivotWX, _pes.pivotWY, pos.x, pos.y);
         if (_newKey !== _pb._pivot) {
           _pb._pivot = _newKey;
           this._editorPivot = _newKey;
@@ -5589,11 +5598,11 @@ class Game {
       // Flip pivot key when the free end crosses the vertical line through pivot
       var _bbHW = (_pbb.w||40)/2;
       var _bbCol = (_pbb._pivot||'MC').slice(-1);
-      // Free end = opposite side from pivot column
       var _freeEndX = _pbb.x + Math.cos(_newBodyRot) * _bbHW * (_bbCol === 'L' ? 1 : -1);
+      var _freeEndY = _pbb.y + Math.sin(_newBodyRot) * _bbHW * (_bbCol === 'L' ? 1 : -1);
       var _freeRelX = _freeEndX - _pbs.pivotWX;
       if (Math.abs(_freeRelX) > 4) {
-        var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY, _freeEndX);
+        var _newBodyKey = this._normalizePivotKey(_pbb, _pbs.pivotWX, _pbs.pivotWY, _freeEndX, _freeEndY);
         if (_newBodyKey !== _pbb._pivot) {
           _pbb._pivot = _newBodyKey;
           this._editorPivot = _newBodyKey;
