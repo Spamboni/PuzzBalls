@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1708;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1710;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1504,13 +1504,13 @@ class Game {
         ];
         // ── VAL window tap-to-type ────────────────────────────────────────────
         var _sliderDefsForVal = [
-          { key:'blen',  min:5,    max:900,   label:'Length (px)',      fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
-          { key:'bwid',  min:2,    max:200,   label:'Width (px)',       fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'blen',  min:5,    max:2000,   label:'Length (px)',      fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'bwid',  min:2,    max:1000,   label:'Width (px)',       fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
           { key:'rot',   min:-180, max:180,   label:'Rotation (°)',     fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
-          { key:'hp',    min:10,   max:400,   label:'HP (10-400)',      fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'hp',    min:10,   max:2000,  label:'HP (10-2000)',      fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
           { key:'regen', min:200,  max:10000, label:'Regen ms (200-10000)', fmt:function(v){return Math.round(v);}, parse:function(s){return parseFloat(s);} },
           { key:'dens',  min:0.5,  max:5.0,   label:'Density (0.5-5)', fmt:function(v){return v.toFixed(1);},    parse:function(s){return parseFloat(s);} },
-          { key:'dist',  min:0,    max:900,   label:'Distance (px)',    fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
+          { key:'dist',  min:0,    max:4000,   label:'Distance (px)',    fmt:function(v){return Math.round(v);},    parse:function(s){return parseFloat(s);} },
           { key:'decel', min:0.01, max:0.5,   label:'Decel (0.01-0.5)',fmt:function(v){return v.toFixed(2);},    parse:function(s){return parseFloat(s);} },
           { key:'rotspd',min:0,    max:1.0,   label:'Spin (0-1)',       fmt:function(v){return v.toFixed(2);},    parse:function(s){return parseFloat(s);} },
           { key:'rotdec',min:0.05, max:0.95,  label:'Spin decel (0.05-0.95)', fmt:function(v){return v.toFixed(2);}, parse:function(s){return parseFloat(s);} },
@@ -6817,6 +6817,7 @@ class Game {
     var curPiv3 = sb2 ? (sb2._pivot||'MC') : (this._editorPivot||'MC');
     // Brick state vars needed by Physics panel
     var movActive2 = sb2 ? (sb2._movable||false) : (this._editorMovable||false);
+    var flingOn2   = sb2 ? (sb2._flingable||false) : (this._editorFlingable||false);
     var transOn3   = sb2 ? (sb2._translateOnRotate!==false) : (this._editorTranslate!==false);
     var slRH  = 26;  // row height per slider
     var slGap = 4;
@@ -6851,8 +6852,8 @@ class Game {
       var _lenLk = (sb2 && sb2._lenLocked) || false;
       var _widLk = (sb2 && sb2._widLocked) || false;
       var _rotLk = (sb2 && sb2._rotLocked) || false;
-      this._editorSliders.blen = slider('LEN', LENval, 5, 450, padding, cY, p1W2, {rowH:slRH,col:'#00ccff',locked:_lenLk});
-      this._editorSliders.bwid = slider('WID', WIDval, 2, 450, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff',locked:_widLk});
+      this._editorSliders.blen = slider('LEN', LENval, 5, 2000, padding, cY, p1W2, {rowH:slRH,col:'#00ccff',locked:_lenLk});
+      this._editorSliders.bwid = slider('WID', WIDval, 2, 1000, padding+p1W2+4, cY, p1W2, {rowH:slRH,col:'#00ccff',locked:_widLk});
       // Fill-bar on LEN/WID/ROT labels during long-press
       var _cpsDim = this._clrPressState;
       var _dimLockSliders = { 'dimlock_blen': this._editorSliders.blen, 'dimlock_bwid': this._editorSliders.bwid };
@@ -6935,7 +6936,7 @@ class Game {
 
     if (!ph2.collapsed) {
       var p2W = Math.floor((contentW-8)/3);
-      this._editorSliders.hp    = slider('HP',    HPval,   10, 400, padding,          cY, p2W, {rowH:slRH,col:'#ff4444'});
+      this._editorSliders.hp    = slider('HP',    HPval,   10, 2000, padding,          cY, p2W, {rowH:slRH,col:'#ff4444'});
       this._editorSliders.regen = slider('REGEN', noRegen?0:Math.max(200,REGval), 200, 10000, padding+p2W+4, cY, p2W, {rowH:slRH,col:'#ff8844'});
       this._editorSliders.dens  = slider('DENS',  DENSval, 0.5, 5.0, padding+(p2W+4)*2, cY, p2W, {rowH:slRH,col:'#ffcc44'});
 
@@ -6956,7 +6957,7 @@ class Game {
       var p3W2 = Math.floor((contentW-8)/3);
       var p3W3 = Math.floor((contentW-4)/2);
       var grayed3 = !movActive2 && !flingOn2;
-      this._editorSliders.dist    = slider('DIST',     DISTval,         0, 900, padding,           cY, p3W2, {rowH:slRH,col:'#00ccff',grayed:grayed3});
+      this._editorSliders.dist    = slider('DIST',     DISTval,         0, 4000, padding,           cY, p3W2, {rowH:slRH,col:'#00ccff',grayed:grayed3});
       this._editorSliders.decel   = slider('DECEL',    1-DECELval,   0.01, 0.5, padding+p3W2+4,    cY, p3W2, {rowH:slRH,col:'#00aaff',grayed:grayed3});
       this._editorSliders.spinDist= slider('SPIN/DIST',SPINDISTval,     0, 1.0, padding+(p3W2+4)*2,cY, p3W2, {rowH:slRH,col:'#44ccff',grayed:grayed3});
       cY += slRH + slGap;
@@ -7166,26 +7167,24 @@ class Game {
 
     var bRow1Y = bpY + 5;
     var bRowH  = 20;
-    var statW  = Math.floor(bpW/3) - 3;
+    var statW  = Math.floor(bpW/4) - 2;
 
-    // STATIC / MOV toggle
-    this._editorMovInlineRect = btn(movActive2?'● MOV':'■ STAT', padding+4, bRow1Y, statW*1.1, bRowH,
+    // Row 1: MOV | FLING
+    this._editorMovInlineRect = btn(movActive2?'● MOV':'■ STAT', padding+4, bRow1Y, statW*1.2, bRowH,
       movActive2?'#ffaa00':'#4488ff', movActive2, {fs:8});
-    // ROTATE mode indicator (↔ROT)
-    this._editorTransRect = btn(transOn3?'↔ROT':'⊕ROT', padding+4+statW*1.1+3, bRow1Y, statW*0.9, bRowH,
+    this._editorFlingRect = btn(flingOn2?'● FLING':'○ FLING', padding+4+statW*1.2+3, bRow1Y, statW*1.2, bRowH,
+      flingOn2?'#ff6644':'#446688', flingOn2, {fs:8});
+    // Row 2: ROT | ♪ Note
+    var bRow2Y = bRow1Y + bRowH + 3;
+    this._editorTransRect = btn(transOn3?'↔ROT':'⊕ROT', padding+4, bRow2Y, statW*1.1, bRowH,
       transOn3?'#00ff88':'#446688', transOn3, {fs:8});
-    // ♪ Note
     var noteOn2 = sb2&&sb2._noteConfig;
-    this._editorNoteBtn = btn('🎵', padding+4+statW*2+6, bRow1Y, bRowH, bRowH,
+    this._editorNoteBtn = btn('🎵', padding+4+statW*1.1+3, bRow2Y, bRowH, bRowH,
       noteOn2?'#cc44ff':'#446688', noteOn2||false);
-    // FLING toggle
-    var flingOn2 = sb2 ? (sb2._flingable||false) : (this._editorFlingable||false);
-    this._editorFlingRect = btn(flingOn2?'● FLING':'○ FLING', padding+4+statW*2+6+bRowH+3, bRow1Y, statW*0.9, bRowH,
-      flingOn2?'#ff6644':'#446688', flingOn2, {fs:7});
 
     // 3x3 pivot grid — same cell size as rotation pivot (14px)
     var pivX3  = padding + 4;
-    var pivY3  = bRow1Y + bRowH + 4;
+    var pivY3  = bRow2Y + bRowH + 4;
     var pW9=14, pG9=2;
     // pivCols, pivRows2, pivColors3, curPiv3 declared above near slider panels
     var pivEnabled2 = transOn3;
@@ -8151,6 +8150,90 @@ class Game {
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(Math.round(curVol * 100) + '%', volThX + 9, inY + 9);
     this._notePopupVolSlider = { x: volX, y: inY + 2, w: volW, h: 16, trackX: volX, trackW: volW };
+  }
+
+  _handleNotePopupTap(px, py, brick) {
+    if (!brick) return false;
+    // Close button
+    if (this._notePopupClose) {
+      var cl = this._notePopupClose;
+      if (px >= cl.x && px <= cl.x + cl.w && py >= cl.y && py <= cl.y + cl.h) {
+        this._editorNotePopup = false;
+        if (window.Sound && Sound.uiTap) Sound.uiTap(0.15);
+        return true;
+      }
+    }
+    // Note buttons
+    if (this._notePopupNoteRects) {
+      for (var i = 0; i < this._notePopupNoteRects.length; i++) {
+        var nr = this._notePopupNoteRects[i];
+        if (px >= nr.x && px <= nr.x + nr.w && py >= nr.y && py <= nr.y + nr.h) {
+          if (!brick._noteConfig) brick._noteConfig = { note:'C', octave:4, timbre:'marimba', vol:0.6 };
+          brick._noteConfig.note = nr.val;
+          if (window.BrickNote) window.BrickNote.playNote(nr.val, brick._noteConfig.octave||4, brick._noteConfig.timbre||'marimba', brick._noteConfig.vol||0.6);
+          return true;
+        }
+      }
+    }
+    // Octave buttons
+    if (this._notePopupOctaveRects) {
+      for (var j = 0; j < this._notePopupOctaveRects.length; j++) {
+        var or = this._notePopupOctaveRects[j];
+        if (px >= or.x && px <= or.x + or.w && py >= or.y && py <= or.y + or.h) {
+          if (!brick._noteConfig) brick._noteConfig = { note:'C', octave:4, timbre:'marimba', vol:0.6 };
+          brick._noteConfig.octave = or.val;
+          if (window.BrickNote) window.BrickNote.playNote(brick._noteConfig.note||'C', or.val, brick._noteConfig.timbre||'marimba', brick._noteConfig.vol||0.6);
+          return true;
+        }
+      }
+    }
+    // Timbre buttons
+    if (this._notePopupTimbreRects) {
+      for (var k = 0; k < this._notePopupTimbreRects.length; k++) {
+        var tr = this._notePopupTimbreRects[k];
+        if (px >= tr.x && px <= tr.x + tr.w && py >= tr.y && py <= tr.y + tr.h) {
+          if (!brick._noteConfig) brick._noteConfig = { note:'C', octave:4, timbre:'marimba', vol:0.6 };
+          brick._noteConfig.timbre = tr.val;
+          if (window.BrickNote) window.BrickNote.playNote(brick._noteConfig.note||'C', brick._noteConfig.octave||4, tr.val, brick._noteConfig.vol||0.6);
+          return true;
+        }
+      }
+    }
+    // Preview button
+    if (this._notePopupPreviewBtn) {
+      var pv = this._notePopupPreviewBtn;
+      if (px >= pv.x && px <= pv.x + pv.w && py >= pv.y && py <= pv.y + pv.h) {
+        var cfg2 = brick._noteConfig || {};
+        if (window.BrickNote) window.BrickNote.playNote(cfg2.note||'C', cfg2.octave||4, cfg2.timbre||'marimba', cfg2.vol||0.6);
+        return true;
+      }
+    }
+    // Clear button
+    if (this._notePopupClearBtn) {
+      var cb = this._notePopupClearBtn;
+      if (px >= cb.x && px <= cb.x + cb.w && py >= cb.y && py <= cb.y + cb.h) {
+        brick._noteConfig = null;
+        if (window.Sound && Sound.uiTap) Sound.uiTap(0.15);
+        return true;
+      }
+    }
+    // Volume slider
+    if (this._notePopupVolSlider) {
+      var vs = this._notePopupVolSlider;
+      if (px >= vs.x - 4 && px <= vs.x + vs.w + 4 && py >= vs.y - 4 && py <= vs.y + vs.h + 4) {
+        var vt = Math.max(0, Math.min(1, (px - vs.trackX) / vs.trackW));
+        var newVol = 0.05 + vt * 1.15;
+        if (!brick._noteConfig) brick._noteConfig = { note:'C', octave:4, timbre:'marimba', vol:0.6 };
+        brick._noteConfig.vol = Math.round(newVol * 100) / 100;
+        return true;
+      }
+    }
+    // Check if tap is inside the popup area at all — consume it to prevent brick placement behind
+    var popW = this.W - 20, popX = 10;
+    var popH = 240, popY = this.floorY() - popH - 8;
+    if (popY < 80) popY = 80;
+    if (px >= popX && px <= popX + popW && py >= popY && py <= popY + popH + 40) return true;
+    return false;
   }
 
   _drawBall(obj) {
