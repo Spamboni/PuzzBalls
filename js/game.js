@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1686;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1687;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -3223,31 +3223,29 @@ class Game {
   // freeEndX = screen X of the free (non-pivot) end.
   // If free end is RIGHT of pivot → pivot is on the LEFT → col = L.
   // If free end is LEFT of pivot  → pivot is on the RIGHT → col = R.
+  // Corner pivots toggle only between diagonal opposites: TL<->BR, TR<->BL.
+  // Mid-row pivots (ML, MR) only swap L<->R.
+  // C-column (MC, TC, BC) never change.
+  // Trigger: free end crosses the vertical line through the pivot point.
   _normalizePivotKey(brick, pivotWX, pivotWY, freeEndX, freeEndY) {
     var currentKey = brick._pivot || 'MC';
     var col = currentKey[currentKey.length - 1]; // L, C, or R
     var row = currentKey.slice(0, currentKey.length - 1); // T, M, or B
-    if (col === 'C') return currentKey; // C-column never changes (MC, TC, BC stay)
+    if (col === 'C') return currentKey; // C-column never changes
     var rot = brick._rotation || 0;
     var hw = (brick.w || 40) / 2;
-    // Compute free end world position if not provided
-    var freeX, freeY;
-    if (freeEndX !== undefined) {
-      freeX = freeEndX;
-      freeY = freeEndY !== undefined ? freeEndY : brick.y + Math.sin(rot) * hw * (col === 'L' ? 1 : -1);
-    } else {
-      freeX = (col === 'L') ? brick.x + Math.cos(rot)*hw : brick.x - Math.cos(rot)*hw;
-      freeY = (col === 'L') ? brick.y + Math.sin(rot)*hw : brick.y - Math.sin(rot)*hw;
-    }
-    // L/R: free end right of pivot → pivot is Left; left of pivot → pivot is Right
-    var newCol = (freeX >= pivotWX) ? 'L' : 'R';
-    // T/B: only applies to corner pivots (T* or B* rows), not M row
-    var newRow = row;
-    if (row !== 'M') {
-      // Free end below pivot (higher Y) → pivot is Top; above pivot → pivot is Bottom
-      newRow = (freeY >= pivotWY) ? 'T' : 'B';
-    }
-    return newRow + newCol;
+    // Compute free end X if not provided
+    var freeX = (freeEndX !== undefined) ? freeEndX
+      : ((col==='L') ? brick.x+Math.cos(rot)*hw : brick.x-Math.cos(rot)*hw);
+    // Determine if free end is to the right of pivot (with small hysteresis)
+    var freeIsRight = (freeX >= pivotWX);
+    var pivIsLeft = (col === 'L');
+    // No change if free end is already on the correct side
+    if (pivIsLeft === freeIsRight) return currentKey;
+    // Cross detected — toggle to diagonal opposite only
+    var oppRow = (row === 'T') ? 'B' : (row === 'B') ? 'T' : 'M'; // M stays M
+    var oppCol = (col === 'L') ? 'R' : 'L';
+    return oppRow + oppCol;
   }
 
   // Try to unstick a sticky ball that was hit by another ball
