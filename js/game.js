@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1728;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1729;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -544,7 +544,9 @@ class Game {
 
     function getPos(e) {
       var rect   = canvas.getBoundingClientRect();
-      var src    = e.touches ? e.touches[0] : e;
+      var src    = (e.touches && e.touches.length > 0) ? e.touches[0]
+                 : (e.changedTouches && e.changedTouches.length > 0) ? e.changedTouches[0]
+                 : e;
       var scaleX = canvas.width  / rect.width;
       var scaleY = canvas.height / rect.height;
       return {
