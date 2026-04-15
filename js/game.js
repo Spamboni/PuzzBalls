@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1723;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1724;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -874,52 +874,16 @@ class Game {
             }); return;
           }
         }
-        // Tab buttons
+        // Tab buttons — record on down, activate on up (scroll-intent suppression)
+        self._pendingTabTap = null;
         if (self._editorTabBtns) {
           for (var tbi=0; tbi<self._editorTabBtns.length; tbi++) {
             var tb2=self._editorTabBtns[tbi];
             if (_px>=tb2.x&&_px<=tb2.x+tb2.w&&_py>=tb2.y&&_py<=tb2.y+tb2.h) {
-              self._editorActiveTab=tb2.id;
-              self._editorTubeMode=(tb2.id==='tubes');
-              window._tubeEditorMode=(tb2.id==='tubes');
-              self._editorSelected=null;
-              // Show/hide tube debug button
-              var _dbgBtn = document.getElementById('tube-debug-btn');
-              if (tb2.id === 'tubes') {
-                if (!_dbgBtn) {
-                  _dbgBtn = document.createElement('button');
-                  _dbgBtn.id = 'tube-debug-btn';
-                  _dbgBtn.textContent = '\uD83D\uDD2C';
-                  _dbgBtn.title = 'Tube layer debug';
-                  _dbgBtn.style.cssText = [
-                    'position:fixed','bottom:' + (self.H * 0.18 + 48) + 'px','left:6px',
-                    'z-index:9998','width:36px','height:36px','border-radius:50%',
-                    'background:rgba(0,20,40,0.85)','border:1px solid #00ffcc',
-                    'color:#00ffcc','font-size:16px','cursor:pointer',
-                    'box-shadow:0 0 8px #00ffcc55','padding:0'
-                  ].join(';');
-                  _dbgBtn.addEventListener('click', function() { window._buildTubeDebugPanel(); });
-                  document.body.appendChild(_dbgBtn);
-                }
-                _dbgBtn.style.display = 'block';
-              } else {
-                if (_dbgBtn) _dbgBtn.style.display = 'none';
-                var _panel = document.getElementById('tube-debug-panel');
-                if (_panel) _panel.style.display='none';
-              }
-              // Clear stale button rects from other tabs
-              if (tb2.id==='tubes') {
-                self._editorModeBtns=null; self._editorTypeBtns=null;
-                self._editorSnapBoxBtns=null; self._editorGridPivRects=null;
-              } else {
-                self._tubeModeBtns=null; self._tubeBtns=null;
-                self._tubeStyleBtns=null; self._tubeLayerBtns=null;
-                self._tubeAnchorBtns=null; self._tubeDelBtn=null;
-              }
+              self._pendingTabTap = { id: tb2.id, downY: pos.y };
+              // NOTE: activation moved to onUp — do NOT activate here
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
             }
-          }
-        }
         // Tool mode buttons (bricks only)
         if (!self._editorTubeMode && self._editorModeBtns) {
           for (var mbi=0; mbi<self._editorModeBtns.length; mbi++) {
@@ -2521,6 +2485,59 @@ class Game {
       if (self._editorMode) {
         var _hadPinch = !!self._editorPinchStart;
         self._editorPinchStart = null;
+        // ── Tab scroll-intent: activate tab only if finger didn't scroll ────
+        if (self._pendingTabTap) {
+          var _ptt = self._pendingTabTap;
+          self._pendingTabTap = null;
+          var _tabTravel = Math.abs(pos.y - _ptt.downY);
+          if (_tabTravel <= 8) {
+            // Clean tap — find the tab and activate it
+            var _tabId = _ptt.id;
+            self._editorActiveTab = _tabId;
+            self._editorTubeMode = (_tabId === 'tubes');
+            window._tubeEditorMode = (_tabId === 'tubes');
+            self._editorSelected = null;
+            var _dbgBtn = document.getElementById('tube-debug-btn');
+            if (_tabId === 'tubes') {
+              if (!_dbgBtn) {
+                _dbgBtn = document.createElement('button');
+                _dbgBtn.id = 'tube-debug-btn';
+                _dbgBtn.textContent = '\uD83D\uDD2C';
+                _dbgBtn.title = 'Tube layer debug';
+                _dbgBtn.style.cssText = [
+                  'position:fixed','bottom:' + (self.H * 0.18 + 48) + 'px','left:6px',
+                  'z-index:9998','width:36px','height:36px','border-radius:50%',
+                  'background:rgba(0,20,40,0.85)','border:1px solid #00ffcc',
+                  'color:#00ffcc','font-size:16px','cursor:pointer',
+                  'box-shadow:0 0 8px #00ffcc55','padding:0'
+                ].join(';');
+                _dbgBtn.addEventListener('click', function() { window._buildTubeDebugPanel(); });
+                document.body.appendChild(_dbgBtn);
+              }
+              _dbgBtn.style.display = 'block';
+            } else {
+              if (_dbgBtn) _dbgBtn.style.display = 'none';
+              var _dbgPanel = document.getElementById('tube-debug-panel');
+              if (_dbgPanel) _dbgPanel.style.display = 'none';
+            }
+            if (_tabId === 'tubes') {
+              self._editorModeBtns=null; self._editorTypeBtns=null;
+              self._editorSnapBoxBtns=null; self._editorGridPivRects=null;
+            } else {
+              self._tubeModeBtns=null; self._tubeBtns=null;
+              self._tubeStyleBtns=null; self._tubeLayerBtns=null;
+              self._tubeAnchorBtns=null; self._tubeDelBtn=null;
+            }
+          }
+          // Either way, don't fall through to _editorOnUp after a tab touch
+          self._editorScrollDragging = false;
+          self._editorScrollPending  = false;
+          self._editorScrollStart    = undefined;
+          self._tubePinchStart = null;
+          self._playPinchStartDist = null;
+          self._viewPanDrag = null;
+          return;
+        }
         self._editorScrollDragging = false;
         self._editorScrollPending  = false;
         self._editorScrollStart    = undefined;
