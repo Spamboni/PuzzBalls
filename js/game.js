@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1727;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1728;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -2491,7 +2491,8 @@ class Game {
         if (self._pendingTabTap) {
           var _ptt = self._pendingTabTap;
           self._pendingTabTap = null;
-          var _tabTravel = Math.abs(pos.y - _ptt.downY);
+          var _upPos = getPos(e);
+          var _tabTravel = Math.abs(_upPos.y - _ptt.downY);
           if (_tabTravel <= 8) {
             // Clean tap — find the tab and activate it
             var _tabId = _ptt.id;
