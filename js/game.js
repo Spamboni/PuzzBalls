@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1721;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1723;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -1708,6 +1708,16 @@ class Game {
       }
 
 
+      // ── Chute column scroll-intent tracking ──────────────────────────────
+      if (!self._editorMode) {
+        var _chuteColX = self.W - 55;
+        if (pos.x >= _chuteColX) {
+          self._chuteColDragStart = { y: pos.y, travel: 0 };
+        } else {
+          self._chuteColDragStart = null;
+        }
+      }
+
       // ── HUD canvas sliders — grab on touch down ────────────────────────────
       if (!self._editorMode) {
         self._editorBlockSliders = false;  // safety: always clear when editor is closed
@@ -1768,6 +1778,12 @@ class Game {
         }
       }
       // ── Chute ball buttons — drop balls ────────────────────────────────────
+      // Suppress if finger scrolled — treat as scroll intent, not a tap
+      if (self._chuteColDragStart && self._chuteColDragStart.travel > 8) {
+        self._chuteColDragStart = null;
+        return;
+      }
+      self._chuteColDragStart = null;
       if (self._chuteButtonRects) {
         var _chuteWorld = self._screenToWorld(pos.x, pos.y);
         for (var cbi2 = 0; cbi2 < self._chuteButtonRects.length; cbi2++) {
@@ -1899,6 +1915,11 @@ class Game {
       e.preventDefault();
       if (self._modalOpen) return;
       var pos = getPos(e);
+      // Track chute column scroll intent
+      if (self._chuteColDragStart) {
+        var _colTravel = Math.abs(pos.y - self._chuteColDragStart.y);
+        if (_colTravel > self._chuteColDragStart.travel) self._chuteColDragStart.travel = _colTravel;
+      }
       if (self._pendingStickyFlick) {
         self._pendingStickyFlick._lastX = pos.x;
         self._pendingStickyFlick._lastY = pos.y;
@@ -7615,22 +7636,18 @@ class Game {
 
   _saveCustomLevel() {
     var self = this;
-    var _preSaveBrickCount = this.bricks.length;
-    var defaultName = 'My Level ' + (Date.now() % 10000);
-    if (_preSaveBrickCount === 0) {
-      this._neonAlert('Nothing to save — no bricks placed!\n(Count at save start: ' + _preSaveBrickCount + ')');
+    if (this.bricks.length === 0) {
+      this._neonAlert('Nothing to save — place some bricks first!');
       return;
     }
+    // Default to current level name if editing a custom level, else generic
+    var defaultName = (this.levelData && this.levelData.custom && this.levelData.name)
+      ? this.levelData.name
+      : 'My Level';
+
     this._neonPrompt('Save level as:', defaultName, function(levelName) {
       if (!levelName || !levelName.trim()) return;
       levelName = levelName.trim();
-      var W = self.W, floorY = self.floorY();
-      var _postPromptCount = self.bricks.length;
-      console.log('[PuzzBalls SAVE] pre:' + _preSaveBrickCount + ' post:' + _postPromptCount);
-      if (_postPromptCount === 0) {
-        self._neonAlert('Bricks disappeared during save!\nHad ' + _preSaveBrickCount + ' before prompt,\n0 after. This is a bug — please report!');
-        return;
-      }
       // Serialize bricks
       var brickData = self.bricks.map(function(b) {
         return {
@@ -7668,26 +7685,47 @@ class Game {
       });
       // Serialize tubes
       var tubeData = self.tubes ? self.tubes.toJSON() : [];
-      var levelObj = {
-        id: 'custom_' + Date.now(),
-        name: levelName,
-        custom: true,
-        balls: [{ type: 'bouncer', count: 5 }],
-        obstacles: [],
-        objects: brickData,
-        activeBalls: ballData,
-        tubeData: tubeData,
-        target: { rx: 0.15, ry: 0.10, r: 1, barrierR: 1, barrierThickness: 0, barrierGap: Math.PI, barrierGapAngle: 0 },
-        objectives: [],
-      };
-      // Save to localStorage
+
+      function doWrite(existingIdx) {
+        var saved = JSON.parse(localStorage.getItem('puzzballs_custom_levels') || '[]');
+        var levelObj = {
+          id: (existingIdx >= 0) ? saved[existingIdx].id : ('custom_' + Date.now()),
+          name: levelName,
+          custom: true,
+          balls: [{ type: 'bouncer', count: 5 }],
+          obstacles: [],
+          objects: brickData,
+          activeBalls: ballData,
+          tubeData: tubeData,
+          target: { rx: 0.15, ry: 0.10, r: 1, barrierR: 1, barrierThickness: 0, barrierGap: Math.PI, barrierGapAngle: 0 },
+          objectives: [],
+        };
+        if (existingIdx >= 0) {
+          saved[existingIdx] = levelObj;
+        } else {
+          saved.push(levelObj);
+        }
+        localStorage.setItem('puzzballs_custom_levels', JSON.stringify(saved));
+        self.levelData = levelObj;
+        if (window._menuRefreshCallback) window._menuRefreshCallback();
+        if (window.Sound && Sound.win) Sound.win();
+        self._neonAlert("\u2713 Saved '" + levelName + "'");
+      }
+
+      // Check for name collision
       var saved = JSON.parse(localStorage.getItem('puzzballs_custom_levels') || '[]');
-      saved.push(levelObj);
-      localStorage.setItem('puzzballs_custom_levels', JSON.stringify(saved));
-      // Notify menu to refresh
-      if (window._menuRefreshCallback) window._menuRefreshCallback();
-      if (window.Sound && Sound.win) Sound.win();
-      self._neonAlert("Level '" + levelName + "' saved!\\n" + brickData.length + " bricks, " + tubeData.length + " tubes\\nIt will appear in the main menu.");
+      var existingIdx = -1;
+      for (var ei = 0; ei < saved.length; ei++) {
+        if (saved[ei].name === levelName) { existingIdx = ei; break; }
+      }
+      if (existingIdx >= 0 && !(self.levelData && self.levelData.id === saved[existingIdx].id)) {
+        // Different level with same name — confirm overwrite
+        self._neonConfirm("'" + levelName + "' already exists.\nOverwrite it?", function(confirmed) {
+          if (confirmed) doWrite(existingIdx);
+        });
+      } else {
+        doWrite(existingIdx);
+      }
     });
   }
 
@@ -8029,6 +8067,35 @@ class Game {
     function close() { document.body.removeChild(overlay); _alertSelf._modalOpen = false; if (_alertSelf.canvas) _alertSelf.canvas.style.pointerEvents = ''; if(callback)callback(); }
     okBtn.addEventListener('click', close);
     overlay.addEventListener('click', function(e){ if(e.target===overlay) close(); });
+  }
+
+  _neonConfirm(title, callback) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,5,18,0.50);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#030e25;border:1.5px solid #ffaa00;border-radius:10px;padding:20px 18px 16px;width:82vw;max-width:320px;box-shadow:0 0 30px rgba(255,170,0,0.25);font-family:Share Tech Mono,monospace;';
+    var titleEl = document.createElement('div');
+    titleEl.style.cssText = 'color:#ffcc44;font-size:13px;margin-bottom:14px;white-space:pre-line;line-height:1.5;';
+    titleEl.textContent = title;
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;';
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'CANCEL';
+    cancelBtn.style.cssText = 'flex:1;background:rgba(255,50,50,0.15);border:1px solid #ff3060;color:#ff6080;font-family:Share Tech Mono,monospace;font-size:12px;padding:9px;border-radius:5px;cursor:pointer;';
+    var okBtn = document.createElement('button');
+    okBtn.textContent = 'OVERWRITE';
+    okBtn.style.cssText = 'flex:1;background:rgba(255,170,0,0.15);border:1px solid #ffaa00;color:#ffcc44;font-family:Share Tech Mono,monospace;font-size:12px;padding:9px;border-radius:5px;cursor:pointer;';
+    btnRow.appendChild(cancelBtn); btnRow.appendChild(okBtn);
+    box.appendChild(titleEl); box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    this._modalOpen = true;
+    var _self = this;
+    var _closed = false;
+    function close(val) { if (_closed) return; _closed = true; document.body.removeChild(overlay); _self._modalOpen = false; if (_self.canvas) _self.canvas.style.pointerEvents = ''; callback(val); }
+    cancelBtn.addEventListener('click', function(){ close(false); });
+    okBtn.addEventListener('click', function(){ close(true); });
+    overlay.addEventListener('click', function(e){ if(e.target===overlay) close(false); });
   }
 
   _neonPicker(title, options, callback) {
