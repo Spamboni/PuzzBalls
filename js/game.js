@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1725;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1726;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -884,6 +884,8 @@ class Game {
               // NOTE: activation moved to onUp — do NOT activate here
               if(window.Sound&&Sound.uiTap)Sound.uiTap(0.2); return;
             }
+          }
+        }
         // Tool mode buttons (bricks only)
         if (!self._editorTubeMode && self._editorModeBtns) {
           for (var mbi=0; mbi<self._editorModeBtns.length; mbi++) {
