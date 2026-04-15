@@ -1,4 +1,4 @@
-window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1720;
+window.PUZZBALLS_FILE_VERSION = window.PUZZBALLS_FILE_VERSION || {}; window.PUZZBALLS_FILE_VERSION['game.js'] = 1721;
 
 // ── Tube render debug panel ───────────────────────────────────────────────────
 window._tubeDebugPanelOpen = false;
@@ -203,7 +203,7 @@ class Game {
       this.canvas.width  = this.W;
       this.canvas.height = this.H;
       this.nebulaOffscreen = this._buildNebulaOffscreen();
-      if (this.levelData) this._spawnLevel();
+      if (this.levelData && !this._modalOpen) this._spawnLevel();
     });
   }
 
@@ -448,6 +448,7 @@ class Game {
   }
 
   _resetLevel() {
+    if (this._modalOpen) return;
     if (this.levelData) this._spawnLevel();
   }
 
@@ -9243,6 +9244,7 @@ class Game {
   }
 
   respawnAllBalls() {
+    if (this._modalOpen) return;
     this._spawnLevel();
   }
 }
